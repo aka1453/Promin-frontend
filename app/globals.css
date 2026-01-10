@@ -1,21 +1,23 @@
 @import "tailwindcss";
 
+/* -------------------------------------- */
+/* LIGHT & DARK THEMES */
+/* -------------------------------------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --background: #f6f7f9;
+  --foreground: #161819;
+  --card-bg: #ffffff;
+  --card-border: #e5e7eb;
+  --modal-bg: rgba(0, 0, 0, 0.45);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #0b0c0d;
+    --foreground: #eeeeee;
+    --card-bg: #1a1b1d;
+    --card-border: #2a2c2f;
+    --modal-bg: rgba(0, 0, 0, 0.65);
   }
 }
 
@@ -23,4 +25,118 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+}
+
+/* -------------------------------------- */
+/* CARD COMPONENT (Milestone Styling) */
+/* -------------------------------------- */
+
+.milestone-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 14px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+  transition: transform .15s ease, box-shadow .2s;
+}
+
+.milestone-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.07);
+}
+
+/* Label for status */
+.status-pill {
+  padding: 4px 10px;
+  display: inline-block;
+  border-radius: 8px;
+  font-size: 12px;
+  margin-top: 8px;
+  font-weight: 500;
+}
+
+.status-not-started {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-in-progress {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.status-done {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+/* -------------------------------------- */
+/* MODAL OVERLAY */
+/* -------------------------------------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--modal-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+  animation: fadeIn 0.25s ease-out;
+}
+
+/* -------------------------------------- */
+/* MODAL CONTAINER */
+/* -------------------------------------- */
+
+.modal-container {
+  background: var(--card-bg);
+  padding: 24px;
+  width: 450px;
+  max-width: 90%;
+  border-radius: 14px;
+  animation: slideUp 0.3s ease-out;
+  border: 1px solid var(--card-border);
+}
+
+/* -------------------------------------- */
+/* ANIMATIONS */
+/* -------------------------------------- */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+/* -------------------------------------- */
+/* LAYOUT / SCROLL POLISH */
+/* -------------------------------------- */
+
+.scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}
+@keyframes fadeInSoft {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeInSoft 0.25s ease-out;
 }

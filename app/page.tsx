@@ -1,65 +1,225 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "./lib/supabaseClient";
+import ProjectOverviewCard from "./components/ProjectOverviewCard";
+import ProjectSettingsModal from "./components/ProjectSettingsModal";
+import { motion } from "framer-motion";
+import { useProjects } from "./context/ProjectsContext";
+
+type Project = {
+  id: number;
+  name?: string | null;
+  status?: string | null;
+  position?: number | null;
+  planned_progress?: number | null;
+  actual_progress?: number | null;
+  created_at?: string;
+  deleted_at?: string | null;
+  project_manager?: {
+    id: number;
+    full_name: string;
+  } | null;
+};
+
+type SortMode =
+  | "position"
+  | "name_asc"
+  | "name_desc"
+  | "progress_asc"
+  | "progress_desc"
+  | "delta_asc"
+  | "delta_desc";
+
+function sortProjectsDeterministically(projects: Project[]) {
+  return [...projects].sort((a, b) => {
+    if (a.position != null && b.position != null) {
+      return a.position - b.position;
+    }
+    if (a.position != null) return -1;
+    if (b.position != null) return 1;
+
+    return (
+      new Date(b.created_at ?? 0).getTime() -
+      new Date(a.created_at ?? 0).getTime()
+    );
+  });
+}
+
+export default function HomePage() {
+  const router = useRouter();
+  const { projects } = useProjects();
+
+  const [sortMode, setSortMode] = useState<SortMode>(() => {
+    if (typeof window === "undefined") return "position";
+    return (localStorage.getItem("projects_sort_mode") as SortMode) ?? "position";
+  });
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [projectRole, setProjectRole] =
+    useState<"owner" | "editor" | "viewer" | null>(null);
+
+  // Persist sort mode
+  useEffect(() => {
+    localStorage.setItem("projects_sort_mode", sortMode);
+  }, [sortMode]);
+
+  // Load role when settings modal opens
+  useEffect(() => {
+  async function loadRole() {
+    if (!selectedProjectId) {
+      setProjectRole(null);
+      return;
+    }
+
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth.user) return;
+
+    const { data } = await supabase
+      .from("project_members")
+      .select("role")
+      .eq("project_id", selectedProjectId)
+      .eq("user_id", auth.user.id)
+      .maybeSingle();
+
+    if (!data) {
+      const project = projects.find((p: Project) => p.id === selectedProjectId);
+      setProjectRole(
+        project?.owner_id === auth.user.id ? "owner" : null
+      );
+      return;
+    }
+
+    setProjectRole(data.role);
+  }
+
+  loadRole();
+}, [selectedProjectId, projects]);
+
+
+  const visibleProjects = useMemo(() => {
+    const list = projects.filter(
+      (p: Project) =>
+        p.deleted_at == null && p.status !== "archived"
+    );
+
+    const sorted =
+      sortMode === "position"
+        ? sortProjectsDeterministically(list)
+        : [...list];
+
+    switch (sortMode) {
+      case "name_asc":
+        return sorted.sort((a, b) =>
+          (a.name ?? "").localeCompare(b.name ?? "")
+        );
+      case "name_desc":
+        return sorted.sort((a, b) =>
+          (b.name ?? "").localeCompare(a.name ?? "")
+        );
+      case "progress_asc":
+        return sorted.sort(
+          (a, b) => (a.actual_progress ?? 0) - (b.actual_progress ?? 0)
+        );
+      case "progress_desc":
+        return sorted.sort(
+          (a, b) => (b.actual_progress ?? 0) - (a.actual_progress ?? 0)
+        );
+      case "delta_asc":
+        return sorted.sort(
+          (a, b) =>
+            ((a.actual_progress ?? 0) - (a.planned_progress ?? 0)) -
+            ((b.actual_progress ?? 0) - (b.planned_progress ?? 0))
+
+        );
+      case "delta_desc":
+        return sorted.sort(
+          (a, b) =>
+            ((b.actual_progress ?? 0) - (b.planned_progress ?? 0)) -
+            ((a.actual_progress ?? 0) - (a.planned_progress ?? 0))
+
+        );
+      default:
+        return sorted;
+    }
+  }, [projects, sortMode]);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <>
+      <div className="p-6">
+        <div className="mx-auto max-w-[1400px]">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between mb-6 gap-3">
+            <div>
+              <h1 className="text-2xl font-semibold mb-1">Projects</h1>
+              <p className="text-slate-600">
+                Overview of planned vs actual progress across your projects
+              </p>
+            </div>
+
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as SortMode)}
+              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm shadow-sm"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+              <option value="position">Manual order</option>
+              <option value="name_asc">Name (A → Z)</option>
+              <option value="name_desc">Name (Z → A)</option>
+              <option value="progress_asc">Progress (Low → High)</option>
+              <option value="progress_desc">Progress (High → Low)</option>
+              <option value="delta_asc">Delta (Low → High)</option>
+              <option value="delta_desc">Delta (High → Low)</option>
+            </select>
+          </div>
+
+          {visibleProjects.length === 0 && (
+            <p className="text-sm text-slate-500">No projects yet.</p>
+          )}
+
+          {visibleProjects.length > 0 && (
+            <motion.div
+              layout
+              className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"
             >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              {visibleProjects.map((project) => (
+                <motion.div key={project.id} layout>
+                  <ProjectOverviewCard
+                    project={project}
+                    onClick={() =>
+                      router.push(`/projects/${project.id}`)
+                    }
+                    onOpenSettings={() => {
+  setSelectedProjectId(project.id);
+  setSettingsOpen(true);
+}}
+                  />
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      </div>
+
+      {settingsOpen && selectedProjectId != null && (
+  (() => {
+    const project = projects.find((p: Project) => p.id === selectedProjectId);
+    if (!project) return null;
+
+    return (
+      <ProjectSettingsModal
+        project={project}
+        projectRole={projectRole}
+        onClose={() => {
+          setSettingsOpen(false);
+          setSelectedProjectId(null);
+          setProjectRole(null);
+        }}
+      />
+    );
+  })()
+)}
+
+    </>
   );
 }
