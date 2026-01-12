@@ -1,197 +1,133 @@
+// app/components/SubtaskCard.tsx
 "use client";
 
 import { useState } from "react";
-import { supabase } from "../../../../lib/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
+import { recalcTask } from "@/lib/recalcTask";
+import SubtaskInlineUploader from "@/components/SubtaskInlineUploader";
+import { useToast } from "@/components/ToastProvider";
 
-interface Task {
-  id: number;
-  title: string;
-  description: string | null;
-  status: string;
-  planned_start: string | null;
-  planned_end: string | null;
-  actual_start: string | null;
-  actual_end: string | null;
-}
+type Props = {
+  taskId: number;
+  subtask: any;
+  isReadOnly?: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+  onChanged: () => void;
+};
 
-export default function TaskMenu({ task }: { task: Task }) {
-  const [open, setOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
+export default function SubtaskCard({
+  taskId,
+  subtask,
+  isReadOnly = false,
+  onEdit,
+  onDelete,
+  onChanged,
+}: Props) {
+  const { showToast } = useToast();
+  const [updating, setUpdating] = useState(false);
 
-  const [title, setTitle] = useState(task.title);
-  const [description, setDescription] = useState(task.description ?? "");
-  const [plannedStart, setPlannedStart] = useState(task.planned_start ?? "");
-  const [plannedEnd, setPlannedEnd] = useState(task.planned_end ?? "");
+  const readOnly = isReadOnly;
 
-  const [loading, setLoading] = useState(false);
+  async function toggleDone(checked: boolean) {
+    if (readOnly) return;
 
-  function toggleMenu() {
-    setOpen((prev) => !prev);
-  }
+    setUpdating(true);
 
-  async function handleDelete() {
-    const confirmed = window.confirm(
-      `Are you sure you want to delete task "${task.title}"?`
-    );
-    if (!confirmed) return;
+    const updatePayload: any = {
+      is_done: checked,
+      completed_at: checked ? new Date().toISOString() : null,
+    };
 
-    setLoading(true);
-    const { error } = await supabase.from("tasks").delete().eq("id", task.id);
-    setLoading(false);
+    const { error } = await supabase
+      .from("subtasks")
+      .update(updatePayload)
+      .eq("id", subtask.id);
 
     if (error) {
-      alert("Failed to delete task: " + error.message);
-    } else {
-      window.location.reload();
-    }
-  }
-
-  async function handleSaveEdit() {
-    if (!title.trim()) {
-      alert("Title is required");
+      console.error("Toggle deliverable error:", error);
+      showToast("Failed to update deliverable", "error");
+      setUpdating(false);
       return;
     }
 
-    setLoading(true);
-
-    const { error } = await supabase
-      .from("tasks")
-      .update({
-        title,
-        description,
-        planned_start: plannedStart || null,
-        planned_end: plannedEnd || null,
-      })
-      .eq("id", task.id);
-
-    setLoading(false);
-
-    if (error) {
-      alert("Failed to update task: " + error.message);
-    } else {
-      setEditOpen(false);
-      setOpen(false);
-      window.location.reload();
-    }
+    await recalcTask(taskId);
+    onChanged();
+    setUpdating(false);
   }
 
   return (
-    <>
-      {/* ⋮ BUTTON */}
-      <div className="relative">
-        <button
-          onClick={toggleMenu}
-          className="p-1 rounded hover:bg-gray-200"
-          aria-label="Task options"
-        >
-          ⋮
-        </button>
+    <div
+      className={`rounded-lg border px-3 py-2 text-sm transition
+        ${readOnly ? "bg-gray-50 opacity-80" : "bg-white hover:bg-gray-50"}
+      `}
+    >
+      {/* HEADER ROW */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-start gap-2">
+          <input
+            type="checkbox"
+            checked={!!subtask.is_done}
+            disabled={readOnly || updating}
+            onChange={(e) => toggleDone(e.target.checked)}
+            className="mt-1 h-4 w-4 rounded border-slate-300"
+          />
 
-        {/* DROPDOWN MENU */}
-        {open && (
-          <div className="absolute right-0 mt-2 w-40 bg-white border rounded-lg shadow-lg z-10">
-            <button
-              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
-              onClick={() => {
-                setEditOpen(true);
-                setOpen(false);
-              }}
-            >
-              ✏️ Edit
-            </button>
+          <div>
+            <p className="font-medium leading-tight">
+              {subtask.title || "Untitled Deliverable"}
+            </p>
 
-            <div className="border-t my-1" />
+            {subtask.description && (
+              <p className="mt-0.5 text-xs text-slate-500">
+                {subtask.description}
+              </p>
+            )}
 
-            {/* ❌ NO MANUAL STATUS CONTROLS */}
-            <div className="px-3 py-2 text-[11px] text-gray-500">
-              Status is derived from subtasks
+            {/* META LINE */}
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+              <span>Weight: {subtask.weight ?? 0}%</span>
+
+              {subtask.planned_start && (
+                <span>Planned: {subtask.planned_start}</span>
+              )}
+
+              {subtask.actual_cost != null && (
+                <span>Cost: {subtask.actual_cost}</span>
+              )}
             </div>
+          </div>
+        </div>
 
-            <div className="border-t my-1" />
-
+        {/* ACTIONS */}
+        {!readOnly && (
+          <div className="flex items-center gap-1">
             <button
-              className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-              onClick={handleDelete}
-              disabled={loading}
+              onClick={onEdit}
+              className="text-xs text-blue-600 hover:underline"
             >
-              🗑 Delete
+              Edit
+            </button>
+            <button
+              onClick={onDelete}
+              className="text-xs text-red-600 hover:underline"
+            >
+              Delete
             </button>
           </div>
         )}
       </div>
 
-      {/* EDIT MODAL */}
-      {editOpen && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-20"
-          onClick={() => !loading && setEditOpen(false)}
-        >
-          <div
-            className="bg-white p-6 rounded-lg shadow-xl w-96"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-xl font-semibold mb-4">Edit Task</h3>
-
-            <label className="block text-sm font-medium mb-1">Title</label>
-            <input
-              className="w-full border rounded p-2 mb-3"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-
-            <label className="block text-sm font-medium mb-1">
-              Description
-            </label>
-            <textarea
-              className="w-full border rounded p-2 mb-3"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Planned Start
-                </label>
-                <input
-                  type="date"
-                  className="w-full border rounded p-2"
-                  value={plannedStart}
-                  onChange={(e) => setPlannedStart(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Planned End
-                </label>
-                <input
-                  type="date"
-                  className="w-full border rounded p-2"
-                  value={plannedEnd}
-                  onChange={(e) => setPlannedEnd(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <button
-                className="px-3 py-2 rounded bg-gray-200"
-                onClick={() => setEditOpen(false)}
-                disabled={loading}
-              >
-                Cancel
-              </button>
-              <button
-                className="px-3 py-2 rounded bg-blue-600 text-white"
-                onClick={handleSaveEdit}
-                disabled={loading}
-              >
-                {loading ? "Saving..." : "Save"}
-              </button>
-            </div>
-          </div>
+      {/* FILE VERSIONING */}
+      {!readOnly && (
+        <div className="mt-2 flex justify-end">
+          <SubtaskInlineUploader
+            subtaskId={subtask.id}
+            subtaskTitle={subtask.title}
+            onUploaded={onChanged}
+          />
         </div>
       )}
-    </>
+    </div>
   );
 }

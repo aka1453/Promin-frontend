@@ -141,21 +141,21 @@ export default function EditSubtaskModal({
     setSaving(true);
 
     const updatePayload: any = {
-      title: title.trim(),
-      description: description.trim() || null,
-      weight: Number(weight),
-      planned_start: plannedStart || null,
-      planned_end: plannedEnd || null,
-      budgeted_cost:
-      budgetedCost !== "" ? Number(budgetedCost) : null,
+  title: title.trim(),
+  description: description.trim() || null,
 
-      actual_cost:
-      actualCost !== "" ? Number(actualCost) : null,
+  weight: Number(weight),
 
-      is_done: isDone,
-      assigned_user:
-        assignedUser === "Unassigned" ? null : assignedUser,
-    };
+  planned_start: plannedStart ? plannedStart : null,
+  planned_end: plannedEnd ? plannedEnd : null,
+
+  budgeted_cost: budgetedCost !== "" ? Number(budgetedCost) : null,
+  actual_cost: actualCost !== "" ? Number(actualCost) : null,
+
+  is_done: isDone,
+  assigned_user: assignedUser === "Unassigned" ? null : assignedUser,
+};
+
 
     if (isDone && !subtask.completed_at) {
       updatePayload.completed_at = new Date().toISOString();
@@ -171,7 +171,7 @@ export default function EditSubtaskModal({
 
     if (error) {
       console.error("subtask update error:", error);
-      setError("Failed to update subtask.");
+      setError("Failed to update Deliverable.");
       setSaving(false);
       return;
     }
@@ -191,7 +191,7 @@ export default function EditSubtaskModal({
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[9999] overflow-y-auto">
       <div className="bg-white w-full max-w-md rounded-xl p-6 shadow-lg max-h-[90vh] overflow-y-auto">
 
-        <h2 className="text-lg font-semibold mb-4">Edit Subtask</h2>
+        <h2 className="text-lg font-semibold mb-4">Edit Deliverable</h2>
 
         {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
 

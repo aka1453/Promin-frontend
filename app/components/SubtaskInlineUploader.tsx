@@ -95,7 +95,7 @@ export default function SubtaskInlineUploader({
       }
 
       if (!existing) {
-        // First file for this subtask
+        // First file for this Deliverable
         const { data: created, error: insertErr } = await supabase
           .from("subtask_files")
           .insert({
@@ -106,7 +106,7 @@ export default function SubtaskInlineUploader({
           .single();
 
         if (insertErr || !created) {
-          console.error("insert subtask_files error:", insertErr);
+          console.error("insert Deliverable here error:", insertErr);
           throw new Error("Could not create file record.");
         }
 

@@ -1,274 +1,189 @@
+// app/components/SubtaskCard.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { recalcTask } from "../lib/recalcTask";
 import SubtaskInlineUploader from "./SubtaskInlineUploader";
+import EditSubtaskModal from "./EditSubtaskModal";
 import { useToast } from "./ToastProvider";
 
 type Props = {
-  taskId: number;
   subtask: any;
-  isReadOnly?: boolean;
-  onEdit: () => void;
-  onDelete: () => void;
-  onChanged: () => void;
+  existingSubtasks: any[];
+  canEdit?: boolean;
+  canDelete?: boolean;
+  onChanged?: () => void; // parent reload hook
 };
 
-
 export default function SubtaskCard({
-  taskId,
   subtask,
-  isReadOnly,
-  onEdit,
-  onDelete,
+  existingSubtasks,
+  canEdit = true,
+  canDelete = true,
   onChanged,
 }: Props) {
-  const readOnly = !!isReadOnly;
   const { pushToast } = useToast();
 
-  const [saving, setSaving] = useState(false);
-  const [taskStarted, setTaskStarted] = useState(false);
-  const [optimisticDone, setOptimisticDone] = useState<boolean>(
-    !!subtask.is_done
-  );
-useEffect(() => {
-  setOptimisticDone(!!subtask.is_done);
-}, [subtask.is_done]);
+  const [editOpen, setEditOpen] = useState(false);
+  const [toggling, setToggling] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  const done = optimisticDone;
+  const title = useMemo(() => subtask?.title ?? "Untitled Deliverable", [subtask]);
+  const isDone = !!subtask?.is_done;
 
-  /* ---------------- LOAD TASK START STATE ---------------- */
-  useEffect(() => {
-    let mounted = true;
+  const handleToggleDone = async () => {
+    if (!canEdit) {
+      pushToast("You don’t have permission to edit this deliverable.", "warning");
+      return;
+    }
 
-    async function loadTaskState() {
-      const { data } = await supabase
-        .from("tasks")
-        .select("actual_start")
-        .eq("id", taskId)
-        .single();
+    setToggling(true);
+    try {
+      const nextDone = !isDone;
 
-      if (mounted && data) {
-        setTaskStarted(!!data.actual_start);
+      const updatePayload: any = {
+        is_done: nextDone,
+      };
+
+      // Keep your existing completion timestamp behavior
+      if (nextDone && !subtask?.completed_at) {
+        updatePayload.completed_at = new Date().toISOString();
       }
+      if (!nextDone) {
+        updatePayload.completed_at = null;
+      }
+
+      const { error } = await supabase
+        .from("subtasks")
+        .update(updatePayload)
+        .eq("id", subtask.id);
+
+      if (error) {
+        console.error("Deliverable toggle error:", error);
+        pushToast("Failed to update deliverable status.", "error");
+        return;
+      }
+
+      await recalcTask(subtask.task_id);
+      onChanged?.();
+    } catch (e: any) {
+      console.error("Deliverable toggle exception:", e);
+      pushToast(e?.message || "Failed to update deliverable.", "error");
+    } finally {
+      setToggling(false);
     }
+  };
 
-    loadTaskState();
-    return () => {
-      mounted = false;
-    };
-  }, [taskId]);
-
-  /* ---------------- OPTIMISTIC TOGGLE ---------------- */
-  async function toggleDone() {
-  if (readOnly) {
-    pushToast(
-      "This project is archived. Restore it to make changes.",
-      "warning"
-    );
-    return;
-  }
-
-  if (saving) return;
-
-
-    if (!taskStarted) {
-      pushToast("Start the task before completing subtasks", "warning");
+  const handleDelete = async () => {
+    if (!canDelete) {
+      pushToast("You don’t have permission to delete this deliverable.", "warning");
       return;
     }
 
-    const nextDone = !done;
+    const confirmed = confirm("Delete this deliverable? This cannot be undone.");
+    if (!confirmed) return;
 
-setSaving(true);
+    setDeleting(true);
+    try {
+      const { error } = await supabase.from("subtasks").delete().eq("id", subtask.id);
+      if (error) {
+        console.error("Deliverable delete error:", error);
+        pushToast("Failed to delete deliverable.", "error");
+        return;
+      }
 
-try {
-  const { error } = await supabase
-
-    .from("subtasks")
-    .update({
-      is_done: nextDone,
-      completed_at: nextDone ? new Date().toISOString() : null,
-    })
-    .eq("id", subtask.id);
-
-  if (error) {
-    setOptimisticDone(!nextDone);
-    pushToast("Failed to update subtask", "warning");
-    return;
-  }
-
-  setOptimisticDone(nextDone);
-
-await recalcTask(taskId);
-onChanged();
-
-pushToast(
-  nextDone ? "Subtask completed" : "Subtask reopened",
-  "success"
-);
-
-} finally {
-  setSaving(false);
-}
-
-  }
-
-  /* ---------------- FILE PREVIEW ---------------- */
-  async function previewLatest() {
-    if (!subtask.file_id || !subtask.latest_version) return;
-
-    const { data } = await supabase
-      .from("subtask_file_versions")
-      .select("file_path")
-      .eq("file_id", subtask.file_id)
-      .eq("version_number", subtask.latest_version)
-      .maybeSingle();
-
-    if (!data) {
-      pushToast("Could not preview file", "warning");
-      return;
+      await recalcTask(subtask.task_id);
+      onChanged?.();
+      pushToast("Deliverable deleted.", "success");
+    } catch (e: any) {
+      console.error("Deliverable delete exception:", e);
+      pushToast(e?.message || "Failed to delete deliverable.", "error");
+    } finally {
+      setDeleting(false);
     }
+  };
 
-    const { data: signed } = await supabase.storage
-      .from("subtask-files")
-      .createSignedUrl(data.file_path, 60);
-
-    if (signed?.signedUrl) {
-      window.open(signed.signedUrl, "_blank");
-    }
-  }
-
-  const assigneeLabel =
-    subtask.assigned_user && subtask.assigned_user !== ""
-      ? subtask.assigned_user
-      : "Unassigned";
-
-  /* ---------------- RENDER ---------------- */
   return (
-    <div
-      className={`flex justify-between items-start gap-2 rounded-lg border px-2 py-2 transition-all
-        ${
-          done
-            ? "bg-slate-100 border-slate-200"
-            : "bg-white border-slate-200"
-        }`}
-    >
-      {/* LEFT */}
-      <div className="flex items-start gap-2 flex-1">
-        <button
-  onClick={toggleDone}
-  disabled={saving || readOnly}
-  className={`mt-1 flex h-5 w-5 items-center justify-center rounded-full border text-xs transition-all
-  ${readOnly ? "opacity-50 cursor-not-allowed pointer-events-none" : ""}
-  ${
-    done
-      ? "border-blue-600 bg-blue-600 text-white scale-110"
-      : "border-slate-300 bg-white text-transparent"
-  }`}
-
-        >
-          ✓
-        </button>
-
-        <div className="flex-1">
-          <div className="flex items-center justify-between">
-            <span
-              className={`text-sm font-medium transition-all ${
-                done
-                  ? "line-through text-slate-400"
-                  : "text-slate-800"
-              }`}
-            >
-              {subtask.title}
-            </span>
-
-            <span className="text-[11px] font-semibold text-blue-600">
-              {subtask.weight ?? 0}%
-            </span>
-          </div>
-
-          <p className="mt-0.5 text-[10px] text-slate-500">
-            👤 {assigneeLabel}
-          </p>
-
-          {subtask.description && (
-            <p className="mt-0.5 text-[11px] text-slate-500 line-clamp-2">
-              {subtask.description}
-            </p>
-          )}
-
-          <div className="mt-1 flex gap-2 text-[10px] text-slate-500">
+    <>
+      <div className="rounded-xl border bg-white p-3 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2">
+            {/* Checkbox */}
             <button
-  className={`rounded border px-2 py-0.5 ${
-    readOnly
-      ? "opacity-50 cursor-not-allowed"
-      : "hover:bg-slate-100"
-  }`}
-  onClick={() => {
-    if (readOnly) return;
-    onEdit();
-  }}
->
-  Edit
-</button>
+              type="button"
+              onClick={handleToggleDone}
+              disabled={toggling || !canEdit}
+              className={`mt-0.5 h-5 w-5 rounded border flex items-center justify-center ${
+                isDone ? "bg-emerald-600 border-emerald-600" : "bg-white border-slate-300"
+              } ${!canEdit ? "opacity-60 cursor-not-allowed" : "hover:bg-slate-50"}`}
+              title={canEdit ? "Mark done" : "Read-only"}
+            >
+              {isDone ? <span className="text-white text-xs">✓</span> : null}
+            </button>
 
-<button
-  className={`rounded border border-red-200 px-2 py-0.5 text-red-600 ${
-    readOnly
-      ? "opacity-50 cursor-not-allowed"
-      : "hover:bg-red-50"
-  }`}
-  onClick={() => {
-    if (readOnly) return;
-    onDelete();
-  }}
->
-  Delete
-</button>
+            {/* Title + meta */}
+            <div className="min-w-0">
+              <button
+                type="button"
+                onClick={() => canEdit && setEditOpen(true)}
+                disabled={!canEdit}
+                className={`text-left font-semibold text-sm ${
+                  isDone ? "text-slate-500 line-through" : "text-slate-900"
+                } ${!canEdit ? "cursor-not-allowed opacity-70" : "hover:underline"}`}
+                title={canEdit ? "Edit deliverable" : "Read-only"}
+              >
+                {title}
+              </button>
 
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                <span>Weight: {Number(subtask?.weight ?? 0)}%</span>
+                {subtask?.planned_start && <span>Planned: {subtask.planned_start}</span>}
+                {subtask?.planned_end && <span>→ {subtask.planned_end}</span>}
+              </div>
+            </div>
           </div>
+
+          {/* File versioning inline */}
+          <SubtaskInlineUploader
+            subtaskId={subtask.id}
+            subtaskTitle={title}
+            onUploaded={onChanged}
+          />
+        </div>
+
+        {/* Actions */}
+        <div className="mt-3 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => canEdit && setEditOpen(true)}
+            disabled={!canEdit}
+            className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+          >
+            Edit
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={!canDelete || deleting}
+            className="rounded-md border border-rose-200 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+          >
+            {deleting ? "Deleting…" : "Delete"}
+          </button>
         </div>
       </div>
 
-      {/* RIGHT */}
-      <div className="flex flex-col items-end gap-1 mt-1 min-w-[90px]">
-        {subtask.latest_version ? (
-          <>
-            <span className="text-[10px] text-slate-600">
-              File: <strong>V{subtask.latest_version}</strong>
-            </span>
-
-            <button
-  onClick={() => {
-    if (readOnly) {
-      pushToast("Files are read-only for archived projects.", "warning");
-      return;
-    }
-    previewLatest();
-  }}
-
-  className={`rounded border px-2 py-1 text-[10px] text-blue-700 ${
-    readOnly ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-50"
-  }`}
->
-
-              👁 Preview
-            </button>
-          </>
-        ) : (
-          <span className="text-[10px] text-slate-400">No file</span>
-        )}
-
-        {!readOnly && (
-  <SubtaskInlineUploader
-    subtaskId={subtask.id}
-    subtaskTitle={subtask.title}
-    onUploaded={onChanged}
-  />
-)}
-
-      </div>
-    </div>
+      <EditSubtaskModal
+        open={editOpen}
+        subtask={subtask}
+        existingSubtasks={existingSubtasks}
+        onClose={() => setEditOpen(false)}
+        onSaved={() => {
+          setEditOpen(false);
+          onChanged?.();
+        }}
+      />
+    </>
   );
 }

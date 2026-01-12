@@ -58,7 +58,7 @@ type Props = {
 
   /**
    * ✅ OPTIONAL:
-   * Used by the milestone page to refresh milestone header after task/subtask changes.
+   * Used by the milestone page to refresh milestone header after task/Deliverable changes.
    * We keep it optional so we do NOT break any other pages using TaskFlowBoard.
    */
   onMilestoneUpdated?: () => void | Promise<void>;
@@ -549,7 +549,7 @@ function TaskCard({
   // fallback to `actual_progress` only if you still have it in some old rows
   const actualProgress = Number(task.progress ?? task.actual_progress ?? 0);
 
-  // F1.1 — subtasks all done but task not explicitly completed
+  // F1.1 — Deliverable all done but task not explicitly completed
   const allSubtasksDone = actualProgress === 100 && !task.actual_end;
 
   const critical = !!task.isCritical;
@@ -618,7 +618,7 @@ ${critical ? "border-rose-300 bg-rose-50/30" : "border-slate-200 hover:border-sl
 
           {allSubtasksDone && (
             <div className="text-[10px] font-medium text-amber-600">
-              All subtasks complete — click{" "}
+              All Deliverable complete — click{" "}
               <span className="font-semibold">Complete Task</span> to finish
             </div>
           )}
@@ -654,7 +654,7 @@ ${critical ? "border-rose-300 bg-rose-50/30" : "border-slate-200 hover:border-sl
         onClick={onOpen}
         className="mt-2 w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
       >
-        View Subtasks & Files
+        View Deliverable & Files
       </button>
     </div>
   );

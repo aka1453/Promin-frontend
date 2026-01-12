@@ -1,7 +1,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import Shell from "./Shell";
-import { ToastProvider } from "./components/ToastProvider";
+import ToastProvider from "@/components/ToastProvider";
 import { ProjectsProvider } from "./context/ProjectsContext";
 
 export const metadata: Metadata = {

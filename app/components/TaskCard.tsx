@@ -3,13 +3,33 @@
 
 import React from "react";
 import { formatPercent } from "../utils/format";
-
+import { startTask, completeTask } from "../lib/lifecycle";
 type Props = {
   task: any;
   onClick?: (task: any) => void;
 };
 
 export default function TaskCard({ task, onClick }: Props) {
+    const handleStartTask = async (
+    e: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    e.stopPropagation();
+    await startTask(task.id);
+  };
+
+  const handleCompleteTask = async (
+    e: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    e.stopPropagation();
+
+    const confirmed = confirm(
+      "Complete this task? This will lock its actual end date."
+    );
+    if (!confirmed) return;
+
+    await completeTask(task.id);
+  };
+
   const initials = task.assigned_to
     ? task.assigned_to
         .split(" ")
@@ -31,8 +51,34 @@ export default function TaskCard({ task, onClick }: Props) {
       className="bg-white shadow rounded-xl p-4 w-[260px] min-w-[260px] cursor-pointer hover:shadow-lg transition-all"
       onClick={() => onClick?.(task)}
     >
-      {/* Title */}
-      <h3 className="font-semibold text-sm mb-3">{task.title}</h3>
+            {/* Title + Lifecycle */}
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <h3 className="font-semibold text-sm">{task.title}</h3>
+
+        {/* Lifecycle buttons */}
+        {task.status !== "completed" && (
+          <div className="flex gap-1">
+            {!task.actual_start && (
+              <button
+                onClick={handleStartTask}
+                className="px-2 py-1 text-[10px] font-semibold rounded bg-blue-600 text-white hover:bg-blue-700"
+              >
+                Start
+              </button>
+            )}
+
+            {task.actual_start && !task.actual_end && (
+              <button
+                onClick={handleCompleteTask}
+                className="px-2 py-1 text-[10px] font-semibold rounded bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                Complete
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
 
       {/* Weight */}
       <div className="mb-3 text-[11px] text-slate-500">

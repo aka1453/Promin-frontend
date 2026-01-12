@@ -5,6 +5,7 @@ import Link from "next/link";
 import { formatPercent } from "../utils/format";
 import { MoreVertical, Edit, Trash } from "lucide-react";
 import type { Milestone } from "../types/milestone";
+import { completeMilestone } from "../lib/lifecycle";
 
 type Props = {
   milestone: Milestone;
@@ -31,6 +32,19 @@ React.useEffect(() => {
     setMenuOpen(false);
   }
 }, [canEdit, canDelete, menuOpen]);
+const handleCompleteMilestone = async (
+  e: React.MouseEvent<HTMLButtonElement>
+) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const confirmed = confirm(
+    "Complete this milestone? This action cannot be undone."
+  );
+  if (!confirmed) return;
+
+  await completeMilestone(milestone.id);
+};
 
 
 
@@ -101,10 +115,22 @@ React.useEffect(() => {
 
       {/* FULL CARD CLICKABLE */}
       <Link
-        href={`/projects/${milestone.project_id}/milestones/${milestone.id}`}
-        className="block"
-      >
-        <div className="bg-white shadow rounded-2xl p-6 border border-gray-200 cursor-pointer hover:shadow-lg transition-all">
+  href={`/projects/${milestone.project_id}/milestones/${milestone.id}`}
+  className="block"
+>
+  <div className="bg-white shadow rounded-2xl p-6 border border-gray-200 cursor-pointer hover:shadow-lg transition-all">
+
+    {canEdit && milestone.status !== "completed" && (
+      <div className="mb-4">
+        <button
+          onClick={handleCompleteMilestone}
+          className="px-3 py-2 text-xs font-semibold rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
+        >
+          Complete Milestone
+        </button>
+      </div>
+    )}
+
           
           {/* HEADER */}
 <div className="flex justify-between items-start mb-4">
