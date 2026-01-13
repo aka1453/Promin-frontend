@@ -230,13 +230,20 @@ if (overdue) {
   };
 
     const handleEditTask = (task: BoardTask) => {
-    if (isBoardReadOnly) {
-      alert("This project is archived. Restore it to make changes.");
-      return;
-    }
-    setEditingTask(task);
-    setEditOpen(true);
-  };
+  if (isBoardReadOnly) {
+    alert("This project is archived. Restore it to make changes.");
+    return;
+  }
+
+  // Normalize for EditTaskModal contract
+  setEditingTask({
+    ...task,
+    title: task.title ?? "",
+  });
+
+  setEditOpen(true);
+};
+
 
 
   const handleEditSaved = async () => {
@@ -333,31 +340,24 @@ if (overdue) {
 
     // ✅ Minimal + consistent payload (avoid sending created_at/updated_at)
     const insertPayload = {
-      milestone_id: milestoneId,
-      title: (values.title ?? "").trim(),
-      description: cleanText(values.description),
+  milestone_id: milestoneId,
+  title: (values.title ?? "").trim(),
 
-      sequence_group,
+  sequence_group,
 
-      planned_start: cleanDate(values.planned_start),
-      planned_end: cleanDate(values.planned_end),
+  // Task-level fields only
+  weight: cleanNumber(values.weight, 0),
 
-      // Contract: start/end must be null on creation
-      actual_start: null,
-      actual_end: null,
+  // lifecycle-controlled
+  actual_start: null,
+  actual_end: null,
+  status: "pending",
 
-      // status-date consistency
-      status: "pending",
-      priority: "medium",
+  // computed
+  planned_progress: 0,
+  progress: 0,
+};
 
-      // numeric fields
-      weight: cleanNumber(values.weight, 0),
-      budgeted_cost: cleanNumber(values.budgeted_cost, 0),
-      actual_cost: 0,
-
-      planned_progress: 0,
-      progress: 0,
-    };
 
     // Basic guard: title required
     if (!insertPayload.title) {
@@ -497,7 +497,6 @@ if (overdue) {
         }
       : null
   }
-  isReadOnly={isBoardReadOnly}
   onClose={handleCloseDrawer}
 />
 

@@ -13,7 +13,8 @@ type Props = {
   existingSubtasks: any[];
   canEdit?: boolean;
   canDelete?: boolean;
-  onChanged?: () => void; // parent reload hook
+  onChanged?: () => void;
+  taskActualStart?: string | null; // NEW: passed from parent
 };
 
 export default function SubtaskCard({
@@ -22,6 +23,7 @@ export default function SubtaskCard({
   canEdit = true,
   canDelete = true,
   onChanged,
+  taskActualStart, // NEW
 }: Props) {
   const { pushToast } = useToast();
 
@@ -34,7 +36,13 @@ export default function SubtaskCard({
 
   const handleToggleDone = async () => {
     if (!canEdit) {
-      pushToast("You don’t have permission to edit this deliverable.", "warning");
+      pushToast("You don't have permission to edit this deliverable.", "warning");
+      return;
+    }
+
+    // 🔒 NEW GUARD: Block completion if task not started
+    if (!taskActualStart) {
+      pushToast("Start the task before completing deliverables", "warning");
       return;
     }
 
@@ -77,7 +85,7 @@ export default function SubtaskCard({
 
   const handleDelete = async () => {
     if (!canDelete) {
-      pushToast("You don’t have permission to delete this deliverable.", "warning");
+      pushToast("You don't have permission to delete this deliverable.", "warning");
       return;
     }
 

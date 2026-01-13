@@ -13,7 +13,9 @@ type Props = {
   onClose: () => void;
   canEdit?: boolean;
   canDelete?: boolean;
+  isReadOnly?: boolean; // NEW: from TaskFlowBoard
 };
+
 function TaskStatusBadge({ task }: { task: any }) {
   let label = "Not started";
   let classes = "bg-slate-100 text-slate-700";
@@ -35,12 +37,12 @@ function TaskStatusBadge({ task }: { task: any }) {
   );
 }
 
-
 export default function TaskDetailsDrawer({
   open,
   task,
   onClose,
   canEdit = true,
+  isReadOnly = false, // NEW
 }: Props) {
   const { pushToast } = useToast();
   const [taskState, setTaskState] = useState<any | null>(null);
@@ -51,10 +53,13 @@ export default function TaskDetailsDrawer({
   const [createOpen, setCreateOpen] = useState(false);
 
   const taskId = taskState?.id ?? null;
+  const taskActualStart = taskState?.actual_start ?? null; // NEW: track for guards
 
   const allDeliverablesCompleted =
     subtasks.length > 0 &&
     subtasks.every((s) => s.is_done === true);
+
+  const effectiveCanEdit = canEdit && !isReadOnly; // NEW: combine permissions
 
   /* ----------------------------------------
      LOAD DELIVERABLES
@@ -84,37 +89,36 @@ export default function TaskDetailsDrawer({
   };
 
   useEffect(() => {
-  if (open && task) {
-    setTaskState(task);
-  }
-}
-, [open, task]);
+    if (open && task) {
+      setTaskState(task);
+    }
+  }, [open, task]);
 
-useEffect(() => {
-  if (!open || !taskState?.id) return;
-  void loadSubtasks();
-}, [open, taskState?.id]);
-
+  useEffect(() => {
+    if (!open || !taskState?.id) return;
+    void loadSubtasks();
+  }, [open, taskState?.id]);
 
   if (!open || !taskState) return null;
-const refreshTask = async () => {
-  if (!taskId) return;
 
-  const { data } = await supabase
-    .from("tasks")
-    .select("*")
-    .eq("id", taskId)
-    .single();
+  const refreshTask = async () => {
+    if (!taskId) return;
 
-  if (data) setTaskState(data);
-};
+    const { data } = await supabase
+      .from("tasks")
+      .select("*")
+      .eq("id", taskId)
+      .single();
+
+    if (data) setTaskState(data);
+  };
 
   /* ----------------------------------------
      TASK LIFECYCLE ACTIONS
   ---------------------------------------- */
 
   const handleStartTask = async () => {
-    if (!canEdit) return;
+    if (!effectiveCanEdit) return;
 
     const { error } = await supabase
       .from("tasks")
@@ -135,7 +139,7 @@ const refreshTask = async () => {
   };
 
   const handleCompleteTask = async () => {
-    if (!canEdit) return;
+    if (!effectiveCanEdit) return;
 
     if (!allDeliverablesCompleted) {
       pushToast(
@@ -178,14 +182,13 @@ const refreshTask = async () => {
       >
         {/* TASK HEADER + LIFECYCLE */}
         <div className="p-6 border-b space-y-3">
-  <div className="flex items-center justify-between gap-3">
-    <h2 className="text-lg font-semibold truncate">
-      {taskState.title || "Untitled Task"}
-    </h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold truncate">
+              {taskState.title || "Untitled Task"}
+            </h2>
 
-    <TaskStatusBadge task={taskState} />
-  </div>
-
+            <TaskStatusBadge task={taskState} />
+          </div>
 
           {taskState.description && (
             <p className="text-sm text-slate-600 whitespace-pre-wrap">
@@ -194,7 +197,7 @@ const refreshTask = async () => {
           )}
 
           <div className="flex gap-2">
-            {!taskState.actual_start && canEdit && (
+            {!taskState.actual_start && effectiveCanEdit && (
               <button
                 onClick={handleStartTask}
                 className="px-3 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
@@ -205,7 +208,7 @@ const refreshTask = async () => {
 
             {taskState.actual_start &&
               !taskState.actual_end &&
-              canEdit &&
+              effectiveCanEdit &&
               allDeliverablesCompleted && (
                 <button
                   onClick={handleCompleteTask}
@@ -217,6 +220,16 @@ const refreshTask = async () => {
           </div>
         </div>
 
+        {/* 🔒 NEW: Task Not Started Warning */}
+        {!taskActualStart && !isReadOnly && (
+          <div className="mx-6 mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <div className="font-semibold mb-1">Task not started</div>
+            <div className="text-xs">
+              Click "Start Task" above before completing deliverables
+            </div>
+          </div>
+        )}
+
         {/* DELIVERABLES */}
         <div className="p-6 space-y-4">
           <div className="flex items-center justify-between">
@@ -225,16 +238,16 @@ const refreshTask = async () => {
             <button
               className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
               onClick={() => {
-                if (!canEdit) {
+                if (!effectiveCanEdit) {
                   pushToast(
-                    "You don’t have permission to add deliverables.",
+                    "You don't have permission to add deliverables.",
                     "warning"
                   );
                   return;
                 }
                 setCreateOpen(true);
               }}
-              disabled={!canEdit}
+              disabled={!effectiveCanEdit}
             >
               Add Deliverable
             </button>
@@ -261,13 +274,13 @@ const refreshTask = async () => {
                   key={s.id}
                   subtask={s}
                   existingSubtasks={subtasks}
-                  canEdit={canEdit}
-                  canDelete={canEdit}
+                  canEdit={effectiveCanEdit}
+                  canDelete={effectiveCanEdit}
+                  taskActualStart={taskActualStart} // NEW: pass down
                   onChanged={async () => {
-                  await loadSubtasks();
-                  await refreshTask();
-}}
-
+                    await loadSubtasks();
+                    await refreshTask();
+                  }}
                 />
               ))}
             </div>
@@ -279,6 +292,7 @@ const refreshTask = async () => {
           open={createOpen}
           taskId={taskId}
           existingSubtasks={subtasks}
+          taskActualStart={taskActualStart} // NEW: pass down
           onClose={() => setCreateOpen(false)}
           onCreated={async () => {
             setCreateOpen(false);

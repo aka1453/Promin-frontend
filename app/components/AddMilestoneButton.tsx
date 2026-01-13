@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 
 export default function AddMilestoneButton({
@@ -12,41 +12,57 @@ export default function AddMilestoneButton({
   canCreate: boolean;
   onCreated?: () => void;
 }) {
-
-
-
   const [open, setOpen] = useState(false);
 
+  // Phase 3A rule:
+  // - Milestone create inputs are restricted to: name, weight
   const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [plannedStart, setPlannedStart] = useState("");
-  const [plannedEnd, setPlannedEnd] = useState("");
-  const [status, setStatus] = useState("pending");
+  const [weight, setWeight] = useState("0");
 
   const [loading, setLoading] = useState(false);
 
-  async function createMilestone() {
-  if (!canCreate) {
-    alert("You do not have permission to create milestones.");
-    return;
-  }
+  useEffect(() => {
+    if (!open) return;
+    // reset each open
+    setName("");
+    setWeight("0");
+    setLoading(false);
+  }, [open]);
 
-    if (!name.trim()) {
+  async function createMilestone() {
+    if (!canCreate) {
+      alert("You do not have permission to create milestones.");
+      return;
+    }
+
+    const trimmed = name.trim();
+    if (!trimmed) {
       alert("Milestone name is required.");
+      return;
+    }
+
+    const w = Number(weight);
+    if (!Number.isFinite(w) || w < 0) {
+      alert("Weight must be a valid non-negative number.");
       return;
     }
 
     setLoading(true);
 
+    // Keep computed model clean:
+    // - status/dates/costs are computed bottom-up
+    // - insert minimal fields only
     const { error } = await supabase.from("milestones").insert({
       project_id: projectId,
-      name,
-      description: description || null,
-      planned_start: plannedStart || null,
-      planned_end: plannedEnd || null,
+      name: trimmed,
+      weight: w,
+      status: "pending",
+      planned_start: null,
+      planned_end: null,
       actual_start: null,
       actual_end: null,
-      status,
+      budgeted_cost: 0,
+      actual_cost: 0,
     });
 
     setLoading(false);
@@ -57,36 +73,27 @@ export default function AddMilestoneButton({
       return;
     }
 
-    // Reset form
-    setName("");
-    setDescription("");
-    setPlannedStart("");
-    setPlannedEnd("");
-    setStatus("pending");
-
     setOpen(false);
-
-    if (onCreated) onCreated();
+    onCreated?.();
   }
 
   return (
     <>
       <button
-  disabled={!canCreate}
-  className={`px-4 py-2 rounded text-white
+        disabled={!canCreate}
+        className={`px-4 py-2 rounded text-white
     ${
       !canCreate
         ? "bg-gray-300 cursor-not-allowed"
         : "bg-green-600 hover:bg-green-700"
     }`}
-  onClick={() => {
-    if (!canCreate) return;
-    setOpen(true);
-  }}
->
-  + Add Milestone
-</button>
-
+        onClick={() => {
+          if (!canCreate) return;
+          setOpen(true);
+        }}
+      >
+        + Add Milestone
+      </button>
 
       {open && (
         <div
@@ -99,7 +106,6 @@ export default function AddMilestoneButton({
           >
             <h2 className="text-xl font-semibold mb-4">New Milestone</h2>
 
-            {/* Name */}
             <label className="block text-sm font-medium">Name</label>
             <input
               className="w-full border rounded px-3 py-2 mb-4"
@@ -108,45 +114,18 @@ export default function AddMilestoneButton({
               onChange={(e) => setName(e.target.value)}
             />
 
-            {/* Description */}
-            <label className="block text-sm font-medium">Description</label>
-            <textarea
-              className="w-full border rounded px-3 py-2 mb-4"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-
-            {/* Planned Start */}
-            <label className="block text-sm font-medium">Planned Start</label>
+            <label className="block text-sm font-medium">Weight (%)</label>
             <input
-              type="date"
-              className="w-full border rounded px-3 py-2 mb-4"
-              value={plannedStart}
-              onChange={(e) => setPlannedStart(e.target.value)}
+              type="number"
+              className="w-full border rounded px-3 py-2 mb-2"
+              value={weight}
+              onChange={(e) => setWeight(e.target.value)}
             />
 
-            {/* Planned End */}
-            <label className="block text-sm font-medium">Planned End</label>
-            <input
-              type="date"
-              className="w-full border rounded px-3 py-2 mb-4"
-              value={plannedEnd}
-              onChange={(e) => setPlannedEnd(e.target.value)}
-            />
+            <p className="mb-4 text-xs text-slate-500">
+              Milestone dates, costs, status, and progress are computed from Tasks and Deliverables.
+            </p>
 
-            {/* Status */}
-            <label className="block text-sm font-medium">Status</label>
-            <select
-              className="w-full border rounded px-3 py-2 mb-4"
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-            >
-              <option value="pending">Pending</option>
-              <option value="in_progress">In Progress</option>
-              <option value="completed">Completed</option>
-            </select>
-
-            {/* Buttons */}
             <div className="flex justify-end gap-2 mt-4">
               <button
                 className="px-4 py-2 bg-gray-200 rounded"

@@ -10,6 +10,7 @@ type Props = {
   open: boolean;
   taskId: number;
   existingSubtasks: any[];
+  taskActualStart?: string | null; // NEW: passed from parent
   onClose: () => void;
   onCreated?: () => void;
 };
@@ -18,6 +19,7 @@ export default function SubtaskCreateModal({
   open,
   taskId,
   existingSubtasks,
+  taskActualStart, // NEW
   onClose,
   onCreated,
 }: Props) {
@@ -41,6 +43,9 @@ export default function SubtaskCreateModal({
     );
     return Number.isFinite(sum) ? sum : 0;
   }, [existingSubtasks]);
+
+  // 🔒 NEW: Determine if "mark as done" should be allowed
+  const canMarkDoneOnCreate = !!taskActualStart;
 
   useEffect(() => {
     if (!open) return;
@@ -96,6 +101,7 @@ export default function SubtaskCreateModal({
         budgeted_cost: budgetedCost !== "" ? Number(budgetedCost) : null,
         actual_cost: actualCost !== "" ? Number(actualCost) : null,
 
+        // 🔒 NEW: Force is_done to false if task not started
         is_done: false,
         completed_at: null,
       };
@@ -213,6 +219,16 @@ export default function SubtaskCreateModal({
             </div>
           </div>
         </div>
+
+        {/* 🔒 NEW: Info message when task not started */}
+        {!canMarkDoneOnCreate && (
+          <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+            <div className="font-semibold">Note</div>
+            <div>
+              Deliverables can only be marked as done after the task is started
+            </div>
+          </div>
+        )}
 
         <div className="flex justify-end gap-2 mt-5">
           <button className="px-3 py-2 border rounded" onClick={onClose} disabled={saving}>

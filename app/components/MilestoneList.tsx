@@ -1,3 +1,4 @@
+// app/components/MilestoneList.tsx
 "use client";
 
 import MilestoneCard from "./MilestoneCard";
@@ -8,31 +9,25 @@ type Props = {
   projectId: number;
   canEdit: boolean;
   canDelete: boolean;
+  onMilestoneUpdated?: () => void | Promise<void>;
 };
-
 
 export default function MilestoneList({
   milestones,
   projectId,
   canEdit,
   canDelete,
+  onMilestoneUpdated,
 }: Props) {
-  if (!milestones || milestones.length === 0) {
-    return (
-      <p className="text-gray-500 mt-4">
-        No milestones yet. Create one to get started.
-      </p>
-    );
-  }
-
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
       {milestones.map((m) => (
         <MilestoneCard
           key={m.id}
           milestone={m}
           canEdit={canEdit}
           canDelete={canDelete}
+          onUpdated={onMilestoneUpdated}
         />
       ))}
     </div>
