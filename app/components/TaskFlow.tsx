@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabaseClient";
+import { queryTasksOrdered } from "../lib/queryTasks";
 import type { Task } from "../types/task";
 import TaskCard from "./TaskCard";
 import AddTaskButton from "./AddTaskButton";
@@ -19,11 +19,7 @@ export default function TaskFlow({ milestoneId }: Props) {
   async function loadTasks() {
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from("tasks")
-      .select("*")
-      .eq("milestone_id", milestoneId)
-      .order("id");
+    const { data, error } = await queryTasksOrdered(milestoneId);
 
     if (!error && data) {
       setTasks(data as Task[]);

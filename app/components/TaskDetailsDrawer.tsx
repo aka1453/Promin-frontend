@@ -13,7 +13,8 @@ type Props = {
   onClose: () => void;
   canEdit?: boolean;
   canDelete?: boolean;
-  isReadOnly?: boolean; // NEW: from TaskFlowBoard
+  isReadOnly?: boolean;
+  onTaskUpdated?: () => void; // NEW: callback when task lifecycle changes
 };
 
 function TaskStatusBadge({ task }: { task: any }) {
@@ -42,7 +43,8 @@ export default function TaskDetailsDrawer({
   task,
   onClose,
   canEdit = true,
-  isReadOnly = false, // NEW
+  isReadOnly = false,
+  onTaskUpdated, // NEW
 }: Props) {
   const { pushToast } = useToast();
   const [taskState, setTaskState] = useState<any | null>(null);
@@ -53,13 +55,13 @@ export default function TaskDetailsDrawer({
   const [createOpen, setCreateOpen] = useState(false);
 
   const taskId = taskState?.id ?? null;
-  const taskActualStart = taskState?.actual_start ?? null; // NEW: track for guards
+  const taskActualStart = taskState?.actual_start ?? null;
 
   const allDeliverablesCompleted =
     subtasks.length > 0 &&
     subtasks.every((s) => s.is_done === true);
 
-  const effectiveCanEdit = canEdit && !isReadOnly; // NEW: combine permissions
+  const effectiveCanEdit = canEdit && !isReadOnly;
 
   /* ----------------------------------------
      LOAD DELIVERABLES
@@ -136,6 +138,7 @@ export default function TaskDetailsDrawer({
 
     pushToast("Task started.", "success");
     await refreshTask();
+    onTaskUpdated?.(); // NEW: notify parent
   };
 
   const handleCompleteTask = async () => {
@@ -168,6 +171,7 @@ export default function TaskDetailsDrawer({
 
     pushToast("Task completed.", "success");
     await refreshTask();
+    onTaskUpdated?.(); // NEW: notify parent
   };
 
   return (
@@ -220,7 +224,7 @@ export default function TaskDetailsDrawer({
           </div>
         </div>
 
-        {/* 🔒 NEW: Task Not Started Warning */}
+        {/* Task Not Started Warning */}
         {!taskActualStart && !isReadOnly && (
           <div className="mx-6 mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             <div className="font-semibold mb-1">Task not started</div>
@@ -276,10 +280,11 @@ export default function TaskDetailsDrawer({
                   existingSubtasks={subtasks}
                   canEdit={effectiveCanEdit}
                   canDelete={effectiveCanEdit}
-                  taskActualStart={taskActualStart} // NEW: pass down
+                  taskActualStart={taskActualStart}
                   onChanged={async () => {
                     await loadSubtasks();
                     await refreshTask();
+                    onTaskUpdated?.(); // NEW: notify parent on deliverable changes too
                   }}
                 />
               ))}
@@ -292,12 +297,13 @@ export default function TaskDetailsDrawer({
           open={createOpen}
           taskId={taskId}
           existingSubtasks={subtasks}
-          taskActualStart={taskActualStart} // NEW: pass down
+          taskActualStart={taskActualStart}
           onClose={() => setCreateOpen(false)}
           onCreated={async () => {
             setCreateOpen(false);
             await loadSubtasks();
             await refreshTask();
+            onTaskUpdated?.(); // NEW: notify parent
           }}
         />
       </div>

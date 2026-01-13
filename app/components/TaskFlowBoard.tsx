@@ -3,7 +3,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { recalcMilestone } from "../lib/recalcMilestone"; // ✅ NEW (safe after create)
+import { recalcMilestone } from "../lib/recalcMilestone";
+import { queryTasksOrdered } from "../lib/queryTasks";
 import TaskDetailsDrawer from "./TaskDetailsDrawer";
 import EditTaskModal from "./EditTaskModal";
 import AddTaskModal, { NewTaskValues } from "./AddTaskModal";
@@ -35,17 +36,12 @@ type BoardTask = {
 
   planned_progress: number | null;
 
-  // ✅ IMPORTANT:
-  // Your recalcTask writes actual progress into `tasks.progress`
-  // so the UI must read from `progress`.
   progress: number | null;
 
-  // (Optional legacy/unused in your current DB logic, but leaving compatible)
   actual_progress?: number | null;
 
   status?: "pending" | "in_progress" | "completed" | string | null;
 
-  // ✅ F11.1 — critical detection (UI-only, not DB)
   isCritical?: boolean;
   criticalReason?: string;
 };
@@ -53,17 +49,10 @@ type BoardTask = {
 type Props = {
   milestoneId: number;
 
-  // ✅ When true, all task mutations must be blocked in the UI
   isReadOnly?: boolean;
 
-  /**
-   * ✅ OPTIONAL:
-   * Used by the milestone page to refresh milestone header after task/Deliverable changes.
-   * We keep it optional so we do NOT break any other pages using TaskFlowBoard.
-   */
   onMilestoneUpdated?: () => void | Promise<void>;
 };
-
 
 type AddContext =
   | { mode: "sequential"; nextGroup: number }
@@ -79,10 +68,9 @@ export default function TaskFlowBoard({
   isReadOnly,
   onMilestoneUpdated,
 }: Props) {
+  const isBoardReadOnly = !!isReadOnly;
 
-    const isBoardReadOnly = !!isReadOnly;
-
-    const [tasks, setTasks] = useState<BoardTask[]>([]);
+  const [tasks, setTasks] = useState<BoardTask[]>([]);
 
   const [loading, setLoading] = useState(false);
 
@@ -98,12 +86,7 @@ export default function TaskFlowBoard({
   async function loadTasks() {
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from("tasks")
-      .select("*")
-      .eq("milestone_id", milestoneId)
-      .order("sequence_group", { ascending: true })
-      .order("planned_start", { ascending: true });
+    const { data, error } = await queryTasksOrdered(milestoneId);
 
     if (error) {
       console.error("Failed to load tasks:", error);
@@ -127,7 +110,6 @@ export default function TaskFlowBoard({
 
     const toTime = (iso: string | null) => {
       if (!iso) return null;
-      // treat YYYY-MM-DD as local midnight
       if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return new Date(`${iso}T00:00:00`).getTime();
       const t = new Date(iso).getTime();
       return Number.isFinite(t) ? t : null;
@@ -135,7 +117,6 @@ export default function TaskFlowBoard({
 
     const todayTime = toTime(todayISO);
 
-    // Consider only OPEN tasks (not explicitly completed) that have a planned_end
     const openWithPlannedEnd = tasks
       .filter((t) => !t.actual_end && !!t.planned_end)
       .map((t) => ({
@@ -174,12 +155,11 @@ export default function TaskFlowBoard({
       const isCritical = overdue || isLatestEndingOpen;
 
       let reason: string | undefined;
-if (overdue) {
-  reason = "This task is overdue and is delaying milestone completion";
-} else if (isLatestEndingOpen) {
-  reason = "This task determines milestone completion";
-}
-
+      if (overdue) {
+        reason = "This task is overdue and is delaying milestone completion";
+      } else if (isLatestEndingOpen) {
+        reason = "This task determines milestone completion";
+      }
 
       return {
         ...t,
@@ -222,29 +202,19 @@ if (overdue) {
     setDrawerOpen(false);
     setSelectedTask(null);
 
-    // ✅ refresh tasks (in case progress/dates updated)
     await loadTasks();
 
-    // ✅ refresh milestone header on page (planned/actual progress etc.)
     await onMilestoneUpdated?.();
   };
 
-    const handleEditTask = (task: BoardTask) => {
-  if (isBoardReadOnly) {
-    alert("This project is archived. Restore it to make changes.");
-    return;
-  }
-
-  // Normalize for EditTaskModal contract
-  setEditingTask({
-    ...task,
-    title: task.title ?? "",
-  });
-
-  setEditOpen(true);
-};
-
-
+  const handleEditTask = (task: BoardTask) => {
+    if (isBoardReadOnly) {
+      alert("This project is archived. Restore it to make changes.");
+      return;
+    }
+    setEditingTask(task);
+    setEditOpen(true);
+  };
 
   const handleEditSaved = async () => {
     setEditOpen(false);
@@ -254,7 +224,7 @@ if (overdue) {
     await onMilestoneUpdated?.();
   };
 
-    const handleDeleteTask = async (task: BoardTask) => {
+  const handleDeleteTask = async (task: BoardTask) => {
     if (isBoardReadOnly) {
       alert("This project is archived. Restore it to make changes.");
       return;
@@ -264,7 +234,6 @@ if (overdue) {
       `Delete task "${task.title}"? This will affect milestone calculations.`
     );
     if (!ok) return;
-
 
     const { error } = await supabase.from("tasks").delete().eq("id", task.id);
 
@@ -283,7 +252,7 @@ if (overdue) {
     }
   };
 
-    const handleAddSequentialClick = () => {
+  const handleAddSequentialClick = () => {
     if (isBoardReadOnly) {
       alert("This project is archived. Restore it to make changes.");
       return;
@@ -297,8 +266,7 @@ if (overdue) {
     setAddOpen(true);
   };
 
-
-    const handleAddParallelClick = (groupKey: number) => {
+  const handleAddParallelClick = (groupKey: number) => {
     if (isBoardReadOnly) {
       alert("This project is archived. Restore it to make changes.");
       return;
@@ -308,21 +276,18 @@ if (overdue) {
     setAddOpen(true);
   };
 
-
-    const handleCreateTask = async (values: NewTaskValues) => {
+  const handleCreateTask = async (values: NewTaskValues) => {
     if (isBoardReadOnly) {
       alert("This project is archived. Restore it to make changes.");
       return;
     }
     if (!addContext) return;
 
-
     const sequence_group =
       addContext.mode === "sequential"
         ? addContext.nextGroup
         : addContext.groupKey;
 
-    // Helpers: normalize input
     const cleanText = (v: any) => {
       const s = typeof v === "string" ? v.trim() : "";
       return s.length ? s : null;
@@ -335,31 +300,33 @@ if (overdue) {
 
     const cleanDate = (v: any) => {
       const s = typeof v === "string" ? v.trim() : "";
-      return s.length ? s : null; // keep YYYY-MM-DD strings as-is
+      return s.length ? s : null;
     };
 
-    // ✅ Minimal + consistent payload (avoid sending created_at/updated_at)
     const insertPayload = {
-  milestone_id: milestoneId,
-  title: (values.title ?? "").trim(),
+      milestone_id: milestoneId,
+      title: (values.title ?? "").trim(),
+      description: cleanText(values.description),
 
-  sequence_group,
+      sequence_group,
 
-  // Task-level fields only
-  weight: cleanNumber(values.weight, 0),
+      planned_start: cleanDate(values.planned_start),
+      planned_end: cleanDate(values.planned_end),
 
-  // lifecycle-controlled
-  actual_start: null,
-  actual_end: null,
-  status: "pending",
+      actual_start: null,
+      actual_end: null,
 
-  // computed
-  planned_progress: 0,
-  progress: 0,
-};
+      status: "pending",
+      priority: "medium",
 
+      weight: cleanNumber(values.weight, 0),
+      budgeted_cost: cleanNumber(values.budgeted_cost, 0),
+      actual_cost: 0,
 
-    // Basic guard: title required
+      planned_progress: 0,
+      progress: 0,
+    };
+
     if (!insertPayload.title) {
       alert("Task title is required");
       return;
@@ -368,8 +335,7 @@ if (overdue) {
     const { error } = await supabase.from("tasks").insert(insertPayload);
 
     if (error) {
-      // ✅ Print full error so we can see EXACT constraint + column causing it
-      console.error("❌ Failed to create task:", {
+      console.error("Failed to create task:", {
         message: error.message,
         details: (error as any).details,
         hint: (error as any).hint,
@@ -382,60 +348,59 @@ if (overdue) {
     setAddOpen(false);
     setAddContext(null);
 
-    // ✅ Safe refresh path (does not touch task actual_start)
     try {
       await recalcMilestone(milestoneId);
     } catch (e) {
-      console.error("❌ recalcMilestone failed after create:", e);
+      console.error("recalcMilestone failed after create:", e);
     }
 
     await loadTasks();
     await onMilestoneUpdated?.();
   };
 
-    return (
+  const handleTaskUpdated = async () => {
+    await loadTasks();
+    await onMilestoneUpdated?.();
+  };
+
+  return (
     <div className="relative">
       {isBoardReadOnly && (
-  <div className="mb-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-    <span>This project is archived. Restore it to make changes.</span>
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+          <span>This project is archived. Restore it to make changes.</span>
 
-    <button
-      onClick={() => {
-        window.location.href = "/projects/settings";
-      }}
-      className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
-    >
-      Restore project
-    </button>
-  </div>
-)}
-
+          <button
+            onClick={() => {
+              window.location.href = "/projects/settings";
+            }}
+            className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+          >
+            Restore project
+          </button>
+        </div>
+      )}
 
       <div className="mb-3 flex items-center justify-between">
-  {/* LEFT: Critical task summary */}
-  {tasksWithCritical.some((t) => t.isCritical) && (
-    <div className="flex items-center gap-1.5 text-xs font-semibold text-rose-700">
-      <span>⚠</span>
-      <span>
-        Critical tasks:{" "}
-        {tasksWithCritical.filter((t) => t.isCritical).length}
-      </span>
-    </div>
-  )}
+        {tasksWithCritical.some((t) => t.isCritical) && (
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-rose-700">
+            <span>⚠</span>
+            <span>
+              Critical tasks:{" "}
+              {tasksWithCritical.filter((t) => t.isCritical).length}
+            </span>
+          </div>
+        )}
 
-  {/* RIGHT: Add Task */}
-    <button
-    type="button"
-    onClick={handleAddSequentialClick}
-    disabled={isBoardReadOnly}
-    className={`rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold shadow-sm
-      ${isBoardReadOnly ? "cursor-not-allowed opacity-50" : "text-slate-700 hover:bg-slate-50"}`}
-  >
-    + Add Task (End)
-  </button>
-
-</div>
-
+        <button
+          type="button"
+          onClick={handleAddSequentialClick}
+          disabled={isBoardReadOnly}
+          className={`rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold shadow-sm
+            ${isBoardReadOnly ? "cursor-not-allowed opacity-50" : "text-slate-700 hover:bg-slate-50"}`}
+        >
+          + Add Task (End)
+        </button>
+      </div>
 
       {loading && <p className="mb-4 text-xs text-slate-500">Loading tasks…</p>}
 
@@ -449,7 +414,7 @@ if (overdue) {
         {grouped.map((g, idx) => (
           <div key={g.groupKey} className="relative flex flex-col gap-4">
             {g.tasks.map((task) => (
-                            <TaskCard
+              <TaskCard
                 key={task.id}
                 task={task}
                 isReadOnly={isBoardReadOnly}
@@ -457,10 +422,9 @@ if (overdue) {
                 onEdit={() => handleEditTask(task)}
                 onDelete={() => handleDeleteTask(task)}
               />
-
             ))}
 
-                        <button
+            <button
               type="button"
               onClick={() => handleAddParallelClick(g.groupKey)}
               disabled={isBoardReadOnly}
@@ -469,7 +433,6 @@ if (overdue) {
             >
               + Add Parallel Task
             </button>
-
 
             {idx < grouped.length - 1 && (
               <div className="pointer-events-none absolute right-[-60px] top-1/2 h-[2px] w-[60px] -translate-y-1/2 bg-slate-300">
@@ -487,19 +450,20 @@ if (overdue) {
       </div>
 
       <TaskDetailsDrawer
-  open={drawerOpen}
-  task={
-    selectedTask
-      ? {
-          ...selectedTask,
-          actual_progress:
-            selectedTask.actual_progress ?? selectedTask.progress ?? 0,
+        open={drawerOpen}
+        task={
+          selectedTask
+            ? {
+                ...selectedTask,
+                actual_progress:
+                  selectedTask.actual_progress ?? selectedTask.progress ?? 0,
+              }
+            : null
         }
-      : null
-  }
-  onClose={handleCloseDrawer}
-/>
-
+        isReadOnly={isBoardReadOnly}
+        onClose={handleCloseDrawer}
+        onTaskUpdated={handleTaskUpdated}
+      />
 
       <EditTaskModal
         task={editingTask}
@@ -540,15 +504,10 @@ function TaskCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-
   const plannedProgress = Number(task.planned_progress ?? 0);
 
-  // ✅ FIX:
-  // actual progress is stored in `task.progress` by recalcTask()
-  // fallback to `actual_progress` only if you still have it in some old rows
   const actualProgress = Number(task.progress ?? task.actual_progress ?? 0);
 
-  // F1.1 — Deliverable all done but task not explicitly completed
   const allSubtasksDone = actualProgress === 100 && !task.actual_end;
 
   const critical = !!task.isCritical;
@@ -559,15 +518,13 @@ function TaskCard({
 transition-all duration-200 hover:-translate-y-1 hover:shadow-xl active:scale-[0.99]
 ${critical ? "border-rose-300 bg-rose-50/30" : "border-slate-200 hover:border-slate-300"}`}
     >
-            <div className="absolute right-3 top-3">
-  <TaskCardMenu
-    onEdit={onEdit}
-    onDelete={onDelete}
-    isReadOnly={isReadOnly}
-  />
-</div>
-
-
+      <div className="absolute right-3 top-3">
+        <TaskCardMenu
+          onEdit={onEdit}
+          onDelete={onDelete}
+          isReadOnly={isReadOnly}
+        />
+      </div>
 
       <div className="mb-4">
         <div className="flex items-start justify-between gap-3 pr-8">
@@ -608,12 +565,12 @@ ${critical ? "border-rose-300 bg-rose-50/30" : "border-slate-200 hover:border-sl
                 : "pending"}
             </span>
           </div>
-  <div className="text-[11px] text-slate-500">
-    Weight:{" "}
-    <span className="font-semibold text-slate-700">
-      {typeof task.weight === "number" ? `${task.weight}%` : "—"}
-    </span>
-  </div>
+          <div className="text-[11px] text-slate-500">
+            Weight:{" "}
+            <span className="font-semibold text-slate-700">
+              {typeof task.weight === "number" ? `${task.weight}%` : "—"}
+            </span>
+          </div>
 
           {allSubtasksDone && (
             <div className="text-[10px] font-medium text-amber-600">
@@ -719,9 +676,8 @@ function ProgressRow({
       <div className="mb-1 flex items-center justify-between text-[11px]">
         <span className="font-semibold text-slate-700">{label}</span>
         <span className="font-semibold text-slate-900">
-  {formatPercent(safe, 2)}
-</span>
-
+          {formatPercent(safe, 2)}
+        </span>
       </div>
       <div className="h-2.5 overflow-hidden rounded-full bg-slate-200">
         <div
@@ -742,62 +698,58 @@ function TaskCardMenu({
   onDelete: () => void;
   isReadOnly: boolean;
 }) {
-
   const [open, setOpen] = useState(false);
 
   return (
     <div className="relative text-xs">
       <button
-  type="button"
-  disabled={isReadOnly}
-  className={`flex h-7 w-7 items-center justify-center rounded-full border text-slate-500
-    ${
-      isReadOnly
-        ? "border-slate-200 bg-slate-100 cursor-not-allowed opacity-50"
-        : "border-slate-200 bg-white hover:bg-slate-50"
-    }`}
-  onClick={() => {
-    if (isReadOnly) return;
-    setOpen((v) => !v);
-  }}
->
-  ⋮
-</button>
-
+        type="button"
+        disabled={isReadOnly}
+        className={`flex h-7 w-7 items-center justify-center rounded-full border text-slate-500
+          ${
+            isReadOnly
+              ? "border-slate-200 bg-slate-100 cursor-not-allowed opacity-50"
+              : "border-slate-200 bg-white hover:bg-slate-50"
+          }`}
+        onClick={() => {
+          if (isReadOnly) return;
+          setOpen((v) => !v);
+        }}
+      >
+        ⋮
+      </button>
 
       {open && (
         <div className="absolute right-0 mt-1 w-32 rounded-md border border-slate-200 bg-white shadow-lg">
           <button
-  disabled={isReadOnly}
-  className={`block w-full px-3 py-1.5 text-left text-[11px]
-    ${isReadOnly ? "text-slate-400 cursor-not-allowed" : "hover:bg-slate-50"}`}
-  onClick={() => {
-    if (isReadOnly) return;
-    setOpen(false);
-    onEdit();
-  }}
->
-  Edit task
-</button>
-
+            disabled={isReadOnly}
+            className={`block w-full px-3 py-1.5 text-left text-[11px]
+              ${isReadOnly ? "text-slate-400 cursor-not-allowed" : "hover:bg-slate-50"}`}
+            onClick={() => {
+              if (isReadOnly) return;
+              setOpen(false);
+              onEdit();
+            }}
+          >
+            Edit task
+          </button>
 
           <button
-  disabled={isReadOnly}
-  className={`block w-full px-3 py-1.5 text-left text-[11px]
-    ${
-      isReadOnly
-        ? "text-slate-400 cursor-not-allowed"
-        : "text-red-600 hover:bg-red-50"
-    }`}
-  onClick={() => {
-    if (isReadOnly) return;
-    setOpen(false);
-    onDelete();
-  }}
->
-  Delete task
-</button>
-
+            disabled={isReadOnly}
+            className={`block w-full px-3 py-1.5 text-left text-[11px]
+              ${
+                isReadOnly
+                  ? "text-slate-400 cursor-not-allowed"
+                  : "text-red-600 hover:bg-red-50"
+              }`}
+            onClick={() => {
+              if (isReadOnly) return;
+              setOpen(false);
+              onDelete();
+            }}
+          >
+            Delete task
+          </button>
         </div>
       )}
     </div>
