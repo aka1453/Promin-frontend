@@ -1,0 +1,19 @@
+# dependencies
+node_modules/
+
+# build output
+.next/
+dist/
+
+# env
+.env
+.env.local
+
+# Supabase CLI artifacts
+.supabase/
+
+# temp / archives
+*.tar.gz
+
+# OS / editor
+.DS_Store
