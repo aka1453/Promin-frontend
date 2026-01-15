@@ -17,3 +17,9 @@ dist/
 
 # OS / editor
 .DS_Store
+
+# ZIP exports (Claude uploads)
+*.zip
+
+# Supabase temp files
+supabase/.temp/
