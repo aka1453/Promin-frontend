@@ -1,221 +1,224 @@
 // app/components/EditSubtaskModal.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { recalcTask } from "../lib/recalcTask";
-import SubtaskFileSection from "./SubtaskFileSection";
+import { useToast } from "./ToastProvider";
 
-/* SAME ASSIGNEE LIST USED IN CREATE MODAL */
-const ASSIGNEES = ["Unassigned", "Amro", "Wife", "Ahmed", "Hadeel"];
+type Props = {
+  subtask: any;
+  existingSubtasks: any[];
+  onClose: () => void;
+  onSuccess: () => void;
+};
 
-/**
- * Phase 3A rule:
- * - Deliverable is the atomic planning unit.
- * - On edit, Deliverable allows: title, weight, planned_start/end, budgeted/actual cost, assigned_to.
- * - Completion (is_done) is handled via the Deliverable card checkbox, not via this edit modal.
- */
 export default function EditSubtaskModal({
-  open,
   subtask,
   existingSubtasks,
   onClose,
-  onSaved,
-}: any) {
-  const [title, setTitle] = useState("");
-  const [weight, setWeight] = useState("0");
-  const [plannedStart, setPlannedStart] = useState("");
-  const [plannedEnd, setPlannedEnd] = useState("");
-  const [budgetedCost, setBudgetedCost] = useState("");
-  const [actualCost, setActualCost] = useState("");
-  const [assignedUser, setAssignedUser] = useState("Unassigned");
+  onSuccess,
+}: Props) {
+  const { pushToast } = useToast();
+
+  const [title, setTitle] = useState(subtask?.title || "");
+  const [description, setDescription] = useState(subtask?.description || "");
+  const [weight, setWeight] = useState(String(subtask?.weight ?? 0));
+  const [plannedStart, setPlannedStart] = useState(subtask?.planned_start || "");
+  const [plannedEnd, setPlannedEnd] = useState(subtask?.planned_end || "");
+  const [budgetedCost, setBudgetedCost] = useState(
+    String(subtask?.budgeted_cost ?? 0)
+  );
+  const [actualCost, setActualCost] = useState(String(subtask?.actual_cost ?? 0));
 
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  /* ------------------------------------------------------------ */
-  /*    LOAD DELIVERABLE INTO FORM WHEN MODAL OPENS                */
-  /* ------------------------------------------------------------ */
-  useEffect(() => {
-    if (!subtask) return;
+  const otherSubtasks = existingSubtasks.filter((s) => s.id !== subtask.id);
+  const sumOtherWeights = otherSubtasks.reduce(
+    (sum, s) => sum + Number(s.weight ?? 0),
+    0
+  );
 
-    setTitle(subtask.title || "");
-    setWeight(String(subtask.weight ?? "0"));
-    setPlannedStart(subtask.planned_start || "");
-    setPlannedEnd(subtask.planned_end || "");
+  const currentWeight = Number(weight);
+  const totalWeight = sumOtherWeights + currentWeight;
+  const isOverWeight = totalWeight > 1.0;
 
-    setBudgetedCost(
-      subtask.budgeted_cost !== null && subtask.budgeted_cost !== undefined
-        ? String(subtask.budgeted_cost)
-        : ""
-    );
-
-    setActualCost(
-      subtask.actual_cost !== null && subtask.actual_cost !== undefined
-        ? String(subtask.actual_cost)
-        : ""
-    );
-
-    setAssignedUser(subtask.assigned_user || "Unassigned");
-  }, [subtask]);
-
-  if (!open || !subtask) return null;
-
-  /* ------------------------------------------------------------ */
-  /*                       SAVE CHANGES                           */
-  /* ------------------------------------------------------------ */
   const handleSave = async () => {
-    setError(null);
-
-    const t = title.trim();
-    if (!t) {
-      setError("Title is required.");
+    if (!title.trim()) {
+      pushToast("Title is required", "warning");
       return;
     }
 
-    const w = Number(weight);
-    if (!Number.isFinite(w) || w < 0) {
-      setError("Weight must be a valid non-negative number.");
+    if (isOverWeight) {
+      pushToast("Total weight cannot exceed 100%", "warning");
       return;
     }
 
     setSaving(true);
+    try {
+      const { error } = await supabase
+        .from("subtasks")
+        .update({
+          title: title.trim(),
+          description: description.trim() || null,
+          weight: Number(weight),
+          planned_start: plannedStart || null,
+          planned_end: plannedEnd || null,
+          budgeted_cost: Number(budgetedCost),
+          actual_cost: Number(actualCost),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", subtask.id);
 
-    const updatePayload: any = {
-      title: t,
-      weight: w,
+      if (error) {
+        console.error("Update subtask error:", error);
+        pushToast("Failed to update deliverable", "error");
+        return;
+      }
 
-      planned_start: plannedStart ? plannedStart : null,
-      planned_end: plannedEnd ? plannedEnd : null,
-
-      budgeted_cost: budgetedCost !== "" ? Number(budgetedCost) : null,
-      actual_cost: actualCost !== "" ? Number(actualCost) : null,
-
-      assigned_user: assignedUser === "Unassigned" ? null : assignedUser,
-    };
-
-    const { error: updateErr } = await supabase
-      .from("subtasks")
-      .update(updatePayload)
-      .eq("id", subtask.id);
-
-    if (updateErr) {
-      console.error("deliverable update error:", updateErr);
-      setError("Failed to update Deliverable.");
+      pushToast("Deliverable updated successfully", "success");
+      onSuccess();
+    } catch (e: any) {
+      console.error("Update subtask exception:", e);
+      pushToast(e?.message || "Failed to update deliverable", "error");
+    } finally {
       setSaving(false);
-      return;
     }
-
-    // Refresh rollups (deliverable -> task -> milestone -> project)
-    await recalcTask(subtask.task_id);
-
-    setSaving(false);
-    onSaved();
-    onClose();
   };
 
-  /* ------------------------------------------------------------ */
-  /*                            UI                                */
-  /* ------------------------------------------------------------ */
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [onClose]);
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[9999] overflow-y-auto">
-      <div className="bg-white w-full max-w-md rounded-xl p-6 shadow-lg max-h-[90vh] overflow-y-auto">
-        <h2 className="text-lg font-semibold mb-4">Edit Deliverable</h2>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Edit Deliverable</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+          >
+            ×
+          </button>
+        </div>
 
-        {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
-
-        <div className="space-y-3">
+        <div className="px-6 py-4 space-y-4">
           <div>
-            <label className="text-xs">Title</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Title *
+            </label>
             <input
-              className="w-full border px-3 py-2 rounded mt-1 text-sm"
+              type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              placeholder="Deliverable title"
             />
           </div>
 
           <div>
-            <label className="text-xs">Weight (%)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Description
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              placeholder="Optional description"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Weight (0-1) *
+            </label>
             <input
-              className="w-full border px-3 py-2 rounded mt-1 text-sm"
               type="number"
+              step="0.01"
+              min="0"
+              max="1"
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
             />
+            {isOverWeight && (
+              <p className="text-xs text-red-600 mt-1">
+                ⚠️ Total weight exceeds 100% ({(totalWeight * 100).toFixed(1)}%)
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs">Planned Start</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Planned Start
+              </label>
               <input
                 type="date"
-                className="w-full border px-3 py-2 rounded mt-1 text-sm"
                 value={plannedStart}
                 onChange={(e) => setPlannedStart(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               />
             </div>
-
             <div>
-              <label className="text-xs">Planned End</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Planned End
+              </label>
               <input
                 type="date"
-                className="w-full border px-3 py-2 rounded mt-1 text-sm"
                 value={plannedEnd}
                 onChange={(e) => setPlannedEnd(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs">Budgeted Cost</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Budgeted Cost
+              </label>
               <input
                 type="number"
-                className="w-full border px-3 py-2 rounded mt-1 text-sm"
+                step="0.01"
+                min="0"
                 value={budgetedCost}
                 onChange={(e) => setBudgetedCost(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               />
             </div>
-
             <div>
-              <label className="text-xs">Actual Cost</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Actual Cost
+              </label>
               <input
                 type="number"
-                className="w-full border px-3 py-2 rounded mt-1 text-sm"
+                step="0.01"
+                min="0"
                 value={actualCost}
                 onChange={(e) => setActualCost(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               />
             </div>
-          </div>
-
-          <div>
-            <label className="text-xs">Assigned To</label>
-            <select
-              className="w-full border px-3 py-2 rounded mt-1 text-sm"
-              value={assignedUser}
-              onChange={(e) => setAssignedUser(e.target.value)}
-            >
-              {ASSIGNEES.map((u) => (
-                <option key={u} value={u}>
-                  {u}
-                </option>
-              ))}
-            </select>
           </div>
         </div>
 
-        {/* FILE VERSION SECTION */}
-        <SubtaskFileSection subtaskId={subtask.id} subtaskTitle={title} />
-
-        <div className="flex justify-end gap-2 mt-5">
-          <button className="px-3 py-2 border rounded" onClick={onClose} disabled={saving}>
+        <div className="sticky bottom-0 bg-gray-50 px-6 py-4 flex justify-end gap-2 border-t">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+          >
             Cancel
           </button>
           <button
-            className="px-3 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
-            disabled={saving}
             onClick={handleSave}
+            disabled={saving || !title.trim() || isOverWeight}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? "Saving..." : "Save Changes"}
           </button>

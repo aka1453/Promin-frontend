@@ -1,26 +1,22 @@
+// app/components/AddSubtaskModal.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { recalcTask } from "../lib/recalcTask";
 import { useToast } from "./ToastProvider";
 
-const ASSIGNEES = ["Unassigned", "Amro", "Wife", "Ahmed", "Hadeel"];
-
 type Props = {
-  open: boolean;
   taskId: number;
-  existingSubtasks: Array<{ weight: number | null }>;
+  existingSubtasks: any[];
   onClose: () => void;
-  onCreated: () => void;
+  onSuccess: () => void;
 };
 
 export default function AddSubtaskModal({
-  open,
   taskId,
   existingSubtasks,
   onClose,
-  onCreated,
+  onSuccess,
 }: Props) {
   const { pushToast } = useToast();
 
@@ -29,226 +25,206 @@ export default function AddSubtaskModal({
   const [weight, setWeight] = useState("0");
   const [plannedStart, setPlannedStart] = useState("");
   const [plannedEnd, setPlannedEnd] = useState("");
-  const [budgetedCost, setBudgetedCost] = useState("");
-  const [actualCost, setActualCost] = useState("");
-  const [assignedUser, setAssignedUser] = useState("Unassigned");
-  const [isDone, setIsDone] = useState(false);
+  const [budgetedCost, setBudgetedCost] = useState("0");
+  const [actualCost, setActualCost] = useState("0");
 
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const currentWeightTotal = useMemo(() => {
-    return (existingSubtasks || []).reduce(
-      (sum, s) => sum + (Number(s.weight) || 0),
-      0
-    );
-  }, [existingSubtasks]);
+  const sumExistingWeights = (existingSubtasks || []).reduce(
+    (sum: number, s: any) => sum + Number(s.weight ?? 0),
+    0
+  );
 
-  useEffect(() => {
-    if (!open) return;
-
-    // Reset fields each open
-    setTitle("");
-    setDescription("");
-    setWeight("0");
-    setPlannedStart("");
-    setPlannedEnd("");
-    setBudgetedCost("");
-    setActualCost("");
-    setAssignedUser("Unassigned");
-    setIsDone(false);
-    setSaving(false);
-    setError(null);
-  }, [open]);
-
-  if (!open) return null;
+  const currentWeight = Number(weight);
+  const totalWeight = sumExistingWeights + currentWeight;
+  const isOverWeight = totalWeight > 1.0;
 
   const handleCreate = async () => {
-    setError(null);
-
-    const trimmedTitle = title.trim();
-    if (!trimmedTitle) {
-      setError("Title is required.");
+    if (!title.trim()) {
+      pushToast("Title is required", "warning");
       return;
     }
 
-    const w = Number(weight);
-    if (Number.isNaN(w) || w < 0) {
-      setError("Weight must be a valid number (0 or more).");
+    if (isOverWeight) {
+      pushToast("Total weight cannot exceed 100%", "warning");
       return;
     }
 
     setSaving(true);
-
     try {
-      const payload: any = {
+      const { error } = await supabase.from("subtasks").insert({
         task_id: taskId,
-        title: trimmedTitle,
+        title: title.trim(),
         description: description.trim() || null,
-        weight: w,
+        weight: Number(weight),
         planned_start: plannedStart || null,
         planned_end: plannedEnd || null,
-        budgeted_cost: budgetedCost !== "" ? Number(budgetedCost) : null,
-        actual_cost: actualCost !== "" ? Number(actualCost) : null,
-        assigned_user: assignedUser === "Unassigned" ? null : assignedUser,
-        is_done: isDone,
-        completed_at: isDone ? new Date().toISOString() : null,
-      };
+        budgeted_cost: Number(budgetedCost),
+        actual_cost: Number(actualCost),
+        is_done: false,
+      });
 
-      const { error: insertErr } = await supabase
-        .from("subtasks")
-        .insert(payload);
-
-      if (insertErr) {
-        console.error("insert deliverable error:", insertErr);
-        throw new Error(insertErr.message);
+      if (error) {
+        console.error("Create subtask error:", error);
+        pushToast("Failed to create deliverable", "error");
+        return;
       }
 
-      // Recompute rollups
-      await recalcTask(taskId);
-
-      pushToast("Deliverable created.", "success");
-      onCreated();
+      pushToast("Deliverable created successfully", "success");
+      onSuccess();
     } catch (e: any) {
-      console.error(e);
-      setError(e?.message || "Failed to create deliverable.");
-      pushToast("Failed to create deliverable.", "error");
+      console.error("Create subtask exception:", e);
+      pushToast(e?.message || "Failed to create deliverable", "error");
     } finally {
       setSaving(false);
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[9999] overflow-y-auto">
-      <div className="bg-white w-full max-w-md rounded-xl p-6 shadow-lg max-h-[90vh] overflow-y-auto">
-        <h2 className="text-lg font-semibold mb-1">Add Deliverable</h2>
-        <p className="text-xs text-slate-500 mb-4">
-          Deliverables drive all progress automatically. Only weight, dates, and costs are manual.
-        </p>
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [onClose]);
 
-        <div className="mb-3 text-[11px] text-slate-500">
-          Current deliverables weight total:{" "}
-          <span className="font-semibold">{Math.round(currentWeightTotal)}%</span>
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Add Deliverable</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+          >
+            ×
+          </button>
         </div>
 
-        {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
+        <div className="px-6 py-4 space-y-4">
+          <p className="text-xs text-gray-600 bg-blue-50 p-2 rounded">
+            💡 Deliverables drive all progress automatically. Only weight, dates, and costs are manual.
+          </p>
 
-        <div className="space-y-3">
           <div>
-            <label className="text-xs">Title</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Title *
+            </label>
             <input
-              className="w-full border px-3 py-2 rounded mt-1 text-sm"
+              type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g., Submit IFC drawing package"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              placeholder="Deliverable title"
+              autoFocus
             />
           </div>
 
           <div>
-            <label className="text-xs">Description</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Description
+            </label>
             <textarea
-              className="w-full border px-3 py-2 rounded mt-1 text-sm"
-              rows={2}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional context / acceptance criteria"
+              rows={3}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              placeholder="Optional description"
             />
           </div>
 
           <div>
-            <label className="text-xs">Weight (%)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Weight (0-1) *
+            </label>
             <input
-              className="w-full border px-3 py-2 rounded mt-1 text-sm"
               type="number"
+              step="0.01"
+              min="0"
+              max="1"
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
             />
+            {isOverWeight && (
+              <p className="text-xs text-red-600 mt-1">
+                ⚠️ Total weight exceeds 100% ({(totalWeight * 100).toFixed(1)}%)
+              </p>
+            )}
+            <p className="text-xs text-gray-500 mt-1">
+              Current total: {(sumExistingWeights * 100).toFixed(1)}% | After add:{" "}
+              {(totalWeight * 100).toFixed(1)}%
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs">Planned Start</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Planned Start
+              </label>
               <input
                 type="date"
-                className="w-full border px-3 py-2 rounded mt-1 text-sm"
                 value={plannedStart}
                 onChange={(e) => setPlannedStart(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               />
             </div>
             <div>
-              <label className="text-xs">Planned End</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Planned End
+              </label>
               <input
                 type="date"
-                className="w-full border px-3 py-2 rounded mt-1 text-sm"
                 value={plannedEnd}
                 onChange={(e) => setPlannedEnd(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs">Budgeted Cost</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Budgeted Cost
+              </label>
               <input
                 type="number"
-                className="w-full border px-3 py-2 rounded mt-1 text-sm"
+                step="0.01"
+                min="0"
                 value={budgetedCost}
                 onChange={(e) => setBudgetedCost(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               />
             </div>
             <div>
-              <label className="text-xs">Actual Cost</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Actual Cost
+              </label>
               <input
                 type="number"
-                className="w-full border px-3 py-2 rounded mt-1 text-sm"
+                step="0.01"
+                min="0"
                 value={actualCost}
                 onChange={(e) => setActualCost(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               />
             </div>
-          </div>
-
-          <div>
-            <label className="text-xs">Assigned To</label>
-            <select
-              className="w-full border px-3 py-2 rounded mt-1 text-sm"
-              value={assignedUser}
-              onChange={(e) => setAssignedUser(e.target.value)}
-            >
-              {ASSIGNEES.map((u) => (
-                <option key={u} value={u}>
-                  {u}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2 pt-2">
-            <input
-              id="deliverable-done-create"
-              type="checkbox"
-              checked={isDone}
-              onChange={(e) => setIsDone(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300"
-            />
-            <label
-              htmlFor="deliverable-done-create"
-              className="text-xs text-slate-700 select-none"
-            >
-              Mark deliverable as done
-            </label>
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 mt-5">
-          <button className="px-3 py-2 border rounded" onClick={onClose}>
+        <div className="sticky bottom-0 bg-gray-50 px-6 py-4 flex justify-end gap-2 border-t">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+          >
             Cancel
           </button>
           <button
-            className="px-3 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
-            disabled={saving}
             onClick={handleCreate}
+            disabled={saving || !title.trim() || isOverWeight}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {saving ? "Creating..." : "Create"}
+            {saving ? "Creating..." : "Create Deliverable"}
           </button>
         </div>
       </div>

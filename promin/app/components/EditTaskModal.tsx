@@ -1,126 +1,201 @@
+// app/components/EditTaskModal.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { recalcTask } from "../lib/recalcTask";
-
-type Task = {
-  id: number;
-  milestone_id: number;
-  title: string;
-
-  planned_start: string | null;
-  planned_end: string | null;
-
-  actual_start: string | null;
-  actual_end: string | null;
-
-  weight: number | null;
-  budgeted_cost: number | null;
-  actual_cost: number | null;
-
-  status?: string | null;
-};
+import { useToast } from "./ToastProvider";
 
 type Props = {
-  task: Task | null;
-  open: boolean;
+  taskId: number;
   onClose: () => void;
-  onSaved: () => void;
+  onSuccess: () => void;
 };
 
-/**
- * Phase 3A rule:
- * - Task inputs are restricted to: title, weight
- * - Dates/costs/status/progress are computed or lifecycle-driven.
- */
-export default function EditTaskModal({ task, open, onClose, onSaved }: Props) {
+export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
+  const { pushToast } = useToast();
+
+  const [task, setTask] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
   const [title, setTitle] = useState("");
-  const [weight, setWeight] = useState<string>("0");
+  const [description, setDescription] = useState("");
+  const [assignedTo, setAssignedTo] = useState("");
+  const [weight, setWeight] = useState("0");
+
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!task) return;
-    setTitle(task.title ?? "");
-    setWeight(task.weight != null ? String(task.weight) : "0");
-  }, [task]);
+    const loadTask = async () => {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select("*")
+        .eq("id", taskId)
+        .single();
 
-  // Hard guard: nothing below this point executes without a task
-  if (!open || !task) return null;
+      if (error) {
+        console.error("Failed to load task:", error);
+        pushToast("Failed to load task", "error");
+        onClose();
+        return;
+      }
 
-  // Capture stable, non-null values for TS + runtime safety
-  const taskId = task.id;
-
-  async function handleSave() {
-    const t = title.trim();
-    if (!t) {
-      alert("Task title is required.");
-      return;
-    }
-
-    const w = Number(weight);
-    if (!Number.isFinite(w) || w < 0) {
-      alert("Weight must be a valid non-negative number.");
-      return;
-    }
-
-    const payload = {
-      title: t,
-      weight: w,
-      updated_at: new Date().toISOString(),
+      setTask(data);
+      setTitle(data.title || "");
+      setDescription(data.description || "");
+      setAssignedTo(data.assigned_to || "");
+      setWeight(String(data.weight ?? 0));
+      setLoading(false);
     };
 
-    const { error } = await supabase
-      .from("tasks")
-      .update(payload)
-      .eq("id", taskId);
+    loadTask();
+  }, [taskId]);
 
-    if (error) {
-      console.error("❌ Failed to update task:", error);
-      alert("Failed to update task");
+  const handleSave = async () => {
+    if (!title.trim()) {
+      pushToast("Title is required", "warning");
       return;
     }
 
+    setSaving(true);
     try {
-      // Rollups (task -> milestone -> project)
-      await recalcTask(taskId);
-    } catch (e) {
-      console.error("❌ recalcTask failed:", e);
-    }
+      const { error } = await supabase
+        .from("tasks")
+        .update({
+          title: title.trim(),
+          description: description.trim() || null,
+          assigned_to: assignedTo.trim() || null,
+          weight: Number(weight),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", taskId);
 
-    onSaved();
-    onClose();
+      if (error) {
+        console.error("Update task error:", error);
+        pushToast("Failed to update task", "error");
+        return;
+      }
+
+      pushToast("Task updated successfully", "success");
+      onSuccess();
+    } catch (e: any) {
+      console.error("Update task exception:", e);
+      pushToast(e?.message || "Failed to update task", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [onClose]);
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-8">
+          <p className="text-gray-600">Loading task...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
-      <div className="bg-white w-[500px] rounded-xl shadow-xl p-6 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-bold mb-4">Edit Task</h2>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+        <div className="px-6 py-4 border-b flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Edit Task</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+          >
+            ×
+          </button>
+        </div>
 
-        <label className="block mb-1 text-sm font-medium">Task Title</label>
-        <input
-          className="w-full border px-3 py-2 rounded mb-4"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
+        <div className="px-6 py-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Title *
+            </label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              placeholder="Task title"
+              autoFocus
+            />
+          </div>
 
-        <label className="text-sm font-medium">Weight (%)</label>
-        <input
-          type="number"
-          className="w-full border rounded px-3 py-1 mb-2"
-          value={weight}
-          onChange={(e) => setWeight(e.target.value)}
-        />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Description
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              placeholder="Optional description"
+            />
+          </div>
 
-        <p className="mb-6 text-xs text-slate-500">
-          Task dates, costs, status, and progress are computed from Deliverables and lifecycle rules.
-        </p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Assigned To
+            </label>
+            <input
+              type="text"
+              value={assignedTo}
+              onChange={(e) => setAssignedTo(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              placeholder="Person name"
+            />
+          </div>
 
-        <div className="flex justify-end gap-2">
-          <button className="px-4 py-2 bg-gray-300 rounded" onClick={onClose}>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Weight (0-1)
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              max="1"
+              value={weight}
+              onChange={(e) => setWeight(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Weight affects milestone-level progress calculation
+            </p>
+          </div>
+
+          <div className="bg-blue-50 p-3 rounded text-xs text-blue-800">
+            <p className="font-semibold mb-1">💡 Note:</p>
+            <p>
+              Task dates, costs, status, and progress are computed from Deliverables and lifecycle rules.
+            </p>
+          </div>
+        </div>
+
+        <div className="px-6 py-4 bg-gray-50 flex justify-end gap-2 border-t">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+          >
             Cancel
           </button>
-          <button className="px-4 py-2 bg-blue-600 text-white rounded" onClick={handleSave}>
-            Save Changes
+          <button
+            onClick={handleSave}
+            disabled={saving || !title.trim()}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? "Saving..." : "Save Changes"}
           </button>
         </div>
       </div>

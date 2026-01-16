@@ -1,118 +1,158 @@
+// app/components/EditMilestoneModal.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { recalcMilestone } from "../lib/recalcMilestone";
-import type { Milestone } from "../types/milestone";
+import { useToast } from "./ToastProvider";
 
 type Props = {
-  open: boolean;
-  milestone: Milestone | null;
+  milestone: any;
   onClose: () => void;
-  onSaved?: () => void;
+  onSuccess: () => void;
 };
 
-/**
- * Phase 3A rule:
- * - Milestone inputs are restricted to: name, weight
- * - Status/dates/costs are computed bottom-up and must not be edited here.
- */
 export default function EditMilestoneModal({
-  open,
   milestone,
   onClose,
-  onSaved,
+  onSuccess,
 }: Props) {
-  const [name, setName] = useState("");
-  const [weight, setWeight] = useState("0");
+  const { pushToast } = useToast();
+
+  const [title, setTitle] = useState(milestone?.title || "");
+  const [description, setDescription] = useState(milestone?.description || "");
+  const [weight, setWeight] = useState(String(milestone?.weight ?? 0));
+
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (!milestone) return;
-    setName(milestone.name ?? "");
-    setWeight(String(milestone.weight ?? 0));
-  }, [milestone]);
-
-  if (!open || !milestone) return null;
-
   const handleSave = async () => {
-    setSaving(true);
-
-    const trimmedName = name.trim();
-    const numericWeight = Number(weight);
-
-    const payload = {
-      name: trimmedName || null,
-      weight: Number.isFinite(numericWeight) ? numericWeight : 0,
-    };
-
-    const { error } = await supabase
-      .from("milestones")
-      .update(payload)
-      .eq("id", milestone.id);
-
-    if (error) {
-      console.error("Failed to update milestone:", error.message);
-      setSaving(false);
+    if (!title.trim()) {
+      pushToast("Title is required", "warning");
       return;
     }
 
-    // Recompute rollups (milestone -> project) using computed model
-    await recalcMilestone(milestone.id);
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from("milestones")
+        .update({
+          title: title.trim(),
+          description: description.trim() || null,
+          weight: Number(weight),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", milestone.id);
 
-    setSaving(false);
-    onSaved?.();
-    onClose();
+      if (error) {
+        console.error("Update milestone error:", error);
+        
+        if (error.code === "42501" || error.message.includes("permission")) {
+          pushToast("You don't have permission to edit this milestone", "error");
+          return;
+        }
+
+        pushToast("Failed to update milestone", "error");
+        return;
+      }
+
+      pushToast("Milestone updated successfully", "success");
+      onSuccess();
+    } catch (e: any) {
+      console.error("Update milestone exception:", e);
+      pushToast(e?.message || "Failed to update milestone", "error");
+    } finally {
+      setSaving(false);
+    }
   };
 
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-lg p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Edit Milestone</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            ✕
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+        <div className="px-6 py-4 border-b flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Edit Milestone</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+          >
+            ×
           </button>
         </div>
 
-        <div className="space-y-3">
+        <div className="px-6 py-4 space-y-4">
           <div>
-            <label className="text-xs text-gray-600">Name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Title *
+            </label>
             <input
-              className="w-full border rounded-lg px-3 py-2 text-sm mt-1"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              placeholder="Milestone title"
+              autoFocus
             />
           </div>
 
           <div>
-            <label className="text-xs text-gray-600">Weight (%)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Description
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              placeholder="Optional description"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Weight (0-1)
+            </label>
             <input
               type="number"
-              className="w-full border rounded-lg px-3 py-2 text-sm mt-1"
+              step="0.01"
+              min="0"
+              max="1"
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Weight affects project-level progress calculation
+            </p>
           </div>
 
-          <p className="text-[11px] text-slate-500">
-            Milestone dates, costs, status, and progress are computed from Tasks and Deliverables.
-          </p>
+          <div className="bg-blue-50 p-3 rounded text-xs text-blue-800">
+            <p className="font-semibold mb-1">💡 Note:</p>
+            <p>
+              Dates, costs, status, and progress are computed from Tasks and
+              Deliverables automatically.
+            </p>
+          </div>
         </div>
 
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="px-6 py-4 bg-gray-50 flex justify-end gap-2 border-t">
           <button
             onClick={onClose}
-            className="px-3 py-2 text-sm rounded-lg border text-gray-600 hover:bg-gray-100"
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
           >
             Cancel
           </button>
           <button
-            disabled={saving}
             onClick={handleSave}
-            className="px-3 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+            disabled={saving || !title.trim()}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {saving ? "Saving…" : "Save Changes"}
+            {saving ? "Saving..." : "Save Changes"}
           </button>
         </div>
       </div>
