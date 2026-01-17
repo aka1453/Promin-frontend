@@ -62,6 +62,54 @@ CREATE TYPE "public"."project_role" AS ENUM (
 ALTER TYPE "public"."project_role" OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."add_project_creator_as_owner"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+BEGIN
+  INSERT INTO project_members (
+    project_id, 
+    user_id, 
+    role
+  )
+  VALUES (
+    NEW.id,
+    NEW.owner_id,
+    'owner'::project_role
+  )
+  ON CONFLICT (project_id, user_id) DO NOTHING;
+  
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."add_project_creator_as_owner"() OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."add_project_creator_as_owner"() IS 'Auto-creates project_members entry for project creator with owner role';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."all_milestone_tasks_complete"("p_milestone_id" bigint) RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    AS $$
+  -- Returns true if milestone has no tasks OR all tasks are complete
+  SELECT NOT EXISTS (
+    SELECT 1 FROM tasks
+    WHERE milestone_id = p_milestone_id
+    AND actual_end IS NULL
+  );
+$$;
+
+
+ALTER FUNCTION "public"."all_milestone_tasks_complete"("p_milestone_id" bigint) OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."all_milestone_tasks_complete"("p_milestone_id" bigint) IS 'Returns true if all tasks in milestone are completed (have actual_end)';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."can_edit_project"("project_id_input" bigint) RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -806,10 +854,13 @@ CREATE OR REPLACE FUNCTION "public"."is_project_owner"("project_id_input" bigint
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
     AS $$
+  -- NON-RECURSIVE: Check project_members ONLY, not projects table
+  -- This breaks the cycle: projects -> is_project_owner -> projects
   SELECT EXISTS (
-    SELECT 1 FROM projects
-    WHERE id = project_id_input
-    AND owner_id = auth.uid()
+    SELECT 1 FROM project_members
+    WHERE project_id = project_id_input
+    AND user_id = auth.uid()
+    AND role = 'owner'
   );
 $$;
 
@@ -817,7 +868,7 @@ $$;
 ALTER FUNCTION "public"."is_project_owner"("project_id_input" bigint) OWNER TO "postgres";
 
 
-COMMENT ON FUNCTION "public"."is_project_owner"("project_id_input" bigint) IS 'GAP-018: Check if user is project owner';
+COMMENT ON FUNCTION "public"."is_project_owner"("project_id_input" bigint) IS 'NON-RECURSIVE: Queries project_members only, never queries projects table';
 
 
 
@@ -1070,6 +1121,7 @@ CREATE TABLE IF NOT EXISTS "public"."milestones" (
     "weight" numeric DEFAULT 0 NOT NULL,
     "progress" numeric DEFAULT 0,
     CONSTRAINT "milestones_actual_dates_logical" CHECK ((("actual_end" IS NULL) OR ("actual_start" IS NULL) OR ("actual_end" >= "actual_start"))),
+    CONSTRAINT "milestones_complete_requires_tasks_complete" CHECK ((("actual_end" IS NULL) OR "public"."all_milestone_tasks_complete"("id"))),
     CONSTRAINT "milestones_planned_dates_logical" CHECK ((("planned_end" IS NULL) OR ("planned_start" IS NULL) OR ("planned_end" >= "planned_start"))),
     CONSTRAINT "milestones_valid_status" CHECK (("status" = ANY (ARRAY['pending'::"text", 'in_progress'::"text", 'completed'::"text"]))),
     CONSTRAINT "milestones_weight_non_negative" CHECK (("weight" >= (0)::numeric))
@@ -1124,8 +1176,7 @@ CREATE TABLE IF NOT EXISTS "public"."project_members" (
     "project_id" bigint NOT NULL,
     "user_id" "uuid" NOT NULL,
     "role" "public"."project_role" NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "project_members_valid_role" CHECK (("role" = ANY (ARRAY['editor'::"public"."project_role", 'viewer'::"public"."project_role"])))
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
 ALTER TABLE ONLY "public"."project_members" FORCE ROW LEVEL SECURITY;
@@ -1337,6 +1388,7 @@ CREATE TABLE IF NOT EXISTS "public"."tasks" (
     "updated_at" timestamp with time zone,
     "planned_progress" numeric DEFAULT 0,
     "sequence_group" integer,
+    "position" integer DEFAULT 0 NOT NULL,
     CONSTRAINT "actual_end_requires_start" CHECK ((("actual_end" IS NULL) OR ("actual_start" IS NOT NULL))),
     CONSTRAINT "completed_requires_actual_end" CHECK ((("status" <> 'completed'::"text") OR ("actual_end" IS NOT NULL))),
     CONSTRAINT "progress_range" CHECK ((("progress" >= (0)::numeric) AND ("progress" <= (100)::numeric))),
@@ -1530,6 +1582,10 @@ CREATE OR REPLACE TRIGGER "task_rollup_on_subtask_change" AFTER INSERT OR DELETE
 
 
 
+CREATE OR REPLACE TRIGGER "trg_add_project_creator_as_owner" AFTER INSERT ON "public"."projects" FOR EACH ROW EXECUTE FUNCTION "public"."add_project_creator_as_owner"();
+
+
+
 CREATE OR REPLACE TRIGGER "trg_enforce_lifecycle_on_subtask" AFTER UPDATE OF "is_done" ON "public"."subtasks" FOR EACH ROW EXECUTE FUNCTION "public"."enforce_lifecycle_on_subtask_update"();
 
 
@@ -1659,23 +1715,7 @@ CREATE POLICY "Editors can create file versions" ON "public"."subtask_file_versi
 
 
 
-CREATE POLICY "Editors can create milestones" ON "public"."milestones" FOR INSERT TO "authenticated" WITH CHECK (("public"."can_edit_project"("project_id") AND (NOT "public"."is_project_archived"("project_id")) AND (NOT "public"."is_project_deleted"("project_id"))));
-
-
-
 CREATE POLICY "Editors can create subtask files" ON "public"."subtask_files" FOR INSERT TO "authenticated" WITH CHECK (("public"."can_edit_project"("public"."get_project_id_from_subtask"("subtask_id")) AND (NOT "public"."is_project_archived"("public"."get_project_id_from_subtask"("subtask_id"))) AND (NOT "public"."is_project_deleted"("public"."get_project_id_from_subtask"("subtask_id")))));
-
-
-
-CREATE POLICY "Editors can create subtasks" ON "public"."subtasks" FOR INSERT TO "authenticated" WITH CHECK (("public"."can_edit_project"("public"."get_project_id_from_task"("task_id")) AND (NOT "public"."is_project_archived"("public"."get_project_id_from_task"("task_id"))) AND (NOT "public"."is_project_deleted"("public"."get_project_id_from_task"("task_id")))));
-
-
-
-CREATE POLICY "Editors can create tasks" ON "public"."tasks" FOR INSERT TO "authenticated" WITH CHECK (("public"."can_edit_project"("public"."get_project_id_from_milestone"("milestone_id")) AND (NOT "public"."is_project_archived"("public"."get_project_id_from_milestone"("milestone_id"))) AND (NOT "public"."is_project_deleted"("public"."get_project_id_from_milestone"("milestone_id")))));
-
-
-
-CREATE POLICY "Editors can update milestones" ON "public"."milestones" FOR UPDATE TO "authenticated" USING (("public"."can_edit_project"("project_id") AND (NOT "public"."is_project_archived"("project_id")) AND (NOT "public"."is_project_deleted"("project_id")))) WITH CHECK (("public"."can_edit_project"("project_id") AND (NOT "public"."is_project_archived"("project_id")) AND (NOT "public"."is_project_deleted"("project_id"))));
 
 
 
@@ -1683,21 +1723,7 @@ CREATE POLICY "Editors can update subtask files" ON "public"."subtask_files" FOR
 
 
 
-CREATE POLICY "Editors can update subtasks" ON "public"."subtasks" FOR UPDATE TO "authenticated" USING (("public"."can_edit_project"("public"."get_project_id_from_task"("task_id")) AND (NOT "public"."is_project_archived"("public"."get_project_id_from_task"("task_id"))) AND (NOT "public"."is_project_deleted"("public"."get_project_id_from_task"("task_id"))))) WITH CHECK (("public"."can_edit_project"("public"."get_project_id_from_task"("task_id")) AND (NOT "public"."is_project_archived"("public"."get_project_id_from_task"("task_id"))) AND (NOT "public"."is_project_deleted"("public"."get_project_id_from_task"("task_id")))));
-
-
-
-CREATE POLICY "Editors can update tasks" ON "public"."tasks" FOR UPDATE TO "authenticated" USING (("public"."can_edit_project"("public"."get_project_id_from_milestone"("milestone_id")) AND (NOT "public"."is_project_archived"("public"."get_project_id_from_milestone"("milestone_id"))) AND (NOT "public"."is_project_deleted"("public"."get_project_id_from_milestone"("milestone_id"))))) WITH CHECK (("public"."can_edit_project"("public"."get_project_id_from_milestone"("milestone_id")) AND (NOT "public"."is_project_archived"("public"."get_project_id_from_milestone"("milestone_id"))) AND (NOT "public"."is_project_deleted"("public"."get_project_id_from_milestone"("milestone_id")))));
-
-
-
 CREATE POLICY "File versions are immutable" ON "public"."subtask_file_versions" FOR UPDATE TO "authenticated" USING (false);
-
-
-
-CREATE POLICY "Members can reorder projects" ON "public"."projects" FOR UPDATE USING ((EXISTS ( SELECT 1
-   FROM "public"."project_members" "pm"
-  WHERE (("pm"."project_id" = "projects"."id") AND ("pm"."user_id" = "auth"."uid"()) AND ("pm"."role" = ANY (ARRAY['owner'::"public"."project_role", 'editor'::"public"."project_role"]))))));
 
 
 
@@ -1705,19 +1731,7 @@ CREATE POLICY "No hard deletes on file versions" ON "public"."subtask_file_versi
 
 
 
-CREATE POLICY "No hard deletes on milestones" ON "public"."milestones" FOR DELETE TO "authenticated" USING (false);
-
-
-
 CREATE POLICY "No hard deletes on profiles" ON "public"."profiles" FOR DELETE TO "authenticated" USING (false);
-
-
-
-CREATE POLICY "No hard deletes on projects" ON "public"."projects" FOR DELETE TO "authenticated" USING (false);
-
-
-
-COMMENT ON POLICY "No hard deletes on projects" ON "public"."projects" IS 'GAP-027: Enforce soft-delete only';
 
 
 
@@ -1725,63 +1739,7 @@ CREATE POLICY "No hard deletes on subtask files" ON "public"."subtask_files" FOR
 
 
 
-CREATE POLICY "No hard deletes on subtasks" ON "public"."subtasks" FOR DELETE TO "authenticated" USING (false);
-
-
-
-CREATE POLICY "No hard deletes on tasks" ON "public"."tasks" FOR DELETE TO "authenticated" USING (false);
-
-
-
-CREATE POLICY "Owners can add project members" ON "public"."project_members" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."projects"
-  WHERE (("projects"."id" = "project_members"."project_id") AND ("projects"."owner_id" = "auth"."uid"()) AND ("projects"."deleted_at" IS NULL) AND ("projects"."status" <> 'archived'::"text")))));
-
-
-
-CREATE POLICY "Owners can archive projects" ON "public"."projects" FOR UPDATE TO "authenticated" USING ((("owner_id" = "auth"."uid"()) AND ("deleted_at" IS NULL) AND ("status" <> 'archived'::"text"))) WITH CHECK ((("owner_id" = "auth"."uid"()) AND ("deleted_at" IS NULL) AND ("status" = 'archived'::"text")));
-
-
-
-COMMENT ON POLICY "Owners can archive projects" ON "public"."projects" IS 'GAP-008: Only owners can archive';
-
-
-
-CREATE POLICY "Owners can remove project members" ON "public"."project_members" FOR DELETE TO "authenticated" USING ((EXISTS ( SELECT 1
-   FROM "public"."projects"
-  WHERE (("projects"."id" = "project_members"."project_id") AND ("projects"."owner_id" = "auth"."uid"())))));
-
-
-
-CREATE POLICY "Owners can restore archived projects" ON "public"."projects" FOR UPDATE TO "authenticated" USING ((("owner_id" = "auth"."uid"()) AND ("deleted_at" IS NULL) AND ("status" = 'archived'::"text"))) WITH CHECK ((("owner_id" = "auth"."uid"()) AND ("deleted_at" IS NULL) AND ("status" <> 'archived'::"text")));
-
-
-
-COMMENT ON POLICY "Owners can restore archived projects" ON "public"."projects" IS 'GAP-009: Only owners can restore';
-
-
-
-CREATE POLICY "Owners can soft-delete projects" ON "public"."projects" FOR UPDATE TO "authenticated" USING ((("owner_id" = "auth"."uid"()) AND ("deleted_at" IS NULL))) WITH CHECK ((("owner_id" = "auth"."uid"()) AND ("deleted_at" IS NOT NULL)));
-
-
-
-CREATE POLICY "Owners can update active projects" ON "public"."projects" FOR UPDATE TO "authenticated" USING ((("owner_id" = "auth"."uid"()) AND ("deleted_at" IS NULL) AND ("status" <> 'archived'::"text"))) WITH CHECK ((("owner_id" = "auth"."uid"()) AND ("deleted_at" IS NULL) AND ("status" <> 'archived'::"text")));
-
-
-
-CREATE POLICY "Owners can update member roles" ON "public"."project_members" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
-   FROM "public"."projects"
-  WHERE (("projects"."id" = "project_members"."project_id") AND ("projects"."owner_id" = "auth"."uid"()) AND ("projects"."deleted_at" IS NULL) AND ("projects"."status" <> 'archived'::"text"))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."projects"
-  WHERE (("projects"."id" = "project_members"."project_id") AND ("projects"."owner_id" = "auth"."uid"())))));
-
-
-
 CREATE POLICY "Profiles are readable by authenticated users" ON "public"."profiles" FOR SELECT TO "authenticated" USING (true);
-
-
-
-CREATE POLICY "Users can create projects" ON "public"."projects" FOR INSERT TO "authenticated" WITH CHECK ((("owner_id" = "auth"."uid"()) AND ("deleted_at" IS NULL)));
 
 
 
@@ -1801,19 +1759,7 @@ CREATE POLICY "Users can view accessible file versions" ON "public"."subtask_fil
 
 
 
-CREATE POLICY "Users can view accessible milestones" ON "public"."milestones" FOR SELECT TO "authenticated" USING (("public"."is_project_member"("project_id") AND (NOT "public"."is_project_deleted"("project_id"))));
-
-
-
 CREATE POLICY "Users can view accessible subtask files" ON "public"."subtask_files" FOR SELECT TO "authenticated" USING (("public"."is_project_member"("public"."get_project_id_from_subtask"("subtask_id")) AND (NOT "public"."is_project_deleted"("public"."get_project_id_from_subtask"("subtask_id")))));
-
-
-
-CREATE POLICY "Users can view accessible subtasks" ON "public"."subtasks" FOR SELECT TO "authenticated" USING (("public"."is_project_member"("public"."get_project_id_from_task"("task_id")) AND (NOT "public"."is_project_deleted"("public"."get_project_id_from_task"("task_id")))));
-
-
-
-CREATE POLICY "Users can view accessible tasks" ON "public"."tasks" FOR SELECT TO "authenticated" USING (("public"."is_project_member"("public"."get_project_id_from_milestone"("milestone_id")) AND (NOT "public"."is_project_deleted"("public"."get_project_id_from_milestone"("milestone_id")))));
 
 
 
@@ -1846,41 +1792,53 @@ CREATE POLICY "insert_subtask_file_versions" ON "public"."subtask_file_versions"
 ALTER TABLE "public"."milestones" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "milestones_delete_owner_only_when_not_archived" ON "public"."milestones" FOR DELETE USING ((EXISTS ( SELECT 1
+CREATE POLICY "milestones_insert" ON "public"."milestones" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
    FROM "public"."projects" "p"
-  WHERE (("p"."id" = "milestones"."project_id") AND ("p"."status" <> 'archived'::"text") AND ("p"."owner_id" = "auth"."uid"())))));
+  WHERE (("p"."id" = "milestones"."project_id") AND ("p"."deleted_at" IS NULL) AND (("p"."owner_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
+           FROM "public"."project_members" "pm"
+          WHERE (("pm"."project_id" = "p"."id") AND ("pm"."user_id" = "auth"."uid"()) AND ("pm"."role" = ANY (ARRAY['owner'::"public"."project_role", 'editor'::"public"."project_role"]))))))))));
 
 
 
-CREATE POLICY "milestones_insert_owner_or_editor_not_archived" ON "public"."milestones" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
+CREATE POLICY "milestones_no_delete" ON "public"."milestones" FOR DELETE TO "authenticated" USING (false);
+
+
+
+CREATE POLICY "milestones_select" ON "public"."milestones" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."projects" "p"
-  WHERE (("p"."id" = "milestones"."project_id") AND ("p"."status" <> 'archived'::"text") AND (("p"."owner_id" = "auth"."uid"()) OR "public"."has_project_role"("p"."id", "auth"."uid"(), 'editor'::"text"))))));
+  WHERE (("p"."id" = "milestones"."project_id") AND ("p"."deleted_at" IS NULL) AND (("p"."owner_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
+           FROM "public"."project_members" "pm"
+          WHERE (("pm"."project_id" = "p"."id") AND ("pm"."user_id" = "auth"."uid"())))))))));
 
 
 
-CREATE POLICY "milestones_select_owner_or_member" ON "public"."milestones" FOR SELECT USING ((EXISTS ( SELECT 1
+CREATE POLICY "milestones_update" ON "public"."milestones" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."projects" "p"
-  WHERE (("p"."id" = "milestones"."project_id") AND (("p"."owner_id" = "auth"."uid"()) OR "public"."is_project_member"("p"."id", "auth"."uid"()))))));
+  WHERE (("p"."id" = "milestones"."project_id") AND ("p"."deleted_at" IS NULL) AND (("p"."owner_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
+           FROM "public"."project_members" "pm"
+          WHERE (("pm"."project_id" = "p"."id") AND ("pm"."user_id" = "auth"."uid"()) AND ("pm"."role" = ANY (ARRAY['owner'::"public"."project_role", 'editor'::"public"."project_role"]))))))))));
 
 
 
-CREATE POLICY "milestones_update_owner_or_editor_not_archived" ON "public"."milestones" FOR UPDATE USING ((EXISTS ( SELECT 1
+CREATE POLICY "pm_delete_if_owner" ON "public"."project_members" FOR DELETE TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."projects" "p"
-  WHERE (("p"."id" = "milestones"."project_id") AND ("p"."status" <> 'archived'::"text") AND (("p"."owner_id" = "auth"."uid"()) OR "public"."has_project_role"("p"."id", "auth"."uid"(), 'editor'::"text")))))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE (("p"."id" = "project_members"."project_id") AND ("p"."owner_id" = "auth"."uid"())))));
+
+
+
+CREATE POLICY "pm_insert_if_owner" ON "public"."project_members" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
    FROM "public"."projects" "p"
-  WHERE (("p"."id" = "milestones"."project_id") AND ("p"."status" <> 'archived'::"text") AND (("p"."owner_id" = "auth"."uid"()) OR "public"."has_project_role"("p"."id", "auth"."uid"(), 'editor'::"text"))))));
+  WHERE (("p"."id" = "project_members"."project_id") AND ("p"."owner_id" = "auth"."uid"())))));
 
 
 
-CREATE POLICY "pm_delete_owner_only" ON "public"."project_members" FOR DELETE USING ("public"."is_project_owner"("project_id"));
+CREATE POLICY "pm_select_self" ON "public"."project_members" FOR SELECT TO "authenticated" USING (("user_id" = "auth"."uid"()));
 
 
 
-CREATE POLICY "pm_insert_owner_only" ON "public"."project_members" FOR INSERT WITH CHECK ("public"."is_project_owner"("project_id"));
-
-
-
-CREATE POLICY "pm_update_owner_only" ON "public"."project_members" FOR UPDATE USING ("public"."is_project_owner"("project_id"));
+CREATE POLICY "pm_update_if_owner" ON "public"."project_members" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM "public"."projects" "p"
+  WHERE (("p"."id" = "project_members"."project_id") AND ("p"."owner_id" = "auth"."uid"())))));
 
 
 
@@ -1890,44 +1848,26 @@ ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."project_members" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "project_members_select_own_rows" ON "public"."project_members" FOR SELECT USING (("user_id" = "auth"."uid"()));
-
-
-
-CREATE POLICY "project_members_select_owner_or_editor_or_self" ON "public"."project_members" FOR SELECT USING ((("user_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
-   FROM "public"."projects" "p"
-  WHERE (("p"."id" = "project_members"."project_id") AND ("p"."owner_id" = "auth"."uid"()))))));
-
-
-
 ALTER TABLE "public"."projects" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "projects_archive_owner_only" ON "public"."projects" FOR UPDATE USING ((("auth"."uid"() IS NOT NULL) AND ("owner_id" = "auth"."uid"()) AND ("status" <> 'archived'::"text"))) WITH CHECK (("status" = 'archived'::"text"));
+CREATE POLICY "projects_insert" ON "public"."projects" FOR INSERT TO "authenticated" WITH CHECK ((("owner_id" = "auth"."uid"()) AND ("deleted_at" IS NULL)));
 
 
 
-CREATE POLICY "projects_delete_owner_only" ON "public"."projects" FOR DELETE USING ((("auth"."uid"() = "owner_id") AND ("deleted_at" IS NOT NULL)));
+CREATE POLICY "projects_no_delete" ON "public"."projects" FOR DELETE TO "authenticated" USING (false);
 
 
 
-CREATE POLICY "projects_insert_owner" ON "public"."projects" FOR INSERT WITH CHECK (("owner_id" = "auth"."uid"()));
+CREATE POLICY "projects_select" ON "public"."projects" FOR SELECT TO "authenticated" USING ((("deleted_at" IS NULL) AND (("owner_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
+   FROM "public"."project_members" "pm"
+  WHERE (("pm"."project_id" = "projects"."id") AND ("pm"."user_id" = "auth"."uid"())))))));
 
 
 
-CREATE POLICY "projects_restore_owner_only" ON "public"."projects" FOR UPDATE USING ((("auth"."uid"() IS NOT NULL) AND ("owner_id" = "auth"."uid"()) AND ("status" = 'archived'::"text"))) WITH CHECK (("status" <> 'archived'::"text"));
-
-
-
-CREATE POLICY "projects_select_active_owner_or_member" ON "public"."projects" FOR SELECT USING ((("deleted_at" IS NULL) AND (("owner_id" = "auth"."uid"()) OR "public"."has_project_role"("id", "auth"."uid"(), 'owner'::"text") OR "public"."has_project_role"("id", "auth"."uid"(), 'editor'::"text") OR "public"."has_project_role"("id", "auth"."uid"(), 'viewer'::"text"))));
-
-
-
-CREATE POLICY "projects_select_deleted_owner_or_member" ON "public"."projects" FOR SELECT USING ((("deleted_at" IS NOT NULL) AND (("owner_id" = "auth"."uid"()) OR "public"."has_project_role"("id", "auth"."uid"(), 'owner'::"text") OR "public"."has_project_role"("id", "auth"."uid"(), 'editor'::"text") OR "public"."has_project_role"("id", "auth"."uid"(), 'viewer'::"text"))));
-
-
-
-CREATE POLICY "projects_update_owner_or_editor_not_archived" ON "public"."projects" FOR UPDATE USING ((("auth"."uid"() IS NOT NULL) AND ("status" <> 'archived'::"text") AND (("owner_id" = "auth"."uid"()) OR "public"."has_project_role"("id", "auth"."uid"(), 'editor'::"text")))) WITH CHECK (("status" <> 'archived'::"text"));
+CREATE POLICY "projects_update" ON "public"."projects" FOR UPDATE TO "authenticated" USING ((("owner_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
+   FROM "public"."project_members" "pm"
+  WHERE (("pm"."project_id" = "projects"."id") AND ("pm"."user_id" = "auth"."uid"()) AND ("pm"."role" = 'editor'::"public"."project_role"))))));
 
 
 
@@ -1983,73 +1923,71 @@ CREATE POLICY "subtask_files_select_auth" ON "public"."subtask_files" FOR SELECT
 ALTER TABLE "public"."subtasks" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "subtasks_delete_owner_or_editor_not_archived" ON "public"."subtasks" FOR DELETE USING ((EXISTS ( SELECT 1
+CREATE POLICY "subtasks_insert" ON "public"."subtasks" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
    FROM (("public"."tasks" "t"
      JOIN "public"."milestones" "m" ON (("m"."id" = "t"."milestone_id")))
      JOIN "public"."projects" "p" ON (("p"."id" = "m"."project_id")))
-  WHERE (("t"."id" = "subtasks"."task_id") AND ("p"."status" <> 'archived'::"text") AND (("p"."owner_id" = "auth"."uid"()) OR "public"."has_project_role"("p"."id", "auth"."uid"(), 'editor'::"text"))))));
+  WHERE (("t"."id" = "subtasks"."task_id") AND ("p"."deleted_at" IS NULL) AND (("p"."owner_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
+           FROM "public"."project_members" "pm"
+          WHERE (("pm"."project_id" = "p"."id") AND ("pm"."user_id" = "auth"."uid"()) AND ("pm"."role" = ANY (ARRAY['owner'::"public"."project_role", 'editor'::"public"."project_role"]))))))))));
 
 
 
-CREATE POLICY "subtasks_insert_owner_or_editor_not_archived" ON "public"."subtasks" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
+CREATE POLICY "subtasks_no_delete" ON "public"."subtasks" FOR DELETE TO "authenticated" USING (false);
+
+
+
+CREATE POLICY "subtasks_select" ON "public"."subtasks" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM (("public"."tasks" "t"
      JOIN "public"."milestones" "m" ON (("m"."id" = "t"."milestone_id")))
      JOIN "public"."projects" "p" ON (("p"."id" = "m"."project_id")))
-  WHERE (("t"."id" = "subtasks"."task_id") AND ("p"."status" <> 'archived'::"text") AND (("p"."owner_id" = "auth"."uid"()) OR "public"."has_project_role"("p"."id", "auth"."uid"(), 'editor'::"text"))))));
+  WHERE (("t"."id" = "subtasks"."task_id") AND ("p"."deleted_at" IS NULL) AND (("p"."owner_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
+           FROM "public"."project_members" "pm"
+          WHERE (("pm"."project_id" = "p"."id") AND ("pm"."user_id" = "auth"."uid"())))))))));
 
 
 
-CREATE POLICY "subtasks_select_owner_or_member" ON "public"."subtasks" FOR SELECT USING ((EXISTS ( SELECT 1
+CREATE POLICY "subtasks_update" ON "public"."subtasks" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM (("public"."tasks" "t"
      JOIN "public"."milestones" "m" ON (("m"."id" = "t"."milestone_id")))
      JOIN "public"."projects" "p" ON (("p"."id" = "m"."project_id")))
-  WHERE (("t"."id" = "subtasks"."task_id") AND (("p"."owner_id" = "auth"."uid"()) OR "public"."is_project_member"("p"."id", "auth"."uid"()))))));
-
-
-
-CREATE POLICY "subtasks_update_owner_or_editor_not_archived" ON "public"."subtasks" FOR UPDATE USING ((EXISTS ( SELECT 1
-   FROM (("public"."tasks" "t"
-     JOIN "public"."milestones" "m" ON (("m"."id" = "t"."milestone_id")))
-     JOIN "public"."projects" "p" ON (("p"."id" = "m"."project_id")))
-  WHERE (("t"."id" = "subtasks"."task_id") AND ("p"."status" <> 'archived'::"text") AND (("p"."owner_id" = "auth"."uid"()) OR "public"."has_project_role"("p"."id", "auth"."uid"(), 'editor'::"text")))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM (("public"."tasks" "t"
-     JOIN "public"."milestones" "m" ON (("m"."id" = "t"."milestone_id")))
-     JOIN "public"."projects" "p" ON (("p"."id" = "m"."project_id")))
-  WHERE (("t"."id" = "subtasks"."task_id") AND ("p"."status" <> 'archived'::"text") AND (("p"."owner_id" = "auth"."uid"()) OR "public"."has_project_role"("p"."id", "auth"."uid"(), 'editor'::"text"))))));
+  WHERE (("t"."id" = "subtasks"."task_id") AND ("p"."deleted_at" IS NULL) AND (("p"."owner_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
+           FROM "public"."project_members" "pm"
+          WHERE (("pm"."project_id" = "p"."id") AND ("pm"."user_id" = "auth"."uid"()) AND ("pm"."role" = ANY (ARRAY['owner'::"public"."project_role", 'editor'::"public"."project_role"]))))))))));
 
 
 
 ALTER TABLE "public"."tasks" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "tasks_delete_owner_or_editor_not_archived" ON "public"."tasks" FOR DELETE USING ((EXISTS ( SELECT 1
+CREATE POLICY "tasks_insert" ON "public"."tasks" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
    FROM ("public"."milestones" "m"
      JOIN "public"."projects" "p" ON (("p"."id" = "m"."project_id")))
-  WHERE (("m"."id" = "tasks"."milestone_id") AND "public"."has_project_role"("p"."id", "auth"."uid"(), 'editor'::"text") AND ("p"."status" <> 'archived'::"text")))));
+  WHERE (("m"."id" = "tasks"."milestone_id") AND ("p"."deleted_at" IS NULL) AND (("p"."owner_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
+           FROM "public"."project_members" "pm"
+          WHERE (("pm"."project_id" = "p"."id") AND ("pm"."user_id" = "auth"."uid"()) AND ("pm"."role" = ANY (ARRAY['owner'::"public"."project_role", 'editor'::"public"."project_role"]))))))))));
 
 
 
-CREATE POLICY "tasks_insert_owner_or_editor_not_archived" ON "public"."tasks" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
+CREATE POLICY "tasks_no_delete" ON "public"."tasks" FOR DELETE TO "authenticated" USING (false);
+
+
+
+CREATE POLICY "tasks_select" ON "public"."tasks" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM ("public"."milestones" "m"
      JOIN "public"."projects" "p" ON (("p"."id" = "m"."project_id")))
-  WHERE (("m"."id" = "tasks"."milestone_id") AND "public"."has_project_role"("p"."id", "auth"."uid"(), 'editor'::"text") AND ("p"."status" <> 'archived'::"text")))));
+  WHERE (("m"."id" = "tasks"."milestone_id") AND ("p"."deleted_at" IS NULL) AND (("p"."owner_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
+           FROM "public"."project_members" "pm"
+          WHERE (("pm"."project_id" = "p"."id") AND ("pm"."user_id" = "auth"."uid"())))))))));
 
 
 
-CREATE POLICY "tasks_select_owner_or_member" ON "public"."tasks" FOR SELECT USING ((EXISTS ( SELECT 1
+CREATE POLICY "tasks_update" ON "public"."tasks" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM ("public"."milestones" "m"
      JOIN "public"."projects" "p" ON (("p"."id" = "m"."project_id")))
-  WHERE (("m"."id" = "tasks"."milestone_id") AND (("p"."owner_id" = "auth"."uid"()) OR "public"."is_project_member"("p"."id", "auth"."uid"()))))));
-
-
-
-CREATE POLICY "tasks_update_owner_or_editor_not_archived" ON "public"."tasks" FOR UPDATE USING ((EXISTS ( SELECT 1
-   FROM ("public"."milestones" "m"
-     JOIN "public"."projects" "p" ON (("p"."id" = "m"."project_id")))
-  WHERE (("m"."id" = "tasks"."milestone_id") AND "public"."has_project_role"("p"."id", "auth"."uid"(), 'editor'::"text") AND ("p"."status" <> 'archived'::"text"))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM ("public"."milestones" "m"
-     JOIN "public"."projects" "p" ON (("p"."id" = "m"."project_id")))
-  WHERE (("m"."id" = "tasks"."milestone_id") AND ("p"."status" <> 'archived'::"text")))));
+  WHERE (("m"."id" = "tasks"."milestone_id") AND ("p"."deleted_at" IS NULL) AND (("p"."owner_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
+           FROM "public"."project_members" "pm"
+          WHERE (("pm"."project_id" = "p"."id") AND ("pm"."user_id" = "auth"."uid"()) AND ("pm"."role" = ANY (ARRAY['owner'::"public"."project_role", 'editor'::"public"."project_role"]))))))))));
 
 
 
@@ -2220,6 +2158,18 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 
 
+
+
+
+GRANT ALL ON FUNCTION "public"."add_project_creator_as_owner"() TO "anon";
+GRANT ALL ON FUNCTION "public"."add_project_creator_as_owner"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."add_project_creator_as_owner"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."all_milestone_tasks_complete"("p_milestone_id" bigint) TO "anon";
+GRANT ALL ON FUNCTION "public"."all_milestone_tasks_complete"("p_milestone_id" bigint) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."all_milestone_tasks_complete"("p_milestone_id" bigint) TO "service_role";
 
 
 
