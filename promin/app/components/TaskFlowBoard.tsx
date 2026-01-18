@@ -11,13 +11,17 @@ import { useToast } from "./ToastProvider";
 type Props = {
   milestoneId: number;
   canEdit?: boolean;
+  isReadOnly?: boolean;
   onMilestoneChanged?: () => void;
+  onMilestoneUpdated?: () => void;
 };
 
-export default function TaskFlowBoard({ 
-  milestoneId, 
+export default function TaskFlowBoard({
+  milestoneId,
   canEdit = true,
-  onMilestoneChanged 
+  isReadOnly = false,
+  onMilestoneChanged,
+  onMilestoneUpdated,
 }: Props) {
   const { pushToast } = useToast();
 
@@ -49,6 +53,7 @@ export default function TaskFlowBoard({
   const handleTaskCreated = async () => {
     await loadTasks();
     onMilestoneChanged?.();
+    onMilestoneUpdated?.();
   };
 
   const handleTaskClick = (task: any) => {
@@ -62,6 +67,7 @@ export default function TaskFlowBoard({
   const handleTaskUpdated = async () => {
     await loadTasks();
     onMilestoneChanged?.();
+    onMilestoneUpdated?.();
   };
 
   const pendingTasks = tasks.filter((t) => t.status === "pending");
@@ -78,45 +84,78 @@ export default function TaskFlowBoard({
 
   return (
     <>
-      <div className="grid grid-cols-3 gap-4 min-h-[400px]">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 min-h-[400px]">
+        {/* Pending Column */}
         <div className="bg-gray-50 rounded-lg p-4">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-gray-700">
               Pending ({pendingTasks.length})
             </h3>
-            {canEdit && (
+            {canEdit && !isReadOnly && (
               <AddTaskButton
                 milestoneId={milestoneId}
                 onCreated={handleTaskCreated}
               />
             )}
           </div>
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-[600px] overflow-y-auto">
             {pendingTasks.map((task) => (
-              <TaskCard key={task.id} task={task} onClick={handleTaskClick} />
+              <TaskCard
+                key={task.id}
+                task={task}
+                onClick={handleTaskClick}
+                onTaskUpdated={handleTaskUpdated}
+              />
             ))}
+            {pendingTasks.length === 0 && (
+              <p className="text-gray-400 text-sm text-center py-8">
+                No pending tasks
+              </p>
+            )}
           </div>
         </div>
 
+        {/* In Progress Column */}
         <div className="bg-blue-50 rounded-lg p-4">
           <h3 className="font-semibold text-blue-700 mb-4">
             In Progress ({inProgressTasks.length})
           </h3>
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-[600px] overflow-y-auto">
             {inProgressTasks.map((task) => (
-              <TaskCard key={task.id} task={task} onClick={handleTaskClick} />
+              <TaskCard
+                key={task.id}
+                task={task}
+                onClick={handleTaskClick}
+                onTaskUpdated={handleTaskUpdated}
+              />
             ))}
+            {inProgressTasks.length === 0 && (
+              <p className="text-gray-400 text-sm text-center py-8">
+                No tasks in progress
+              </p>
+            )}
           </div>
         </div>
 
+        {/* Completed Column */}
         <div className="bg-green-50 rounded-lg p-4">
           <h3 className="font-semibold text-green-700 mb-4">
             Completed ({completedTasks.length})
           </h3>
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-[600px] overflow-y-auto">
             {completedTasks.map((task) => (
-              <TaskCard key={task.id} task={task} onClick={handleTaskClick} />
+              <TaskCard
+                key={task.id}
+                task={task}
+                onClick={handleTaskClick}
+                onTaskUpdated={handleTaskUpdated}
+              />
             ))}
+            {completedTasks.length === 0 && (
+              <p className="text-gray-400 text-sm text-center py-8">
+                No completed tasks
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -125,6 +164,7 @@ export default function TaskFlowBoard({
         open={!!selectedTask}
         task={selectedTask}
         onClose={handleDrawerClose}
+        isReadOnly={isReadOnly}
         onTaskUpdated={handleTaskUpdated}
       />
     </>

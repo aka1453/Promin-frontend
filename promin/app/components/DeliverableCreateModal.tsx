@@ -1,4 +1,4 @@
-// app/components/SubtaskCreateModal.tsx
+// app/components/DeliverableCreateModal.tsx
 "use client";
 
 import { useState } from "react";
@@ -7,14 +7,14 @@ import { useToast } from "./ToastProvider";
 
 type Props = {
   taskId: number;
-  existingSubtasks: any[];
+  existingDeliverables: any[];
   onClose: () => void;
   onSuccess: () => void;
 };
 
-export default function SubtaskCreateModal({
+export default function DeliverableCreateModal({
   taskId,
-  existingSubtasks,
+  existingDeliverables,
   onClose,
   onSuccess,
 }: Props) {
@@ -29,8 +29,8 @@ export default function SubtaskCreateModal({
 
   const [creating, setCreating] = useState(false);
 
-  const sum = (existingSubtasks || []).reduce(
-    (acc: number, s: any) => acc + Number(s.weight ?? 0),
+  const sum = (existingDeliverables || []).reduce(
+    (acc: number, d: any) => acc + Number(d.weight ?? 0),
     0
   );
   const proposed = sum + Number(weight);
@@ -49,7 +49,7 @@ export default function SubtaskCreateModal({
 
     setCreating(true);
     try {
-      const { error } = await supabase.from("subtasks").insert({
+      const { error } = await supabase.from("deliverables").insert({
         task_id: taskId,
         title: title.trim(),
         description: description.trim() || null,
@@ -62,7 +62,7 @@ export default function SubtaskCreateModal({
       });
 
       if (error) {
-        console.error("Create subtask error:", error);
+        console.error("Create deliverable error:", error);
         pushToast("Failed to create deliverable", "error");
         return;
       }
@@ -70,7 +70,7 @@ export default function SubtaskCreateModal({
       pushToast("Deliverable created", "success");
       onSuccess();
     } catch (e: any) {
-      console.error("Create subtask exception:", e);
+      console.error("Create deliverable exception:", e);
       pushToast(e?.message || "Failed to create deliverable", "error");
     } finally {
       setCreating(false);

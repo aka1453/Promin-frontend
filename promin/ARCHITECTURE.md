@@ -16,7 +16,7 @@ No ambiguity exists about ownership of computed fields
 
 Claude, future contributors, and future-you cannot accidentally regress the system
 
-If any change violates this document, it is architecturally incorrect, even if it “works”.
+If any change violates this document, it is architecturally incorrect, even if it "works".
 
 1️⃣ System Philosophy (Non-Negotiable)
 
@@ -48,11 +48,11 @@ There must never be two places where the same rule exists.
 Project
  └─ Milestone
      └─ Task
-         └─ Subtask (atomic unit of truth)
+         └─ Deliverable (atomic unit of truth)
 
 Atomic Unit
 
-Subtask is the only unit that can be directly “completed” (is_done)
+Deliverable is the only unit that can be directly "completed" (is_done)
 
 All progress, dates, costs, and lifecycle above this level are derived
 
@@ -84,8 +84,8 @@ Render DB-computed values
 4️⃣ Field Ownership Matrix (Authoritative)
 ✅ Allowed Frontend Writes (Intent Fields)
 Entity	Field
-Subtask	is_done
-Subtask	completed_at (metadata only)
+Deliverable	is_done
+Deliverable	completed_at (metadata only)
 Task	actual_start
 Task	actual_end
 Milestone	actual_end
@@ -129,11 +129,11 @@ Frontend lifecycle functions only write dates, never status.
 
 Examples of intent:
 
-“Start task” → write actual_start
+"Start task" → write actual_start
 
-“Complete task” → write actual_end
+"Complete task" → write actual_end
 
-“Complete milestone” → write actual_end
+"Complete milestone" → write actual_end
 
 If invalid:
 
@@ -185,7 +185,7 @@ Render DB-computed values
 
 Refresh Scope Rules
 Mutation	Required Refresh
-Subtask change	Subtasks + parent Task
+Deliverable change	Deliverables + parent Task
 Task change	Tasks + parent Milestone
 Milestone change	Milestones + parent Project
 Project change	Projects
@@ -206,7 +206,7 @@ This is intentional and prevents hidden coupling.
 
 These improve user experience but do not enforce rules:
 
-“Start task before completing deliverables”
+"Start task before completing deliverables"
 
 Button visibility (Start / Complete)
 
@@ -220,7 +220,7 @@ Client-side form validation
 
 These must never exist in the UI:
 
-“All tasks must be complete before milestone completion”
+"All tasks must be complete before milestone completion"
 
 Lifecycle enforcement based on child inspection
 
@@ -230,15 +230,15 @@ Cross-entity validation logic
 
 If the DB cares, the DB enforces.
 
-9️⃣ Subtask Completion Contract
+9️⃣ Deliverable Completion Contract
 
-Source of truth: subtasks.is_done
+Source of truth: deliverables.is_done
 
 completed_at is metadata only (UI / audit)
 
 Backend rollups must depend on is_done, not timestamps
 
-Tasks, milestones, and projects derive lifecycle state from subtasks indirectly via DB logic.
+Tasks, milestones, and projects derive lifecycle state from deliverables indirectly via DB logic.
 
 🔟 Weight Validation Philosophy
 
@@ -272,7 +272,7 @@ UI must surface constraint violations clearly
 
 If a mutation fails:
 
-UI does not “optimistically fix”
+UI does not "optimistically fix"
 
 UI does not recompute
 
@@ -323,3 +323,9 @@ Regression-resistant
 - No RLS policy may reference another RLS-protected table
 - Cross-entity access MUST use SECURITY DEFINER functions
 - Violations will cause infinite recursion (Postgres 42P17)
+
+### TERMINOLOGY (POST PHASE 3.2)
+
+- "Deliverable" is the standard term throughout
+- "Subtask" references removed from all code
+- Database table: `deliverables` (not `subtasks`)

@@ -5,7 +5,7 @@ import { queryTasksOrdered } from "../lib/queryTasks";
 import type { Task } from "../types/task";
 import TaskCard from "./TaskCard";
 import AddTaskButton from "./AddTaskButton";
-import EditTaskModal from "./EditTaskModal";
+import TaskDetailsDrawer from "./TaskDetailsDrawer";
 
 type Props = {
   milestoneId: number;
@@ -14,7 +14,7 @@ type Props = {
 export default function TaskFlow({ milestoneId }: Props) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   async function loadTasks() {
     setLoading(true);
@@ -32,6 +32,26 @@ export default function TaskFlow({ milestoneId }: Props) {
     loadTasks();
   }, [milestoneId]);
 
+  const handleTaskClick = (task: Task) => {
+    console.log("🔵 TaskFlow: Task clicked!", task.title);
+    console.log("🔵 TaskFlow: Opening TaskDetailsDrawer");
+    setSelectedTask(task);
+  };
+
+  const handleDrawerClose = () => {
+    console.log("🔵 TaskFlow: Closing drawer");
+    setSelectedTask(null);
+  };
+
+  const handleTaskUpdated = async () => {
+    console.log("🔵 TaskFlow: Task updated, refreshing");
+    await loadTasks();
+  };
+
+  // Debug logging
+  console.log("🔵 TaskFlow RENDER: selectedTask =", selectedTask?.title || "null");
+  console.log("🔵 TaskFlow RENDER: drawer open =", !!selectedTask);
+
   return (
     <div className="mt-8">
       <div className="flex justify-end mb-4">
@@ -45,15 +65,19 @@ export default function TaskFlow({ milestoneId }: Props) {
         )}
 
         {tasks.map((t) => (
-          <TaskCard key={t.id} task={t} onClick={() => setEditingTask(t)} />
+          <TaskCard 
+            key={t.id} 
+            task={t} 
+            onClick={handleTaskClick}
+          />
         ))}
       </div>
 
-      <EditTaskModal
-        task={editingTask}
-        open={!!editingTask}
-        onClose={() => setEditingTask(null)}
-        onSaved={loadTasks}
+      <TaskDetailsDrawer
+        open={!!selectedTask}
+        task={selectedTask}
+        onClose={handleDrawerClose}
+        onTaskUpdated={handleTaskUpdated}
       />
     </div>
   );

@@ -3,8 +3,7 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { recalcTask } from "@/lib/recalcTask";
-import SubtaskInlineUploader from "@/components/SubtaskInlineUploader";
+import SubtaskInlineUploader from "@/components/DeliverableInlineUploader";
 import { useToast } from "@/components/ToastProvider";
 
 type Props = {
@@ -24,7 +23,7 @@ export default function SubtaskCard({
   onDelete,
   onChanged,
 }: Props) {
-  const { showToast } = useToast();
+  const { pushToast } = useToast();
   const [updating, setUpdating] = useState(false);
 
   const readOnly = isReadOnly;
@@ -46,12 +45,11 @@ export default function SubtaskCard({
 
     if (error) {
       console.error("Toggle deliverable error:", error);
-      showToast("Failed to update deliverable", "error");
+      pushToast("Failed to update deliverable", "error");
       setUpdating(false);
       return;
     }
 
-    await recalcTask(taskId);
     onChanged();
     setUpdating(false);
   }

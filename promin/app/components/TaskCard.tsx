@@ -4,22 +4,26 @@
 import React from "react";
 import { formatPercent } from "../utils/format";
 import { startTask, completeTask } from "../lib/lifecycle";
+import TaskCardMenu from "./TaskCardMenu";
+
 type Props = {
   task: any;
   onClick?: (task: any) => void;
+  onTaskUpdated?: () => void;
 };
 
-export default function TaskCard({ task, onClick }: Props) {
-    const handleStartTask = async (
-    e: React.MouseEvent<HTMLButtonElement>
-  ) => {
+export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
+  const handleStartTask = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    await startTask(task.id);
+    try {
+      await startTask(task.id);
+      onTaskUpdated?.();
+    } catch (error) {
+      console.error("Failed to start task:", error);
+    }
   };
 
-  const handleCompleteTask = async (
-    e: React.MouseEvent<HTMLButtonElement>
-  ) => {
+  const handleCompleteTask = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
 
     const confirmed = confirm(
@@ -27,7 +31,21 @@ export default function TaskCard({ task, onClick }: Props) {
     );
     if (!confirmed) return;
 
-    await completeTask(task.id);
+    try {
+      await completeTask(task.id);
+      onTaskUpdated?.();
+    } catch (error) {
+      console.error("Failed to complete task:", error);
+    }
+  };
+
+  const handleCardClick = () => {
+    onClick?.(task);
+  };
+
+  const handleViewDeliverables = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    onClick?.(task);
   };
 
   const initials = task.assigned_to
@@ -48,12 +66,21 @@ export default function TaskCard({ task, onClick }: Props) {
 
   return (
     <div
-      className="bg-white shadow rounded-xl p-4 w-[260px] min-w-[260px] cursor-pointer hover:shadow-lg transition-all"
-      onClick={() => onClick?.(task)}
-    >
-            {/* Title + Lifecycle */}
+  className="bg-white shadow rounded-xl p-4 w-[260px] min-w-[260px] hover:shadow-md transition-all relative"
+>
+      {/* 3-dot menu */}
+      <div className="absolute top-3 right-3">
+        <TaskCardMenu
+          task={task}
+          onTaskUpdated={() => {
+            onTaskUpdated?.();
+          }}
+        />
+      </div>
+
+      {/* Title + Lifecycle */}
       <div className="flex items-start justify-between gap-2 mb-3">
-        <h3 className="font-semibold text-sm">{task.title}</h3>
+        <h3 className="font-semibold text-sm pr-6">{task.title}</h3>
 
         {/* Lifecycle buttons */}
         {task.status !== "completed" && (
@@ -79,7 +106,6 @@ export default function TaskCard({ task, onClick }: Props) {
         )}
       </div>
 
-
       {/* Weight */}
       <div className="mb-3 text-[11px] text-slate-500">
         Weight:{" "}
@@ -97,9 +123,7 @@ export default function TaskCard({ task, onClick }: Props) {
             style={{ width: `${Math.max(0, Math.min(100, planned))}%` }}
           />
         </div>
-        <p className="text-[11px] text-gray-500 mt-1">
-          {formatPercent(planned)}
-        </p>
+        <p className="text-[11px] text-gray-500 mt-1">{formatPercent(planned)}</p>
       </div>
 
       {/* Actual Progress */}
@@ -111,9 +135,7 @@ export default function TaskCard({ task, onClick }: Props) {
             style={{ width: `${Math.max(0, Math.min(100, actual))}%` }}
           />
         </div>
-        <p className="text-[11px] text-gray-500 mt-1">
-          {formatPercent(actual)}
-        </p>
+        <p className="text-[11px] text-gray-500 mt-1">{formatPercent(actual)}</p>
       </div>
 
       {/* Assigned */}
@@ -154,6 +176,16 @@ export default function TaskCard({ task, onClick }: Props) {
             ${task.actual_cost?.toLocaleString() ?? 0}
           </span>
         </div>
+      </div>
+
+      {/* VIEW DELIVERABLES BUTTON */}
+      <div className="mt-4 pt-3 border-t border-gray-200">
+        <button
+          onClick={handleViewDeliverables}
+          className="w-full px-3 py-2 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+        >
+          📋 View Deliverables & Files
+        </button>
       </div>
     </div>
   );

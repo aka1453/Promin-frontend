@@ -3,8 +3,8 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
-import SubtaskCard from "./SubtaskCard";
-import SubtaskCreateModal from "./SubtaskCreateModal";
+import DeliverableCard from "./DeliverableCard";
+import DeliverableCreateModal from "./DeliverableCreateModal";
 import { useToast } from "./ToastProvider";
 
 type Props = {
@@ -14,7 +14,7 @@ type Props = {
   canEdit?: boolean;
   canDelete?: boolean;
   isReadOnly?: boolean;
-  onTaskUpdated?: () => void; // NEW: callback when task lifecycle changes
+  onTaskUpdated?: () => void;
 };
 
 function TaskStatusBadge({ task }: { task: any }) {
@@ -44,83 +44,94 @@ export default function TaskDetailsDrawer({
   onClose,
   canEdit = true,
   isReadOnly = false,
-  onTaskUpdated, // NEW
+  onTaskUpdated,
 }: Props) {
   const { pushToast } = useToast();
   const [taskState, setTaskState] = useState<any | null>(null);
 
-  const [subtasks, setSubtasks] = useState<any[]>([]);
-  const [loadingSubtasks, setLoadingSubtasks] = useState(false);
-  const [subtaskError, setSubtaskError] = useState<string | null>(null);
+  const [deliverables, setDeliverables] = useState<any[]>([]);
+  const [loadingDeliverables, setLoadingDeliverables] = useState(false);
+  const [deliverableError, setDeliverableError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
   const taskId = taskState?.id ?? null;
   const taskActualStart = taskState?.actual_start ?? null;
 
   const allDeliverablesCompleted =
-    subtasks.length > 0 &&
-    subtasks.every((s) => s.is_done === true);
+    deliverables.length > 0 && deliverables.every((d) => d.is_done === true);
 
   const effectiveCanEdit = canEdit && !isReadOnly;
 
   /* ----------------------------------------
      LOAD DELIVERABLES
   ---------------------------------------- */
-  const loadSubtasks = async () => {
+  const loadDeliverables = async () => {
     if (!open || !taskId) return;
 
-    setLoadingSubtasks(true);
-    setSubtaskError(null);
+    setLoadingDeliverables(true);
+    setDeliverableError(null);
 
     const { data, error } = await supabase
-      .from("subtasks")
+      .from("deliverables")
       .select("*")
       .eq("task_id", taskId)
       .order("weight", { ascending: false });
 
     if (error) {
-      console.error("load subtasks error:", error);
-      setSubtasks([]);
-      setSubtaskError("Failed to load deliverables.");
-      setLoadingSubtasks(false);
-      return;
+      console.error("Failed to load deliverables:", error);
+      setDeliverableError("Failed to load deliverables");
+    } else {
+      setDeliverables(data || []);
     }
 
-    setSubtasks(data || []);
-    setLoadingSubtasks(false);
+    setLoadingDeliverables(false);
   };
 
+  /* ----------------------------------------
+     SYNC TASK STATE FROM PROP
+  ---------------------------------------- */
   useEffect(() => {
-    if (open && task) {
-      setTaskState(task);
+    if (!open || !task) {
+      setTaskState(null);
+      return;
     }
+    setTaskState(task);
   }, [open, task]);
 
   useEffect(() => {
-    if (!open || !taskState?.id) return;
-    void loadSubtasks();
-  }, [open, taskState?.id]);
+    if (open && taskId) {
+      loadDeliverables();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, taskId]);
 
-  if (!open || !taskState) return null;
-
+  /* ----------------------------------------
+     REFRESH TASK (FOR LIFECYCLE CHANGES)
+  ---------------------------------------- */
   const refreshTask = async () => {
     if (!taskId) return;
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("tasks")
       .select("*")
       .eq("id", taskId)
       .single();
 
-    if (data) setTaskState(data);
+    if (!error && data) {
+      setTaskState(data);
+    }
+
+    await loadDeliverables();
   };
 
   /* ----------------------------------------
-     TASK LIFECYCLE ACTIONS
+     LIFECYCLE ACTIONS
   ---------------------------------------- */
-
   const handleStartTask = async () => {
-    if (!effectiveCanEdit) return;
+    if (!taskState || !effectiveCanEdit) {
+      pushToast("You don't have permission to start this task.", "warning");
+      return;
+    }
 
     const { error } = await supabase
       .from("tasks")
@@ -138,17 +149,12 @@ export default function TaskDetailsDrawer({
 
     pushToast("Task started.", "success");
     await refreshTask();
-    onTaskUpdated?.(); // NEW: notify parent
+    onTaskUpdated?.();
   };
 
   const handleCompleteTask = async () => {
-    if (!effectiveCanEdit) return;
-
-    if (!allDeliverablesCompleted) {
-      pushToast(
-        "All deliverables must be completed before finishing the task.",
-        "warning"
-      );
+    if (!taskState || !effectiveCanEdit) {
+      pushToast("You don't have permission to complete this task.", "warning");
       return;
     }
 
@@ -171,8 +177,11 @@ export default function TaskDetailsDrawer({
 
     pushToast("Task completed.", "success");
     await refreshTask();
-    onTaskUpdated?.(); // NEW: notify parent
+    onTaskUpdated?.();
   };
+
+  // Don't render if not open or no task
+  if (!open || !task) return null;
 
   return (
     <div className="fixed inset-0 z-[9999]">
@@ -188,20 +197,20 @@ export default function TaskDetailsDrawer({
         <div className="p-6 border-b space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold truncate">
-              {taskState.title || "Untitled Task"}
+              {taskState?.title || "Untitled Task"}
             </h2>
 
             <TaskStatusBadge task={taskState} />
           </div>
 
-          {taskState.description && (
+          {taskState?.description && (
             <p className="text-sm text-slate-600 whitespace-pre-wrap">
               {taskState.description}
             </p>
           )}
 
           <div className="flex gap-2">
-            {!taskState.actual_start && effectiveCanEdit && (
+            {!taskState?.actual_start && effectiveCanEdit && (
               <button
                 onClick={handleStartTask}
                 className="px-3 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
@@ -210,8 +219,8 @@ export default function TaskDetailsDrawer({
               </button>
             )}
 
-            {taskState.actual_start &&
-              !taskState.actual_end &&
+            {taskState?.actual_start &&
+              !taskState?.actual_end &&
               effectiveCanEdit &&
               allDeliverablesCompleted && (
                 <button
@@ -257,34 +266,32 @@ export default function TaskDetailsDrawer({
             </button>
           </div>
 
-          {subtaskError && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-              {subtaskError}
+          {deliverableError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              {deliverableError}
             </div>
           )}
 
-          {loadingSubtasks ? (
-            <div className="text-sm text-slate-500">
-              Loading deliverables…
-            </div>
-          ) : subtasks.length === 0 ? (
-            <div className="rounded-lg border bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              No deliverables yet.
+          {loadingDeliverables ? (
+            <div className="text-sm text-slate-500">Loading deliverables...</div>
+          ) : deliverables.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">
+              No deliverables yet. Add one to get started.
             </div>
           ) : (
-            <div className="space-y-3">
-              {subtasks.map((s) => (
-                <SubtaskCard
-                  key={s.id}
-                  subtask={s}
-                  existingSubtasks={subtasks}
+            <div className="space-y-2">
+              {deliverables.map((d) => (
+                <DeliverableCard
+                  key={d.id}
+                  deliverable={d}
+                  existingDeliverables={deliverables}
                   canEdit={effectiveCanEdit}
                   canDelete={effectiveCanEdit}
                   taskActualStart={taskActualStart}
                   onChanged={async () => {
-                    await loadSubtasks();
+                    await loadDeliverables();
                     await refreshTask();
-                    onTaskUpdated?.(); // NEW: notify parent on deliverable changes too
+                    onTaskUpdated?.();
                   }}
                 />
               ))}
@@ -292,21 +299,31 @@ export default function TaskDetailsDrawer({
           )}
         </div>
 
-        {/* CREATE DELIVERABLE */}
-        <SubtaskCreateModal
-          open={createOpen}
+        {/* Close Button */}
+        <div className="sticky bottom-0 bg-white border-t p-4">
+          <button
+            onClick={onClose}
+            className="w-full px-4 py-2 rounded-md bg-gray-100 text-gray-700 font-medium hover:bg-gray-200"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+
+      {/* CREATE DELIVERABLE MODAL */}
+      {createOpen && (
+        <DeliverableCreateModal
           taskId={taskId}
-          existingSubtasks={subtasks}
-          taskActualStart={taskActualStart}
+          existingDeliverables={deliverables}
           onClose={() => setCreateOpen(false)}
-          onCreated={async () => {
-            setCreateOpen(false);
-            await loadSubtasks();
+          onSuccess={async () => {
+            await loadDeliverables();
             await refreshTask();
-            onTaskUpdated?.(); // NEW: notify parent
+            onTaskUpdated?.();
+            setCreateOpen(false);
           }}
         />
-      </div>
+      )}
     </div>
   );
 }
