@@ -41,10 +41,9 @@ export default function DeliverableCard({
     const updatePayload: any = {
       is_done: checked,
       completed_at: checked ? now : null,
-      actual_end: checked ? now.slice(0, 10) : null, // Auto-fill actual_end date
+      actual_end: checked ? now.slice(0, 10) : null,
     };
 
-    // Optimistic update
     setLocalDeliverable({
       ...localDeliverable,
       ...updatePayload,
@@ -58,14 +57,14 @@ export default function DeliverableCard({
     if (error) {
       console.error("Toggle deliverable error:", error);
       pushToast("Failed to update deliverable", "error");
-      // Revert optimistic update
       setLocalDeliverable(deliverable);
       setUpdating(false);
       return;
     }
 
-    // Don't call onChanged here - keeps drawer open
     setUpdating(false);
+    // Call onChanged to update parent task
+    onChanged?.();
   }
 
   async function handleDelete() {
@@ -88,13 +87,14 @@ export default function DeliverableCard({
     }
 
     pushToast("Deliverable deleted", "success");
-    onChanged?.(); // This will close drawer, but that's OK for delete
+    onChanged?.();
   }
 
-  const handleEditSuccess = () => {
+  const handleEditSuccess = async () => {
     setEditOpen(false);
-    // Refresh the local state without closing drawer
-    refreshLocalState();
+    await refreshLocalState();
+    // ADDED: Notify parent to update task progress
+    onChanged?.();
   };
 
   const refreshLocalState = async () => {
@@ -116,7 +116,6 @@ export default function DeliverableCard({
           ${readOnly ? "bg-gray-50 opacity-80" : "bg-white hover:bg-gray-50"}
         `}
       >
-        {/* HEADER ROW - Checkbox + Title + Actions */}
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-start gap-2 flex-1">
             <input
@@ -145,7 +144,6 @@ export default function DeliverableCard({
             </div>
           </div>
 
-          {/* ACTIONS */}
           {!readOnly && (
             <div className="flex items-center gap-2">
               <button
@@ -166,12 +164,11 @@ export default function DeliverableCard({
           )}
         </div>
 
-        {/* DETAILS GRID */}
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs mb-3">
           <div>
             <span className="text-gray-500">Weight:</span>
             <span className="ml-2 font-medium text-gray-900">
-              {localDeliverable.weight ?? 0}%
+              {((localDeliverable.weight ?? 0) * 100).toFixed(0)}%
             </span>
           </div>
 
@@ -226,7 +223,6 @@ export default function DeliverableCard({
           </div>
         </div>
 
-        {/* FILE UPLOAD + TOGGLE */}
         {!readOnly && (
           <div className="flex items-center justify-between pt-3 border-t">
             <button
@@ -240,26 +236,23 @@ export default function DeliverableCard({
               deliverableId={localDeliverable.id}
               deliverableTitle={localDeliverable.title}
               onUploaded={() => {
-                // Don't refresh entire drawer, just reload files
                 setShowFiles(true);
               }}
             />
           </div>
         )}
 
-        {/* FILE SECTION (EXPANDABLE) */}
         {showFiles && (
           <div className="mt-3 pt-3 border-t">
             <DeliverableFileSection
               deliverableId={localDeliverable.id}
               deliverableTitle={localDeliverable.title}
-              key={showFiles ? "visible" : "hidden"} // Force reload when toggled
+              key={showFiles ? "visible" : "hidden"}
             />
           </div>
         )}
       </div>
 
-      {/* EDIT MODAL */}
       {editOpen && (
         <EditDeliverableModal
           deliverableId={localDeliverable.id}

@@ -26,15 +26,17 @@ export default function DeliverableCreateModal({
   const [plannedStart, setPlannedStart] = useState("");
   const [plannedEnd, setPlannedEnd] = useState("");
   const [budgetedCost, setBudgetedCost] = useState("0");
+  const [assignedUser, setAssignedUser] = useState("");
 
   const [creating, setCreating] = useState(false);
 
+  // Calculate total weight as percentage
   const sum = (existingDeliverables || []).reduce(
     (acc: number, d: any) => acc + Number(d.weight ?? 0),
     0
   );
   const proposed = sum + Number(weight);
-  const overWeight = proposed > 1;
+  const overWeight = proposed > 100;
 
   const handleCreate = async () => {
     if (!title.trim()) {
@@ -49,16 +51,18 @@ export default function DeliverableCreateModal({
 
     setCreating(true);
     try {
+      // Convert percentage to decimal for database storage
       const { error } = await supabase.from("deliverables").insert({
         task_id: taskId,
         title: title.trim(),
         description: description.trim() || null,
-        weight: Number(weight),
+        weight: Number(weight) / 100, // Store as decimal (0-1)
         planned_start: plannedStart || null,
         planned_end: plannedEnd || null,
         budgeted_cost: Number(budgetedCost),
         actual_cost: 0,
         is_done: false,
+        assigned_user: assignedUser.trim() || null,
       });
 
       if (error) {
@@ -115,32 +119,29 @@ export default function DeliverableCreateModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Weight (0-1) *</label>
+            <label className="block text-sm font-medium mb-1">Weight (%) *</label>
             <input
               type="number"
-              step="0.01"
+              step="1"
               min="0"
-              max="1"
+              max="100"
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
               className="w-full border rounded px-3 py-2 text-sm"
             />
             {overWeight && (
               <p className="text-xs text-red-600 mt-1">
-                ⚠️ Total weight exceeds 100% ({(proposed * 100).toFixed(1)}%)
+                ⚠️ Total weight exceeds 100% ({proposed.toFixed(0)}%)
               </p>
             )}
             <p className="text-xs text-gray-500 mt-1">
-              Existing: {(sum * 100).toFixed(1)}% | Proposed:{" "}
-              {(proposed * 100).toFixed(1)}%
+              Existing: {sum.toFixed(0)}% | Proposed: {proposed.toFixed(0)}%
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium mb-1">
-                Planned Start
-              </label>
+              <label className="block text-sm font-medium mb-1">Planned Start</label>
               <input
                 type="date"
                 value={plannedStart}
@@ -168,6 +169,17 @@ export default function DeliverableCreateModal({
               value={budgetedCost}
               onChange={(e) => setBudgetedCost(e.target.value)}
               className="w-full border rounded px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Assigned User</label>
+            <input
+              type="text"
+              value={assignedUser}
+              onChange={(e) => setAssignedUser(e.target.value)}
+              className="w-full border rounded px-3 py-2 text-sm"
+              placeholder="User name"
             />
           </div>
         </div>

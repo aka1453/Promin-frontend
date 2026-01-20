@@ -1,329 +1,266 @@
-// app/components/TaskDetailsDrawer.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { startTask, completeTask } from "../lib/lifecycle";
 import DeliverableCard from "./DeliverableCard";
 import DeliverableCreateModal from "./DeliverableCreateModal";
-import { useToast } from "./ToastProvider";
 
 type Props = {
   open: boolean;
   task: any;
   onClose: () => void;
-  canEdit?: boolean;
-  canDelete?: boolean;
-  isReadOnly?: boolean;
   onTaskUpdated?: () => void;
 };
-
-function TaskStatusBadge({ task }: { task: any }) {
-  let label = "Not started";
-  let classes = "bg-slate-100 text-slate-700";
-
-  if (task?.actual_end || task?.status === "completed") {
-    label = "Completed";
-    classes = "bg-emerald-100 text-emerald-700";
-  } else if (task?.actual_start || task?.status === "in_progress") {
-    label = "In progress";
-    classes = "bg-blue-100 text-blue-700";
-  }
-
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${classes}`}
-    >
-      {label}
-    </span>
-  );
-}
 
 export default function TaskDetailsDrawer({
   open,
   task,
   onClose,
-  canEdit = true,
-  isReadOnly = false,
   onTaskUpdated,
 }: Props) {
-  const { pushToast } = useToast();
-  const [taskState, setTaskState] = useState<any | null>(null);
-
   const [deliverables, setDeliverables] = useState<any[]>([]);
-  const [loadingDeliverables, setLoadingDeliverables] = useState(false);
-  const [deliverableError, setDeliverableError] = useState<string | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [localTask, setLocalTask] = useState(task);
+  
+  // Track if deliverables were changed
+  const deliverablesChangedRef = useRef(false);
 
-  const taskId = taskState?.id ?? null;
-  const taskActualStart = taskState?.actual_start ?? null;
-
-  const allDeliverablesCompleted =
-    deliverables.length > 0 && deliverables.every((d) => d.is_done === true);
-
-  const effectiveCanEdit = canEdit && !isReadOnly;
-
-  /* ----------------------------------------
-     LOAD DELIVERABLES
-  ---------------------------------------- */
-  const loadDeliverables = async () => {
-    if (!open || !taskId) return;
-
-    setLoadingDeliverables(true);
-    setDeliverableError(null);
-
-    const { data, error } = await supabase
-      .from("deliverables")
-      .select("*")
-      .eq("task_id", taskId)
-      .order("weight", { ascending: false });
-
-    if (error) {
-      console.error("Failed to load deliverables:", error);
-      setDeliverableError("Failed to load deliverables");
-    } else {
-      setDeliverables(data || []);
-    }
-
-    setLoadingDeliverables(false);
-  };
-
-  /* ----------------------------------------
-     SYNC TASK STATE FROM PROP
-  ---------------------------------------- */
-  useEffect(() => {
-    if (!open || !task) {
-      setTaskState(null);
-      return;
-    }
-    setTaskState(task);
-  }, [open, task]);
-
-  useEffect(() => {
-    if (open && taskId) {
-      loadDeliverables();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, taskId]);
-
-  /* ----------------------------------------
-     REFRESH TASK (FOR LIFECYCLE CHANGES)
-  ---------------------------------------- */
-  const refreshTask = async () => {
-    if (!taskId) return;
+  const loadTask = async () => {
+    if (!task?.id) return;
 
     const { data, error } = await supabase
       .from("tasks")
       .select("*")
-      .eq("id", taskId)
+      .eq("id", task.id)
       .single();
 
     if (!error && data) {
-      setTaskState(data);
+      setLocalTask(data);
     }
-
-    await loadDeliverables();
   };
 
-  /* ----------------------------------------
-     LIFECYCLE ACTIONS
-  ---------------------------------------- */
+  const loadDeliverables = async () => {
+    if (!task?.id) return;
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("deliverables")
+        .select("*")
+        .eq("task_id", task.id)
+        .order("weight", { ascending: false });
+
+      if (error) {
+        console.error("Failed to load deliverables:", error);
+        setDeliverables([]);
+        return;
+      }
+
+      setDeliverables(data || []);
+    } catch (err) {
+      console.error("Load deliverables exception:", err);
+      setDeliverables([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (open && task?.id) {
+      loadTask();
+      loadDeliverables();
+      // Reset change tracker when drawer opens
+      deliverablesChangedRef.current = false;
+    }
+  }, [open, task?.id]);
+
+  // Update local task when prop changes
+  useEffect(() => {
+    if (task) {
+      setLocalTask(task);
+    }
+  }, [task]);
+
+  if (!open || !localTask) return null;
+
+  const canEdit = true;
+  const canDelete = true;
+
   const handleStartTask = async () => {
-    if (!taskState || !effectiveCanEdit) {
-      pushToast("You don't have permission to start this task.", "warning");
-      return;
+    try {
+      await startTask(localTask.id);
+      await loadTask();
+      onTaskUpdated?.();
+    } catch (error) {
+      console.error("Failed to start task:", error);
     }
-
-    const { error } = await supabase
-      .from("tasks")
-      .update({
-        actual_start: new Date().toISOString().slice(0, 10),
-        status: "in_progress",
-      })
-      .eq("id", taskState.id)
-      .is("actual_start", null);
-
-    if (error) {
-      pushToast("Failed to start task.", "error");
-      return;
-    }
-
-    pushToast("Task started.", "success");
-    await refreshTask();
-    onTaskUpdated?.();
   };
 
   const handleCompleteTask = async () => {
-    if (!taskState || !effectiveCanEdit) {
-      pushToast("You don't have permission to complete this task.", "warning");
-      return;
-    }
-
-    const confirmed = confirm("Complete this task?");
+    const confirmed = confirm(
+      "Complete this task? This will lock its actual end date."
+    );
     if (!confirmed) return;
 
-    const { error } = await supabase
-      .from("tasks")
-      .update({
-        actual_end: new Date().toISOString().slice(0, 10),
-        status: "completed",
-      })
-      .eq("id", taskState.id)
-      .is("actual_end", null);
-
-    if (error) {
-      pushToast("Failed to complete task.", "error");
-      return;
+    try {
+      await completeTask(localTask.id);
+      await loadTask();
+      onTaskUpdated?.();
+    } catch (error) {
+      console.error("Failed to complete task:", error);
     }
-
-    pushToast("Task completed.", "success");
-    await refreshTask();
-    onTaskUpdated?.();
   };
 
-  // Don't render if not open or no task
-  if (!open || !task) return null;
+  const handleDeliverableChanged = async () => {
+    // Mark that deliverables have changed
+    deliverablesChangedRef.current = true;
+    
+    // Reload deliverables AND task in drawer only
+    await loadDeliverables();
+    await loadTask();
+    
+    // DON'T call onTaskUpdated here - wait for drawer close
+  };
+
+  const handleClose = () => {
+    // If deliverables changed, refresh parent before closing
+    if (deliverablesChangedRef.current) {
+      console.log("Deliverables changed - refreshing task list");
+      onTaskUpdated?.();
+    }
+    
+    onClose();
+  };
 
   return (
-    <div className="fixed inset-0 z-[9999]">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-
-      {/* Drawer */}
+    <>
+      {/* BACKDROP */}
       <div
-        className="absolute right-0 top-0 h-full w-full max-w-xl bg-white shadow-xl overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* TASK HEADER + LIFECYCLE */}
-        <div className="p-6 border-b space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold truncate">
-              {taskState?.title || "Untitled Task"}
-            </h2>
+        className="fixed inset-0 bg-black/30 z-40"
+        onClick={handleClose}
+      />
 
-            <TaskStatusBadge task={taskState} />
-          </div>
-
-          {taskState?.description && (
-            <p className="text-sm text-slate-600 whitespace-pre-wrap">
-              {taskState.description}
-            </p>
-          )}
-
-          <div className="flex gap-2">
-            {!taskState?.actual_start && effectiveCanEdit && (
-              <button
-                onClick={handleStartTask}
-                className="px-3 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+      {/* DRAWER */}
+      <div className="fixed right-0 top-0 bottom-0 w-[600px] bg-white shadow-xl z-50 flex flex-col">
+        {/* HEADER */}
+        <div className="px-6 py-4 border-b flex items-center justify-between">
+          <div className="flex-1">
+            <h2 className="text-xl font-semibold">{localTask.title}</h2>
+            <div className="mt-1">
+              <span
+                className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold
+                  ${
+                    localTask.status === "completed"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : localTask.status === "in_progress"
+                      ? "bg-blue-100 text-blue-700"
+                      : "bg-gray-100 text-gray-700"
+                  }`}
               >
-                Start Task
-              </button>
-            )}
-
-            {taskState?.actual_start &&
-              !taskState?.actual_end &&
-              effectiveCanEdit &&
-              allDeliverablesCompleted && (
-                <button
-                  onClick={handleCompleteTask}
-                  className="px-3 py-2 rounded-md bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"
-                >
-                  Complete Task
-                </button>
-              )}
+                {localTask.status || "pending"}
+              </span>
+            </div>
           </div>
+
+          <button
+            onClick={handleClose}
+            className="text-gray-400 hover:text-gray-600 text-2xl leading-none ml-4"
+          >
+            ×
+          </button>
         </div>
 
-        {/* Task Not Started Warning */}
-        {!taskActualStart && !isReadOnly && (
-          <div className="mx-6 mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            <div className="font-semibold mb-1">Task not started</div>
-            <div className="text-xs">
-              Click "Start Task" above before completing deliverables
-            </div>
-          </div>
-        )}
-
-        {/* DELIVERABLES */}
-        <div className="p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold">Deliverables</h3>
-
+        {/* TASK LIFECYCLE ACTIONS */}
+        <div className="px-6 py-3 border-b bg-gray-50">
+          {!localTask.actual_start && (
             <button
-              className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-              onClick={() => {
-                if (!effectiveCanEdit) {
-                  pushToast(
-                    "You don't have permission to add deliverables.",
-                    "warning"
-                  );
-                  return;
-                }
-                setCreateOpen(true);
-              }}
-              disabled={!effectiveCanEdit}
+              onClick={handleStartTask}
+              className="px-4 py-2 text-sm font-semibold rounded-md bg-blue-600 text-white hover:bg-blue-700"
             >
-              Add Deliverable
+              Start Task
             </button>
-          </div>
-
-          {deliverableError && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-              {deliverableError}
-            </div>
           )}
 
-          {loadingDeliverables ? (
-            <div className="text-sm text-slate-500">Loading deliverables...</div>
+          {localTask.actual_start && !localTask.actual_end && (
+            <button
+              onClick={handleCompleteTask}
+              className="px-4 py-2 text-sm font-semibold rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
+            >
+              Complete Task
+            </button>
+          )}
+
+          {localTask.actual_end && (
+            <div className="text-sm text-emerald-700 font-medium">
+              ✓ Task completed on {localTask.actual_end}
+            </div>
+          )}
+        </div>
+
+        {/* DELIVERABLES SECTION */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold">Deliverables</h3>
+            {canEdit && (
+              <button
+                onClick={() => setCreateModalOpen(true)}
+                className="px-3 py-1.5 text-sm font-semibold bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                + Add Deliverable
+              </button>
+            )}
+          </div>
+
+          {loading ? (
+            <div className="text-center py-8 text-gray-500">
+              Loading deliverables...
+            </div>
           ) : deliverables.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">
+            <div className="text-center py-8 text-gray-500">
               No deliverables yet. Add one to get started.
             </div>
           ) : (
-            <div className="space-y-2">
-              {deliverables.map((d) => (
+            <div className="space-y-3">
+              {deliverables.map((deliverable) => (
                 <DeliverableCard
-                  key={d.id}
-                  deliverable={d}
+                  key={deliverable.id}
+                  deliverable={deliverable}
                   existingDeliverables={deliverables}
-                  canEdit={effectiveCanEdit}
-                  canDelete={effectiveCanEdit}
-                  taskActualStart={taskActualStart}
-                  onChanged={async () => {
-                    await loadDeliverables();
-                    await refreshTask();
-                    onTaskUpdated?.();
-                  }}
+                  canEdit={canEdit}
+                  canDelete={canDelete}
+                  onChanged={handleDeliverableChanged}
+                  taskActualStart={localTask.actual_start}
                 />
               ))}
             </div>
           )}
         </div>
 
-        {/* Close Button */}
-        <div className="sticky bottom-0 bg-white border-t p-4">
+        {/* FOOTER */}
+        <div className="px-6 py-4 border-t">
           <button
-            onClick={onClose}
-            className="w-full px-4 py-2 rounded-md bg-gray-100 text-gray-700 font-medium hover:bg-gray-200"
+            onClick={handleClose}
+            className="w-full px-4 py-2 text-sm font-medium border rounded-md hover:bg-gray-50"
           >
             Close
           </button>
         </div>
       </div>
 
-      {/* CREATE DELIVERABLE MODAL */}
-      {createOpen && (
+      {/* CREATE MODAL */}
+      {createModalOpen && (
         <DeliverableCreateModal
-          taskId={taskId}
+          taskId={localTask.id}
           existingDeliverables={deliverables}
-          onClose={() => setCreateOpen(false)}
+          onClose={() => setCreateModalOpen(false)}
           onSuccess={async () => {
-            await loadDeliverables();
-            await refreshTask();
-            onTaskUpdated?.();
-            setCreateOpen(false);
+            setCreateModalOpen(false);
+            await handleDeliverableChanged();
           }}
         />
       )}
-    </div>
+    </>
   );
 }

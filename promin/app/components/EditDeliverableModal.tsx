@@ -46,7 +46,8 @@ export default function EditDeliverableModal({
 
       setTitle(data.title || "");
       setDescription(data.description || "");
-      setWeight(String(data.weight ?? 0));
+      // Convert decimal to percentage for display
+      setWeight(String((data.weight ?? 0) * 100));
       setPlannedStart(data.planned_start || "");
       setPlannedEnd(data.planned_end || "");
       setActualEnd(data.actual_end || "");
@@ -74,7 +75,7 @@ export default function EditDeliverableModal({
       .update({
         title: title.trim(),
         description: description.trim() || null,
-        weight: Number(weight),
+        weight: Number(weight) / 100, // Convert percentage to decimal
         planned_start: plannedStart || null,
         planned_end: plannedEnd || null,
         actual_end: actualEnd || null,
@@ -208,8 +209,9 @@ export default function EditDeliverableModal({
             <input
               type="date"
               value={actualEnd}
-              onChange={(e) => setActualEnd(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              disabled
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-gray-50 cursor-not-allowed"
+              title="Auto-filled when deliverable is marked as done"
             />
             <p className="text-xs text-gray-500 mt-1">
               Auto-filled when deliverable is marked as done

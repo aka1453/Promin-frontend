@@ -39,10 +39,6 @@ export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
     }
   };
 
-  const handleCardClick = () => {
-    onClick?.(task);
-  };
-
   const handleViewDeliverables = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     onClick?.(task);
@@ -61,13 +57,13 @@ export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
 
   const plannedStart = task.planned_start || "—";
   const plannedEnd = task.planned_end || "—";
+  const actualStart = task.actual_start || "—";
+  const actualEnd = task.actual_end || "—";
 
   const weight = Number(task.weight ?? 0);
 
   return (
-    <div
-  className="bg-white shadow rounded-xl p-4 w-[260px] min-w-[260px] hover:shadow-md transition-all relative"
->
+    <div className="bg-white shadow rounded-xl p-4 w-[260px] min-w-[260px] hover:shadow-md transition-all relative">
       {/* 3-dot menu */}
       <div className="absolute top-3 right-3">
         <TaskCardMenu
@@ -148,7 +144,7 @@ export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
         </span>
       </div>
 
-      {/* Dates */}
+      {/* Planned Dates */}
       <div className="mt-1 text-xs text-gray-600 space-y-1">
         <div className="flex justify-between">
           <span>Planned Start:</span>
@@ -158,6 +154,19 @@ export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
         <div className="flex justify-between">
           <span>Planned End:</span>
           <span className="font-medium">{plannedEnd}</span>
+        </div>
+      </div>
+
+      {/* Actual Dates */}
+      <div className="mt-2 text-xs text-gray-600 space-y-1 pt-2 border-t border-gray-100">
+        <div className="flex justify-between">
+          <span>Actual Start:</span>
+          <span className="font-medium">{actualStart}</span>
+        </div>
+
+        <div className="flex justify-between">
+          <span>Actual End:</span>
+          <span className="font-medium">{actualEnd}</span>
         </div>
       </div>
 

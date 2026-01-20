@@ -86,10 +86,11 @@ Render DB-computed values
 Entity	Field
 Deliverable	is_done
 Deliverable	completed_at (metadata only)
+Deliverable	actual_end (auto-filled when is_done = true)
 Task	actual_start
 Task	actual_end
 Milestone	actual_end
-Any	title, description, notes, assigned_to
+Any	title, description, notes, assigned_to, assigned_user
 Any	planned_start, planned_end
 Any	budgeted_cost, actual_cost
 Any	weight
@@ -134,6 +135,8 @@ Examples of intent:
 "Complete task" → write actual_end
 
 "Complete milestone" → write actual_end
+
+"Mark deliverable done" → write is_done, completed_at, actual_end
 
 If invalid:
 
@@ -201,6 +204,18 @@ Parent components must wire this consciously
 
 This is intentional and prevents hidden coupling.
 
+Optimistic Updates Exception
+
+In specific UX scenarios (e.g., DeliverableCard checkbox toggle), optimistic local state updates are permitted to prevent drawer closing during rapid interactions. However:
+
+The optimistic update must immediately be followed by the actual database mutation
+
+If the mutation fails, the optimistic update must be reverted
+
+The pattern must not be used for computed/derived fields
+
+This is a UX enhancement only, not a violation of database authority
+
 8️⃣ UX Guards vs Business Logic
 ✅ Allowed UX-Only Guards
 
@@ -235,6 +250,8 @@ If the DB cares, the DB enforces.
 Source of truth: deliverables.is_done
 
 completed_at is metadata only (UI / audit)
+
+actual_end auto-fills when is_done is set to true
 
 Backend rollups must depend on is_done, not timestamps
 
@@ -292,7 +309,33 @@ Computes progress/dates/costs client-side
 
 Violates Phase 3 and must be rejected, regardless of feature pressure.
 
-1️⃣3️⃣ How to Use This Document
+1️⃣3️⃣ Database Table Naming
+
+Phase 3.2 Rename Implementation
+
+As of Phase 3.2, the atomic unit terminology has been standardized to "Deliverable" throughout the application.
+
+Migration Strategy (Two-Phase Approach):
+
+Phase A (Transition Period):
+- Created deliverables view aliasing subtasks table
+- INSTEAD OF triggers route all operations to subtasks
+- Both names work simultaneously during frontend migration
+- Applied: January 19, 2026
+
+Phase B (Final Rename):
+- Drop alias view and triggers
+- Rename subtasks table to deliverables
+- Update all constraints, sequences, and indexes
+- Applied: [Pending full regression test]
+
+Current State:
+- Database accepts queries to both subtasks and deliverables
+- All new code references deliverables
+- Old subtask component files removed from frontend
+- Zero compatibility layers in application code
+
+1️⃣4️⃣ How to Use This Document
 
 Before any future work:
 
@@ -318,6 +361,20 @@ Database-authoritative
 
 Regression-resistant
 
+Phase 3.2 Addendum
+
+Completed January 19, 2026
+
+Deliverable Rename: All "Subtask" references replaced with "Deliverable"
+
+Component Files: 7 deliverable components created, old subtask files deleted
+
+Migration Phase A: Applied successfully, both names work during transition
+
+UX Improvements: Optimistic updates, auto-fill actual_end, file versioning
+
+New Features: TaskCardMenu, EditMilestoneModal, milestone CRUD operations
+
 ### RLS RULE (NON-NEGOTIABLE)
 
 - No RLS policy may reference another RLS-protected table
@@ -328,4 +385,15 @@ Regression-resistant
 
 - "Deliverable" is the standard term throughout
 - "Subtask" references removed from all code
-- Database table: `deliverables` (not `subtasks`)
+- Database: Both `deliverables` and `subtasks` work (Phase A migration active)
+- Database: Will be `deliverables` only after Phase B migration
+- Components: All use Deliverable* naming convention
+- Variables: All use `deliverable`, `deliverables`, not `subtask`
+
+### FILE VERSIONING
+
+Files uploaded to deliverables follow this naming convention:
+- Format: "[Deliverable Title] V[N].[extension]"
+- Example: "Design Mockups V1.pdf", "Design Mockups V2.pdf"
+- Version numbers auto-increment based on existing files
+- Storage bucket: `subtask-files` (will remain for backward compatibility)

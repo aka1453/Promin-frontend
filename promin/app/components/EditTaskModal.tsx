@@ -43,12 +43,13 @@ export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
       setTitle(data.title || "");
       setDescription(data.description || "");
       setAssignedTo(data.assigned_to || "");
-      setWeight(String(data.weight ?? 0));
+      // Convert decimal to percentage for display
+      setWeight(String((data.weight ?? 0) * 100));
       setLoading(false);
     };
 
     loadTask();
-  }, [taskId]);
+  }, [taskId, onClose, pushToast]);
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -64,7 +65,7 @@ export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
           title: title.trim(),
           description: description.trim() || null,
           assigned_to: assignedTo.trim() || null,
-          weight: Number(weight),
+          weight: Number(weight) / 100, // Convert percentage to decimal
           updated_at: new Date().toISOString(),
         })
         .eq("id", taskId);
@@ -105,7 +106,7 @@ export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b flex items-center justify-between">
           <h2 className="text-xl font-semibold">Edit Task</h2>
           <button
@@ -116,7 +117,7 @@ export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
           </button>
         </div>
 
-        <div className="px-6 py-4 space-y-4">
+        <div className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Title *
@@ -159,13 +160,13 @@ export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Weight (0-1)
+              Weight (%)
             </label>
             <input
               type="number"
-              step="0.01"
+              step="1"
               min="0"
-              max="1"
+              max="100"
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
@@ -178,12 +179,14 @@ export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
           <div className="bg-blue-50 p-3 rounded text-xs text-blue-800">
             <p className="font-semibold mb-1">💡 Note:</p>
             <p>
-              Task dates, costs, status, and progress are computed from Deliverables and lifecycle rules.
+              Lifecycle dates (actual start/end) and progress are managed by the
+              database based on deliverable completion. Edit those via task
+              actions and deliverable checkboxes.
             </p>
           </div>
         </div>
 
-        <div className="px-6 py-4 bg-gray-50 flex justify-end gap-2 border-t">
+        <div className="px-6 py-4 border-t flex justify-end gap-2">
           <button
             onClick={onClose}
             className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
@@ -193,7 +196,7 @@ export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
           <button
             onClick={handleSave}
             disabled={saving || !title.trim()}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
           >
             {saving ? "Saving..." : "Save Changes"}
           </button>

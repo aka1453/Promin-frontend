@@ -54,7 +54,7 @@ export default function DeliverableFileSection({
     }
   };
 
-  const downloadFile = async (path: string, fileName: string) => {
+  const previewFile = async (path: string, fileName: string) => {
     try {
       const { data, error } = await supabase.storage
         .from("subtask-files")
@@ -64,6 +64,31 @@ export default function DeliverableFileSection({
 
       if (data?.signedUrl) {
         window.open(data.signedUrl, "_blank");
+      }
+    } catch (e: any) {
+      console.error("Preview error:", e);
+      alert(e.message || "Failed to preview file");
+    }
+  };
+
+  const downloadFile = async (path: string, fileName: string) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from("subtask-files")
+        .download(path);
+
+      if (error) throw error;
+
+      if (data) {
+        // Create blob URL and trigger actual download
+        const url = URL.createObjectURL(data);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
       }
     } catch (e: any) {
       console.error("Download error:", e);
@@ -126,8 +151,14 @@ export default function DeliverableFileSection({
 
             <div className="flex gap-2 ml-3">
               <button
-                onClick={() => downloadFile(file.path, file.name)}
+                onClick={() => previewFile(file.path, file.name)}
                 className="px-2 py-1 text-[10px] font-medium bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+              >
+                Preview
+              </button>
+              <button
+                onClick={() => downloadFile(file.path, file.name)}
+                className="px-2 py-1 text-[10px] font-medium bg-green-100 text-green-700 rounded hover:bg-green-200"
               >
                 Download
               </button>

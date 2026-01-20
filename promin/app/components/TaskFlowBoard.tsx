@@ -65,6 +65,7 @@ export default function TaskFlowBoard({
   };
 
   const handleTaskUpdated = async () => {
+    console.log("Task updated - refreshing task list");
     await loadTasks();
     onMilestoneChanged?.();
     onMilestoneUpdated?.();
@@ -164,7 +165,6 @@ export default function TaskFlowBoard({
         open={!!selectedTask}
         task={selectedTask}
         onClose={handleDrawerClose}
-        isReadOnly={isReadOnly}
         onTaskUpdated={handleTaskUpdated}
       />
     </>

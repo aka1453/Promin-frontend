@@ -8,13 +8,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const showSidebar = !pathname.startsWith("/login");
 
   return (
-    <div className="flex">
+    <div className="flex min-h-screen">
       {showSidebar && <Sidebar />}
 
-      {/* MAIN CONTENT — OFFSET FOR FIXED SIDEBAR */}
+      {/* MAIN CONTENT — FLEX TO FILL REMAINING SPACE */}
       <main
-        className={`min-h-screen bg-[var(--background)] ${
-          showSidebar ? "ml-80" : ""
+        className={`flex-1 min-h-screen bg-[var(--background)] ${
+          showSidebar ? "ml-64" : ""
         }`}
       >
         {children}
