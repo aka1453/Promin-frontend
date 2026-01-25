@@ -30,13 +30,13 @@ export default function DeliverableCreateModal({
 
   const [creating, setCreating] = useState(false);
 
-  // Calculate total weight as percentage
+  // Calculate total weight as percentage for display only
+  // With Phase 4C, weights are auto-normalized, so this is informational
   const sum = (existingDeliverables || []).reduce(
-    (acc: number, d: any) => acc + Number(d.weight ?? 0),
+    (acc: number, d: any) => acc + Number(d.weight ?? 0) * 100,
     0
   );
   const proposed = sum + Number(weight);
-  const overWeight = proposed > 100;
 
   const handleCreate = async () => {
     if (!title.trim()) {
@@ -44,14 +44,10 @@ export default function DeliverableCreateModal({
       return;
     }
 
-    if (overWeight) {
-      pushToast("Total weight would exceed 100%", "warning");
-      return;
-    }
-
     setCreating(true);
     try {
       // Convert percentage to decimal for database storage
+      // Phase 4C: Database will auto-normalize all deliverable weights within this task
       const { error } = await supabase.from("deliverables").insert({
         task_id: taskId,
         title: title.trim(),
@@ -71,7 +67,7 @@ export default function DeliverableCreateModal({
         return;
       }
 
-      pushToast("Deliverable created", "success");
+      pushToast("Deliverable created - weights auto-normalized", "success");
       onSuccess();
     } catch (e: any) {
       console.error("Create deliverable exception:", e);
@@ -124,19 +120,19 @@ export default function DeliverableCreateModal({
               type="number"
               step="1"
               min="0"
-              max="100"
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
               className="w-full border rounded px-3 py-2 text-sm"
             />
-            {overWeight && (
-              <p className="text-xs text-red-600 mt-1">
-                ⚠️ Total weight exceeds 100% ({proposed.toFixed(0)}%)
+            <div className="mt-2 bg-blue-50 border border-blue-200 rounded-md p-2">
+              <p className="text-xs text-blue-800">
+                <strong>⚖️ Auto-Normalization:</strong> All deliverable weights will be 
+                automatically adjusted to sum to 100% proportionally.
               </p>
-            )}
-            <p className="text-xs text-gray-500 mt-1">
-              Existing: {sum.toFixed(0)}% | Proposed: {proposed.toFixed(0)}%
-            </p>
+              <p className="text-xs text-blue-700 mt-1">
+                Current total: {sum.toFixed(0)}% | After adding: {proposed.toFixed(0)}% → Will normalize to 100%
+              </p>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -170,6 +166,9 @@ export default function DeliverableCreateModal({
               onChange={(e) => setBudgetedCost(e.target.value)}
               className="w-full border rounded px-3 py-2 text-sm"
             />
+            <p className="text-xs text-gray-500 mt-1">
+              💡 Task budget is automatically calculated from all deliverables
+            </p>
           </div>
 
           <div>
@@ -193,7 +192,7 @@ export default function DeliverableCreateModal({
           </button>
           <button
             onClick={handleCreate}
-            disabled={creating || !title.trim() || overWeight}
+            disabled={creating || !title.trim()}
             className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
           >
             {creating ? "Creating..." : "Create"}

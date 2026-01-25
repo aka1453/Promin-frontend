@@ -14,6 +14,7 @@ type Props = {
   canDelete?: boolean;
   onChanged?: () => void;
   taskActualStart?: string | null;
+  projectId: number | null;
 };
 
 export default function DeliverableCard({
@@ -23,14 +24,35 @@ export default function DeliverableCard({
   canDelete = true,
   onChanged,
   taskActualStart,
+  projectId,
 }: Props) {
   const { pushToast } = useToast();
   const [localDeliverable, setLocalDeliverable] = useState(deliverable);
   const [updating, setUpdating] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
+  const [assignedUserName, setAssignedUserName] = useState<string | null>(null);
 
   const readOnly = !canEdit;
+
+  // Load assigned user name if assigned_user_id exists
+  useState(() => {
+    const loadAssignedUser = async () => {
+      if (!localDeliverable.assigned_user_id) return;
+      
+      const { data } = await supabase
+        .from("profiles")
+        .select("full_name, email")
+        .eq("id", localDeliverable.assigned_user_id)
+        .single();
+      
+      if (data) {
+        setAssignedUserName(data.full_name || data.email || "Unknown");
+      }
+    };
+    
+    loadAssignedUser();
+  });
 
   async function toggleDone(checked: boolean) {
     if (readOnly) return;
@@ -106,6 +128,21 @@ export default function DeliverableCard({
 
     if (data) {
       setLocalDeliverable(data);
+      
+      // Reload assigned user name if changed
+      if (data.assigned_user_id) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("full_name, email")
+          .eq("id", data.assigned_user_id)
+          .single();
+        
+        if (profile) {
+          setAssignedUserName(profile.full_name || profile.email || "Unknown");
+        }
+      } else {
+        setAssignedUserName(null);
+      }
     }
   };
 
@@ -175,7 +212,7 @@ export default function DeliverableCard({
           <div>
             <span className="text-gray-500">Assigned:</span>
             <span className="ml-2 font-medium text-gray-900">
-              {localDeliverable.assigned_user || "Unassigned"}
+              {assignedUserName || "Unassigned"}
             </span>
           </div>
 
@@ -253,9 +290,10 @@ export default function DeliverableCard({
         )}
       </div>
 
-      {editOpen && (
+      {editOpen && projectId && (
         <EditDeliverableModal
           deliverableId={localDeliverable.id}
+          projectId={projectId}
           onClose={() => setEditOpen(false)}
           onSuccess={handleEditSuccess}
         />

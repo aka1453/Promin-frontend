@@ -1,10 +1,13 @@
 // app/components/TaskCard.tsx
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { MoreVertical } from "lucide-react";
 import { formatPercent } from "../utils/format";
 import { startTask, completeTask } from "../lib/lifecycle";
 import TaskCardMenu from "./TaskCardMenu";
+import { supabase } from "../lib/supabaseClient";
+import EditTaskModal from "./EditTaskModal";
 
 type Props = {
   task: any;
@@ -13,6 +16,62 @@ type Props = {
 };
 
 export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
+  const [allDeliverablesComplete, setAllDeliverablesComplete] = useState(false);
+  const [deliverablesCount, setDeliverablesCount] = useState(0);
+  const [completedCount, setCompletedCount] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [normalizedWeight, setNormalizedWeight] = useState<number | null>(null);
+
+  // Check deliverable completion status
+  useEffect(() => {
+    const checkDeliverables = async () => {
+      if (!task?.id) return;
+
+      const { data, error } = await supabase
+        .from("deliverables")
+        .select("id, is_done")
+        .eq("task_id", task.id);
+
+      if (error) {
+        console.error("Failed to load deliverables:", error);
+        return;
+      }
+
+      const deliverables = data || [];
+      const total = deliverables.length;
+      const completed = deliverables.filter((d) => d.is_done === true).length;
+      
+      setDeliverablesCount(total);
+      setCompletedCount(completed);
+      setAllDeliverablesComplete(total > 0 && total === completed);
+    };
+
+    checkDeliverables();
+  }, [task?.id]);
+
+  // Calculate normalized weight
+  useEffect(() => {
+    const calculateNormalizedWeight = async () => {
+      if (!task?.milestone_id) return;
+
+      const { data, error } = await supabase
+        .from("tasks")
+        .select("weight")
+        .eq("milestone_id", task.milestone_id);
+
+      if (error || !data) return;
+
+      const totalWeight = data.reduce((sum, t) => sum + (t.weight || 0), 0);
+      if (totalWeight > 0) {
+        const normalized = ((task.weight || 0) / totalWeight) * 100;
+        setNormalizedWeight(normalized);
+      }
+    };
+
+    calculateNormalizedWeight();
+  }, [task?.milestone_id, task?.weight]);
+
   const handleStartTask = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     try {
@@ -44,6 +103,46 @@ export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
     onClick?.(task);
   };
 
+  const handleMenuClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setMenuOpen(!menuOpen);
+  };
+
+  const handleEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setMenuOpen(false);
+    setEditOpen(true); // Open edit modal, not drawer
+  };
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setMenuOpen(false);
+
+    const confirmed = window.confirm(
+      `Delete task "${task.title}"? This will also delete all deliverables.`
+    );
+    
+    if (!confirmed) return;
+
+    try {
+      const { error } = await supabase
+        .from("tasks")
+        .delete()
+        .eq("id", task.id);
+
+      if (error) {
+        console.error("Failed to delete task:", error);
+        alert("Failed to delete task");
+        return;
+      }
+
+      onTaskUpdated?.();
+    } catch (err) {
+      console.error("Error deleting task:", err);
+      alert("Failed to delete task");
+    }
+  };
+
   const initials = task.assigned_to
     ? task.assigned_to
         .split(" ")
@@ -63,24 +162,58 @@ export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
   const weight = Number(task.weight ?? 0);
 
   return (
-    <div className="bg-white shadow rounded-xl p-4 w-[260px] min-w-[260px] hover:shadow-md transition-all relative">
-      {/* 3-dot menu */}
-      <div className="absolute top-3 right-3">
-        <TaskCardMenu
-          task={task}
-          onTaskUpdated={() => {
-            onTaskUpdated?.();
-          }}
+    <>
+      {/* BACKDROP - Close menu when clicking outside */}
+      {menuOpen && (
+        <div
+          className="fixed inset-0 z-[35]"
+          onClick={() => setMenuOpen(false)}
         />
-      </div>
+      )}
 
-      {/* Title + Lifecycle */}
-      <div className="flex items-start justify-between gap-2 mb-3">
-        <h3 className="font-semibold text-sm pr-6">{task.title}</h3>
+      <div className="bg-white shadow rounded-xl p-4 w-[260px] min-w-[260px] hover:shadow-md transition-all relative">
+        {/* 3-DOT MENU BUTTON */}
+        <button
+          onClick={handleMenuClick}
+          className="absolute top-3 right-3 z-40 p-1 rounded-full hover:bg-slate-100 transition-colors"
+        >
+          <MoreVertical size={16} className="text-slate-400" />
+        </button>
+
+        {/* DROPDOWN MENU */}
+        {menuOpen && (
+          <div
+            className="absolute right-3 top-10 bg-white shadow-lg border rounded-lg w-32 z-50"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded-t-lg"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEdit(e);
+              }}
+            >
+              Edit
+            </button>
+            <button
+              className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-b-lg"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDelete(e);
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        )}
+
+      {/* Title + Lifecycle - with right padding to avoid 3-dot overlap */}
+      <div className="flex items-start justify-between gap-2 mb-3 pr-6">
+        <h3 className="font-semibold text-sm flex-1">{task.title}</h3>
 
         {/* Lifecycle buttons */}
         {task.status !== "completed" && (
-          <div className="flex gap-1">
+          <div className="flex gap-1 flex-shrink-0">
             {!task.actual_start && (
               <button
                 onClick={handleStartTask}
@@ -90,7 +223,7 @@ export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
               </button>
             )}
 
-            {task.actual_start && !task.actual_end && (
+            {task.actual_start && !task.actual_end && allDeliverablesComplete && (
               <button
                 onClick={handleCompleteTask}
                 className="px-2 py-1 text-[10px] font-semibold rounded bg-emerald-600 text-white hover:bg-emerald-700"
@@ -102,12 +235,24 @@ export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
         )}
       </div>
 
+      {/* Show deliverable completion status if task is in progress but not all done */}
+      {task.actual_start && !task.actual_end && !allDeliverablesComplete && deliverablesCount > 0 && (
+        <div className="mb-3 text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-200">
+          {completedCount}/{deliverablesCount} deliverables done
+        </div>
+      )}
+
       {/* Weight */}
       <div className="mb-3 text-[11px] text-slate-500">
         Weight:{" "}
         <span className="font-semibold text-slate-700">
-          {formatPercent(weight)}
+          {(weight * 100).toFixed(1)}%
         </span>
+        {normalizedWeight !== null && (
+          <span className="text-slate-400 ml-1">
+            (Normalized: {normalizedWeight.toFixed(1)}%)
+          </span>
+        )}
       </div>
 
       {/* Planned Progress */}
@@ -134,17 +279,7 @@ export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
         <p className="text-[11px] text-gray-500 mt-1">{formatPercent(actual)}</p>
       </div>
 
-      {/* Assigned */}
-      <div className="flex items-center gap-2 mt-2 mb-3">
-        <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-xs">
-          {initials}
-        </div>
-        <span className="text-xs text-gray-700">
-          {task.assigned_to || "Unassigned"}
-        </span>
-      </div>
-
-      {/* Planned Dates */}
+      {/* Planned Dates - Clean, no highlighting */}
       <div className="mt-1 text-xs text-gray-600 space-y-1">
         <div className="flex justify-between">
           <span>Planned Start:</span>
@@ -170,7 +305,7 @@ export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
         </div>
       </div>
 
-      {/* Costs */}
+      {/* Costs - Clean, no highlighting */}
       <div className="mt-3 text-xs text-gray-600">
         <div className="flex justify-between">
           <span>Budget</span>
@@ -197,5 +332,18 @@ export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
         </button>
       </div>
     </div>
+
+    {/* EDIT TASK MODAL */}
+    {editOpen && (
+      <EditTaskModal
+        taskId={task.id}
+        onClose={() => setEditOpen(false)}
+        onSuccess={() => {
+          setEditOpen(false);
+          onTaskUpdated?.();
+        }}
+      />
+    )}
+    </>
   );
 }

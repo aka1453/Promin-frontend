@@ -5,6 +5,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.84.0",
+    "date-fns": "^4.1.0",
     "framer-motion": "^12.23.26"
   }
 }

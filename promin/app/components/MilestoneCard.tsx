@@ -237,9 +237,14 @@ export default function MilestoneCard({
         >
           {/* HEADER */}
           <div className="flex items-start justify-between mb-4 pr-8">
-            <h3 className="text-lg font-semibold text-slate-800 line-clamp-2 flex-1">
-              {milestone.name || "Untitled Milestone"}
-            </h3>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-slate-800 line-clamp-2">
+                {milestone.name || "Untitled Milestone"}
+              </h3>
+              <div className="text-xs text-slate-500 mt-1">
+                Weight: <span className="font-semibold text-slate-700">{((milestone.weight ?? 0) * 100).toFixed(1)}%</span>
+              </div>
+            </div>
             <div className="flex items-center justify-start flex-shrink-0">
               {getStatusBadge()}
             </div>

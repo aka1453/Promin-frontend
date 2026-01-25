@@ -6,10 +6,7 @@ import { useState } from "react";
 export type NewTaskValues = {
   title: string;
   description: string | null;
-  planned_start: string | null;
-  planned_end: string | null;
   weight: number;
-  budgeted_cost: number;
 };
 
 type Props = {
@@ -23,10 +20,7 @@ type Props = {
 export default function AddTaskModal({ milestoneId, open, onClose, onSave, saving = false }: Props) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [plannedStart, setPlannedStart] = useState("");
-  const [plannedEnd, setPlannedEnd] = useState("");
   const [weight, setWeight] = useState(0);
-  const [budgetedCost, setBudgetedCost] = useState(0);
 
   if (!open) return null;
 
@@ -39,19 +33,13 @@ export default function AddTaskModal({ milestoneId, open, onClose, onSave, savin
     onSave({
       title,
       description: description.trim() || null,
-      planned_start: plannedStart || null,
-      planned_end: plannedEnd || null,
       weight: Number(weight),
-      budgeted_cost: Number(budgetedCost),
     });
 
     // clear inputs
     setTitle("");
     setDescription("");
-    setPlannedStart("");
-    setPlannedEnd("");
     setWeight(0);
-    setBudgetedCost(0);
   }
 
   return (
@@ -79,30 +67,6 @@ export default function AddTaskModal({ milestoneId, open, onClose, onSave, savin
           placeholder="Optional description"
         />
 
-        {/* Planned Dates */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div>
-            <label className="text-sm font-medium">Planned Start</label>
-            <input
-              type="date"
-              className="w-full border rounded px-2 py-1"
-              value={plannedStart}
-              onChange={(e) => setPlannedStart(e.target.value)}
-              disabled={saving}
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium">Planned End</label>
-            <input
-              type="date"
-              className="w-full border rounded px-2 py-1"
-              value={plannedEnd}
-              onChange={(e) => setPlannedEnd(e.target.value)}
-              disabled={saving}
-            />
-          </div>
-        </div>
-
         {/* Weight */}
         <label className="text-sm font-medium">Weight (%)</label>
         <input
@@ -117,18 +81,13 @@ export default function AddTaskModal({ milestoneId, open, onClose, onSave, savin
           placeholder="0-100"
         />
 
-        {/* Costs */}
-        <label className="text-sm font-medium">Budgeted Cost</label>
-        <input
-          type="number"
-          step="0.01"
-          min="0"
-          className="w-full border rounded px-3 py-1 mb-6"
-          value={budgetedCost}
-          onChange={(e) => setBudgetedCost(Number(e.target.value))}
-          disabled={saving}
-          placeholder="0"
-        />
+        {/* Info Notice */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
+          <p className="text-xs text-blue-800">
+            <strong>📊 Planning fields are derived:</strong><br />
+            Task dates and budgeted cost will be automatically calculated from deliverables you add to this task.
+          </p>
+        </div>
 
         {/* Buttons */}
         <div className="flex justify-end gap-2">

@@ -5,7 +5,6 @@ import { supabase } from "../lib/supabaseClient";
 import { startTask, completeTask } from "../lib/lifecycle";
 import DeliverableCard from "./DeliverableCard";
 import DeliverableCreateModal from "./DeliverableCreateModal";
-import CommentsSection from "./CommentsSection";
 
 type Props = {
   open: boolean;
@@ -24,8 +23,6 @@ export default function TaskDetailsDrawer({
   const [loading, setLoading] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [localTask, setLocalTask] = useState(task);
-  const [activeTab, setActiveTab] = useState<"deliverables" | "comments">("deliverables");
-  const [projectId, setProjectId] = useState<number | null>(null);
   
   // Track if deliverables were changed
   const deliverablesChangedRef = useRef(false);
@@ -69,25 +66,6 @@ export default function TaskDetailsDrawer({
       setLoading(false);
     }
   };
-
-  // Load project ID for comments
-  useEffect(() => {
-    const fetchProjectId = async () => {
-      if (!localTask?.milestone_id) return;
-      
-      const { data } = await supabase
-        .from("milestones")
-        .select("project_id")
-        .eq("id", localTask.milestone_id)
-        .single();
-      
-      if (data) setProjectId(data.project_id);
-    };
-    
-    if (localTask?.milestone_id) {
-      fetchProjectId();
-    }
-  }, [localTask?.milestone_id]);
 
   useEffect(() => {
     if (open && task?.id) {
@@ -172,35 +150,34 @@ export default function TaskDetailsDrawer({
       {/* DRAWER */}
       <div className="fixed right-0 top-0 bottom-0 w-[600px] bg-white shadow-xl z-50 flex flex-col">
         {/* HEADER */}
-        <div className="px-6 py-4 border-b">
-          <div className="flex items-center justify-between mb-3">
+        <div className="px-6 py-4 border-b flex items-center justify-between">
+          <div className="flex-1">
             <h2 className="text-xl font-semibold">{localTask.title}</h2>
-            <button
-              onClick={handleClose}
-              className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
-            >
-              ×
-            </button>
+            <div className="mt-1">
+              <span
+                className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold
+                  ${
+                    localTask.status === "completed"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : localTask.status === "in_progress"
+                      ? "bg-blue-100 text-blue-700"
+                      : "bg-gray-100 text-gray-700"
+                  }`}
+              >
+                {localTask.status || "pending"}
+              </span>
+            </div>
           </div>
 
-          {/* Status Badge */}
-          <div className="flex items-center gap-2">
-            <span
-              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold
-                ${
-                  localTask.status === "completed"
-                    ? "bg-emerald-100 text-emerald-700"
-                    : localTask.status === "in_progress"
-                    ? "bg-blue-100 text-blue-700"
-                    : "bg-gray-100 text-gray-700"
-                }`}
-            >
-              {localTask.status || "pending"}
-            </span>
-          </div>
+          <button
+            onClick={handleClose}
+            className="text-gray-400 hover:text-gray-600 text-2xl leading-none ml-4"
+          >
+            ×
+          </button>
         </div>
 
-        {/* LIFECYCLE ACTIONS */}
+        {/* TASK LIFECYCLE ACTIONS */}
         <div className="px-6 py-3 border-b bg-gray-50">
           {!localTask.actual_start && (
             <button
@@ -240,32 +217,6 @@ export default function TaskDetailsDrawer({
           )}
         </div>
 
-        {/* TABS */}
-        <div className="px-6 py-3 border-b bg-gray-50">
-          <div className="flex gap-4">
-            <button
-              onClick={() => setActiveTab("deliverables")}
-              className={`px-3 py-2 text-sm font-semibold rounded-md transition-colors ${
-                activeTab === "deliverables"
-                  ? "bg-white text-blue-600 shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Deliverables ({deliverables.length})
-            </button>
-            <button
-              onClick={() => setActiveTab("comments")}
-              className={`px-3 py-2 text-sm font-semibold rounded-md transition-colors ${
-                activeTab === "comments"
-                  ? "bg-white text-blue-600 shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Comments
-            </button>
-          </div>
-        </div>
-
         {/* SCROLLABLE CONTENT */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {/* DESCRIPTION */}
@@ -278,56 +229,44 @@ export default function TaskDetailsDrawer({
             </div>
           )}
 
-          {/* DELIVERABLES TAB */}
-          {activeTab === "deliverables" && (
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-gray-900">
-                  Deliverables ({deliverables.length})
-                </h3>
-                {canEdit && (
-                  <button
-                    onClick={() => setCreateModalOpen(true)}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-md bg-blue-600 text-white hover:bg-blue-700"
-                  >
-                    + Add Deliverable
-                  </button>
-                )}
-              </div>
-
-              {loading ? (
-                <div className="text-center py-8 text-gray-500 text-sm">
-                  Loading deliverables...
-                </div>
-              ) : deliverables.length === 0 ? (
-                <div className="text-center py-8 text-gray-500 text-sm">
-                  No deliverables yet. Add one to get started!
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {deliverables.map((deliverable) => (
-                    <DeliverableCard
-                      key={deliverable.id}
-                      deliverable={deliverable}
-                      existingDeliverables={deliverables}
-                      taskActualStart={localTask.actual_start}
-                      onChanged={handleDeliverableChanged}
-                      projectId={projectId}
-                    />
-                  ))}
-                </div>
+          {/* DELIVERABLES SECTION */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-900">
+                Deliverables ({deliverables.length})
+              </h3>
+              {canEdit && (
+                <button
+                  onClick={() => setCreateModalOpen(true)}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  + Add Deliverable
+                </button>
               )}
             </div>
-          )}
 
-          {/* COMMENTS TAB */}
-          {activeTab === "comments" && projectId && (
-            <CommentsSection
-              entityType="task"
-              entityId={localTask.id}
-              projectId={projectId}
-            />
-          )}
+            {loading ? (
+              <div className="text-center py-8 text-gray-500 text-sm">
+                Loading deliverables...
+              </div>
+            ) : deliverables.length === 0 ? (
+              <div className="text-center py-8 text-gray-500 text-sm">
+                No deliverables yet. Add one to get started!
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {deliverables.map((deliverable) => (
+                  <DeliverableCard
+                    key={deliverable.id}
+                    deliverable={deliverable}
+                    existingDeliverables={deliverables}
+                    taskActualStart={localTask.actual_start}
+                    onChanged={handleDeliverableChanged}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

@@ -8,8 +8,9 @@ import AddMilestoneButton from "../../components/AddMilestoneButton";
 import { ProjectRoleProvider, useProjectRole } from "../../context/ProjectRoleContext";
 import EditMilestoneModal from "../../components/EditMilestoneModal";
 import ProjectSettingsModal from "../../components/ProjectSettingsModal";
+import ActivityFeed from "../../components/ActivityFeed";
 import type { Milestone } from "../../types/milestone";
-import { ArrowLeft, Settings } from "lucide-react";
+import { ArrowLeft, Settings, Clock } from "lucide-react";
 
 type Project = {
   id: number;
@@ -38,6 +39,9 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
 
   const [editingMilestoneId, setEditingMilestoneId] = useState<number | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  
+  // NEW: Activity sidebar state
+  const [showActivitySidebar, setShowActivitySidebar] = useState(false);
 
   const load = useCallback(async () => {
     if (!projectId) {
@@ -181,6 +185,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      {/* HEADER */}
       <div className="bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-8 py-4">
           <div className="flex items-center justify-between">
@@ -214,6 +219,20 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                   {formatCurrency(project?.actual_cost ?? 0)}
                 </p>
               </div>
+              
+              {/* NEW: Activity Toggle Button */}
+              <button
+                onClick={() => setShowActivitySidebar(!showActivitySidebar)}
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                  showActivitySidebar
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+              >
+                <Clock size={18} />
+                Activity
+              </button>
+              
               <button
                 onClick={() => setSettingsOpen(true)}
                 className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
@@ -226,157 +245,220 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
         </div>
       </div>
 
+      {/* MAIN CONTENT WITH SIDEBAR */}
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8" style={{ maxWidth: '1400px' }}>
-        {isArchived && (
-          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            ⚠️ This project is archived and is now read-only. Restore it to make changes.
-          </div>
-        )}
+        <div className="flex gap-6">
+          {/* LEFT: Main Content */}
+          <div className="flex-1">
+            {isArchived && (
+              <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                ⚠️ This project is archived and is now read-only. Restore it to make changes.
+              </div>
+            )}
 
-        {project && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8">
-            <h2 className="text-lg font-semibold text-slate-700 mb-5">Project Overview</h2>
+            {project && (
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8">
+                <h2 className="text-lg font-semibold text-slate-700 mb-5">Project Overview</h2>
 
-            <div className="space-y-4 mb-6">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-slate-600">Planned Progress</span>
-                  <span className="text-sm font-semibold text-blue-600">
-                    {project.planned_progress ?? 0}%
-                  </span>
+                <div className="space-y-4 mb-6">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-slate-600">Planned Progress</span>
+                      <span className="text-sm font-semibold text-blue-600">
+                        {project.planned_progress ?? 0}%
+                      </span>
+                    </div>
+                    <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-blue-500 to-blue-400"
+                        style={{ width: `${project.planned_progress ?? 0}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-slate-600">Actual Progress</span>
+                      <span className="text-sm font-semibold text-emerald-600">
+                        {project.actual_progress ?? 0}%
+                      </span>
+                    </div>
+                    <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-emerald-500 to-emerald-400"
+                        style={{ width: `${project.actual_progress ?? 0}%` }}
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-blue-500 to-blue-400"
-                    style={{ width: `${project.planned_progress ?? 0}%` }}
-                  />
+
+                {/* Date Information */}
+                <div className="grid grid-cols-2 gap-4 pt-6 border-t border-slate-200">
+                  <div>
+                    <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">
+                      Planned Timeline
+                    </h3>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-slate-600">Start:</span>
+                        <span className="text-sm font-medium text-slate-800">
+                          {project.planned_start 
+                            ? new Date(project.planned_start).toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric', 
+                                year: 'numeric' 
+                              })
+                            : "Not set"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-slate-600">End:</span>
+                        <span className="text-sm font-medium text-slate-800">
+                          {project.planned_end 
+                            ? new Date(project.planned_end).toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric', 
+                                year: 'numeric' 
+                              })
+                            : "Not set"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">
+                      Actual Timeline
+                    </h3>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-slate-600">Start:</span>
+                        <span className="text-sm font-medium text-slate-800">
+                          {project.actual_start 
+                            ? new Date(project.actual_start).toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric', 
+                                year: 'numeric' 
+                              })
+                            : "Not started"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-slate-600">End:</span>
+                        <span className="text-sm font-medium text-slate-800">
+                          {project.actual_end 
+                            ? new Date(project.actual_end).toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric', 
+                                year: 'numeric' 
+                              })
+                            : "In progress"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  {!isArchived && allMilestonesCompleted && !project.actual_end && (
+                    <button
+                      onClick={handleCompleteProject}
+                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl transition-colors duration-200"
+                    >
+                      ✓ Complete Project
+                    </button>
+                  )}
+
+                  {!allMilestonesCompleted && !project.actual_end && (
+                    <div className="text-sm text-slate-500 text-center py-2">
+                      Complete all milestones to finish this project
+                      <span className="ml-2 text-xs">
+                        ({milestones.filter(m => m.status === 'completed').length}/{milestones.length} milestones complete)
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-slate-600">Actual Progress</span>
-                  <span className="text-sm font-semibold text-emerald-600">
-                    {project.actual_progress ?? 0}%
-                  </span>
-                </div>
-                <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-emerald-500 to-emerald-400"
-                    style={{ width: `${project.actual_progress ?? 0}%` }}
+            )}
+
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-slate-800">
+                  Milestones ({milestones.length})
+                </h2>
+                {!isArchived && canEdit && <AddMilestoneButton projectId={projectId} canCreate={canEdit} onCreated={load} />}
+              </div>
+              <MilestoneList
+  milestones={milestones}
+  projectId={projectId}
+  canEdit={canEdit}
+  canDelete={canDelete}
+  onMilestoneUpdated={load}
+/>
+            </div>
+          </div>
+
+          {/* RIGHT: Activity Sidebar */}
+          {showActivitySidebar && (
+            <div className="w-80 flex-shrink-0">
+              <div className="sticky top-4">
+                <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-semibold text-slate-900">
+                      Project Activity
+                    </h2>
+                    <button
+                      onClick={() => setShowActivitySidebar(false)}
+                      className="text-slate-400 hover:text-slate-600 text-xl"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  
+                  <ActivityFeed 
+                    projectId={projectId}
+                    limit={50}
+                    filterType="all"
                   />
                 </div>
               </div>
             </div>
-
-            <div className="grid grid-cols-2 gap-6">
-              <div className="space-y-3">
-                <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                  <span className="text-sm text-slate-500">Planned Start</span>
-                  <span className="text-sm font-medium text-slate-700">
-                    {project.planned_start || "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-2">
-                  <span className="text-sm text-slate-500">Planned End</span>
-                  <span className="text-sm font-medium text-slate-700">
-                    {project.planned_end || "—"}
-                  </span>
-                </div>
-              </div>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                  <span className="text-sm text-slate-500">Actual Start</span>
-                  <span className="text-sm font-medium text-slate-700">
-                    {project.actual_start || "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-2">
-                  <span className="text-sm text-slate-500">Actual End</span>
-                  <span className="text-sm font-medium text-slate-700">
-                    {project.actual_end || "—"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {!isArchived &&
-              allMilestonesCompleted &&
-              project.status !== "completed" && (
-                <div className="mt-6 pt-6 border-t border-slate-200">
-                  <button
-                    onClick={handleCompleteProject}
-                    className="px-4 py-2 rounded-md text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
-                  >
-                    Complete Project
-                  </button>
-                </div>
-              )}
-          </div>
-        )}
-
-        <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-700">
-            Milestones <span className="text-sm text-slate-500">({milestones.length})</span>
-          </h2>
-
-          {!isArchived && (
-            <AddMilestoneButton
-              projectId={projectId}
-              canCreate={canEdit}
-              onCreated={load}
-            />
           )}
         </div>
-
-        <MilestoneList
-          milestones={milestones}
-          projectId={projectId}
-          canEdit={!isArchived && canEdit}
-          canDelete={!isArchived && canDelete}
-          onMilestoneUpdated={load}
-        />
-
-        {milestones.length === 0 && (
-          <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
-            <p className="text-slate-400">No milestones yet. Create one to get started!</p>
-          </div>
-        )}
-
-        {!isArchived && editingMilestoneId !== null && (
-          <EditMilestoneModal
-            milestoneId={editingMilestoneId}
-            onClose={() => {
-              setEditingMilestoneId(null);
-              load();
-            }}
-            onSuccess={() => {
-              setEditingMilestoneId(null);
-              load();
-            }}
-          />
-        )}
-
-        {settingsOpen && project && (
-          <ProjectSettingsModal
-            project={project}
-            projectRole={canEdit ? "owner" : "viewer"}
-            onClose={() => setSettingsOpen(false)}
-          />
-        )}
       </div>
+
+      {editingMilestoneId && (
+  <EditMilestoneModal
+    milestoneId={editingMilestoneId}
+    onClose={() => setEditingMilestoneId(null)}
+    onSuccess={() => {
+      setEditingMilestoneId(null);
+      load();
+    }}
+  />
+)}
+
+      {settingsOpen && project && (
+  <ProjectSettingsModal
+    project={project}
+    projectRole={canEdit ? 'owner' : 'viewer'}
+    onClose={() => setSettingsOpen(false)}
+  />
+)}
     </div>
   );
 }
 
 export default function ProjectPage() {
-  const params = useParams<{ projectId: string }>();
+  const params = useParams();
   const projectId = Number(params.projectId);
 
-  if (!projectId || Number.isNaN(projectId)) {
+  if (!projectId || isNaN(projectId)) {
     return (
-      <div className="flex items-center justify-center h-screen bg-slate-50">
+      <div className="flex items-center justify-center h-screen">
         <div className="text-center">
           <h1 className="text-4xl font-bold text-slate-800">Invalid Project</h1>
+          <p className="mt-4 text-slate-500">Project ID is missing or invalid</p>
         </div>
       </div>
     );

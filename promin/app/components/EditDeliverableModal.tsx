@@ -3,15 +3,18 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useToast } from "./ToastProvider";
+import UserPicker from "./UserPicker";
 
 type Props = {
   deliverableId: number;
+  projectId: number;
   onClose: () => void;
   onSuccess: () => void;
 };
 
 export default function EditDeliverableModal({
   deliverableId,
+  projectId,
   onClose,
   onSuccess,
 }: Props) {
@@ -27,7 +30,7 @@ export default function EditDeliverableModal({
   const [actualEnd, setActualEnd] = useState("");
   const [budgetedCost, setBudgetedCost] = useState("");
   const [actualCost, setActualCost] = useState("");
-  const [assignedUser, setAssignedUser] = useState("");
+  const [assignedUserId, setAssignedUserId] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -53,7 +56,7 @@ export default function EditDeliverableModal({
       setActualEnd(data.actual_end || "");
       setBudgetedCost(String(data.budgeted_cost ?? ""));
       setActualCost(String(data.actual_cost ?? ""));
-      setAssignedUser(data.assigned_user || "");
+      setAssignedUserId(data.assigned_user_id || null);
       setLoading(false);
     };
 
@@ -70,6 +73,7 @@ export default function EditDeliverableModal({
 
     setSaving(true);
 
+    // Phase 4C: Weight will be auto-normalized with siblings after update
     const { error } = await supabase
       .from("deliverables")
       .update({
@@ -81,7 +85,7 @@ export default function EditDeliverableModal({
         actual_end: actualEnd || null,
         budgeted_cost: budgetedCost ? Number(budgetedCost) : null,
         actual_cost: actualCost ? Number(actualCost) : null,
-        assigned_user: assignedUser.trim() || null,
+        assigned_user_id: assignedUserId,
         updated_at: new Date().toISOString(),
       })
       .eq("id", deliverableId);
@@ -93,7 +97,7 @@ export default function EditDeliverableModal({
       return;
     }
 
-    pushToast("Deliverable updated", "success");
+    pushToast("Deliverable updated - weights auto-normalized", "success");
     onSuccess();
   };
 
@@ -155,23 +159,25 @@ export default function EditDeliverableModal({
                 type="number"
                 step="1"
                 min="0"
-                max="100"
                 value={weight}
                 onChange={(e) => setWeight(e.target.value)}
                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               />
+              <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+                <span>⚖️</span>
+                <span>Auto-normalized across all deliverables</span>
+              </p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Assigned User
               </label>
-              <input
-                type="text"
-                value={assignedUser}
-                onChange={(e) => setAssignedUser(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                placeholder="User name"
+              <UserPicker
+                projectId={projectId}
+                value={assignedUserId}
+                onChange={setAssignedUserId}
+                placeholder="Assign to someone..."
               />
             </div>
           </div>
@@ -187,6 +193,9 @@ export default function EditDeliverableModal({
                 onChange={(e) => setPlannedStart(e.target.value)}
                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               />
+              <p className="text-xs text-blue-600 mt-1">
+                📊 Updates task planned start
+              </p>
             </div>
 
             <div>
@@ -199,6 +208,9 @@ export default function EditDeliverableModal({
                 onChange={(e) => setPlannedEnd(e.target.value)}
                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               />
+              <p className="text-xs text-blue-600 mt-1">
+                📊 Updates task planned end
+              </p>
             </div>
           </div>
 
@@ -232,6 +244,9 @@ export default function EditDeliverableModal({
                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                 placeholder="0.00"
               />
+              <p className="text-xs text-blue-600 mt-1">
+                📊 Updates task budgeted cost
+              </p>
             </div>
 
             <div>
