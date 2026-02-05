@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 import MilestoneList from "../../components/MilestoneList";
 import AddMilestoneButton from "../../components/AddMilestoneButton";
@@ -10,7 +10,7 @@ import EditMilestoneModal from "../../components/EditMilestoneModal";
 import ProjectSettingsModal from "../../components/ProjectSettingsModal";
 import ActivityFeed from "../../components/ActivityFeed";
 import type { Milestone } from "../../types/milestone";
-import { ArrowLeft, Settings, Clock } from "lucide-react";
+import { ArrowLeft, Settings, Clock, BarChart2 } from "lucide-react";
 
 type Project = {
   id: number;
@@ -29,6 +29,7 @@ type Project = {
 
 function ProjectPageContent({ projectId }: { projectId: number }) {
   const { canEdit, canDelete } = useProjectRole();
+  const router = useRouter();
 
   const [project, setProject] = useState<Project | null>(null);
   const isArchived = project?.status === "archived";
@@ -39,19 +40,15 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
 
   const [editingMilestoneId, setEditingMilestoneId] = useState<number | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  
-  // NEW: Activity sidebar state
+
+  // Activity sidebar state
   const [showActivitySidebar, setShowActivitySidebar] = useState(false);
 
-  const load = useCallback(async () => {
-    if (!projectId) {
-      setError("Invalid project id");
-      setLoading(false);
-      return;
-    }
+  // Track whether we've done the first load — realtime refreshes skip the spinner
+  const initialLoadDone = useRef(false);
 
-    setLoading(true);
-    setError(null);
+  const fetchData = useCallback(async () => {
+    if (!projectId) return { project: null, milestones: [] };
 
     const { data: projectData, error: projectErr } = await supabase
       .from("projects")
@@ -59,34 +56,91 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
       .eq("id", projectId)
       .single();
 
-    if (projectErr || !projectData) {
-      setError("Project not found");
-      setLoading(false);
-      return;
-    }
+    if (projectErr || !projectData) return { project: null, milestones: [] };
 
-    setProject(projectData as Project);
-
-    const { data: msData, error: msErr } = await supabase
+    const { data: msData } = await supabase
       .from("milestones")
       .select("*")
       .eq("project_id", projectId)
       .order("id");
 
-    if (msErr || !msData) {
-      setError("Could not load milestones");
-      setMilestones([]);
+    return { project: projectData as Project, milestones: (msData || []) as Milestone[] };
+  }, [projectId]);
+
+  // Full load with spinner — used on mount and explicit user actions
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    const { project: p, milestones: ms } = await fetchData();
+
+    if (!p) {
+      setError("Project not found");
       setLoading(false);
       return;
     }
 
-    setMilestones(msData as Milestone[]);
+    setProject(p);
+    setMilestones(ms);
     setLoading(false);
-  }, [projectId]);
+    initialLoadDone.current = true;
+  }, [fetchData]);
 
+  // Silent refresh — no spinner. Used by realtime callbacks.
+  const silentRefresh = useCallback(async () => {
+    const { project: p, milestones: ms } = await fetchData();
+    if (p) {
+      setProject(p);
+      setMilestones(ms);
+    }
+  }, [fetchData]);
+
+  // Initial mount
   useEffect(() => {
     load();
   }, [load]);
+
+  // Realtime on projects table — fires when rollup chain updates actual_progress
+  useEffect(() => {
+    const ch = supabase
+      .channel("proj-detail-projects-" + projectId)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "projects",
+          filter: `id=eq.${projectId}`,
+        },
+        () => {
+          if (initialLoadDone.current) silentRefresh();
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(ch); };
+  }, [projectId, silentRefresh]);
+
+  // Realtime on milestones table — fires when milestone rollup updates actual_progress
+  useEffect(() => {
+    const ch = supabase
+      .channel("proj-detail-milestones-" + projectId)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "milestones",
+          filter: `project_id=eq.${projectId}`,
+        },
+        () => {
+          if (initialLoadDone.current) silentRefresh();
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(ch); };
+  }, [projectId, silentRefresh]);
 
   const handleEditMilestone = (m: Milestone) => {
     if (isArchived || !canEdit) return;
@@ -203,6 +257,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
             </div>
 
             <div className="flex items-center gap-4">
+              {/* Budgeted Cost */}
               <div className="bg-slate-50 rounded-xl px-5 py-3 border border-slate-200">
                 <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
                   Budgeted Cost
@@ -211,6 +266,8 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                   {formatCurrency(project?.budgeted_cost ?? 0)}
                 </p>
               </div>
+
+              {/* Actual Cost */}
               <div className="bg-emerald-50 rounded-xl px-5 py-3 border border-emerald-200">
                 <p className="text-xs font-medium text-emerald-600 uppercase tracking-wide">
                   Actual Cost
@@ -219,8 +276,17 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                   {formatCurrency(project?.actual_cost ?? 0)}
                 </p>
               </div>
-              
-              {/* NEW: Activity Toggle Button */}
+
+              {/* Reports Button */}
+              <button
+                onClick={() => router.push(`/projects/${projectId}/reports`)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+              >
+                <BarChart2 size={18} />
+                Reports
+              </button>
+
+              {/* Activity Toggle Button */}
               <button
                 onClick={() => setShowActivitySidebar(!showActivitySidebar)}
                 className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
@@ -232,7 +298,8 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                 <Clock size={18} />
                 Activity
               </button>
-              
+
+              {/* Settings Gear */}
               <button
                 onClick={() => setSettingsOpen(true)}
                 className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
@@ -302,11 +369,11 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-slate-600">Start:</span>
                         <span className="text-sm font-medium text-slate-800">
-                          {project.planned_start 
-                            ? new Date(project.planned_start).toLocaleDateString('en-US', { 
-                                month: 'short', 
-                                day: 'numeric', 
-                                year: 'numeric' 
+                          {project.planned_start
+                            ? new Date(project.planned_start).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric'
                               })
                             : "Not set"}
                         </span>
@@ -314,11 +381,11 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-slate-600">End:</span>
                         <span className="text-sm font-medium text-slate-800">
-                          {project.planned_end 
-                            ? new Date(project.planned_end).toLocaleDateString('en-US', { 
-                                month: 'short', 
-                                day: 'numeric', 
-                                year: 'numeric' 
+                          {project.planned_end
+                            ? new Date(project.planned_end).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric'
                               })
                             : "Not set"}
                         </span>
@@ -334,11 +401,11 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-slate-600">Start:</span>
                         <span className="text-sm font-medium text-slate-800">
-                          {project.actual_start 
-                            ? new Date(project.actual_start).toLocaleDateString('en-US', { 
-                                month: 'short', 
-                                day: 'numeric', 
-                                year: 'numeric' 
+                          {project.actual_start
+                            ? new Date(project.actual_start).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric'
                               })
                             : "Not started"}
                         </span>
@@ -346,11 +413,11 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-slate-600">End:</span>
                         <span className="text-sm font-medium text-slate-800">
-                          {project.actual_end 
-                            ? new Date(project.actual_end).toLocaleDateString('en-US', { 
-                                month: 'short', 
-                                day: 'numeric', 
-                                year: 'numeric' 
+                          {project.actual_end
+                            ? new Date(project.actual_end).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric'
                               })
                             : "In progress"}
                         </span>
@@ -389,12 +456,12 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                 {!isArchived && canEdit && <AddMilestoneButton projectId={projectId} canCreate={canEdit} onCreated={load} />}
               </div>
               <MilestoneList
-  milestones={milestones}
-  projectId={projectId}
-  canEdit={canEdit}
-  canDelete={canDelete}
-  onMilestoneUpdated={load}
-/>
+                milestones={milestones}
+                projectId={projectId}
+                canEdit={canEdit}
+                canDelete={canDelete}
+                onMilestoneUpdated={load}
+              />
             </div>
           </div>
 
@@ -414,8 +481,8 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                       ×
                     </button>
                   </div>
-                  
-                  <ActivityFeed 
+
+                  <ActivityFeed
                     projectId={projectId}
                     limit={50}
                     filterType="all"
@@ -428,23 +495,23 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
       </div>
 
       {editingMilestoneId && (
-  <EditMilestoneModal
-    milestoneId={editingMilestoneId}
-    onClose={() => setEditingMilestoneId(null)}
-    onSuccess={() => {
-      setEditingMilestoneId(null);
-      load();
-    }}
-  />
-)}
+        <EditMilestoneModal
+          milestoneId={editingMilestoneId}
+          onClose={() => setEditingMilestoneId(null)}
+          onSuccess={() => {
+            setEditingMilestoneId(null);
+            load();
+          }}
+        />
+      )}
 
       {settingsOpen && project && (
-  <ProjectSettingsModal
-    project={project}
-    projectRole={canEdit ? 'owner' : 'viewer'}
-    onClose={() => setSettingsOpen(false)}
-  />
-)}
+        <ProjectSettingsModal
+          project={project}
+          projectRole={canEdit ? 'owner' : 'viewer'}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
     </div>
   );
 }

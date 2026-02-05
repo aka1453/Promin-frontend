@@ -21,6 +21,7 @@ export default function EditMilestoneModal({
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [weight, setWeight] = useState("0"); // FIXED Issue #2: Added weight state
 
   useEffect(() => {
     const load = async () => {
@@ -39,6 +40,8 @@ export default function EditMilestoneModal({
 
       setName(data.name || "");
       setDescription(data.description || "");
+      // FIXED Issue #2: Load weight and convert to percentage
+      setWeight(String((data.weight ?? 0) * 100));
       setLoading(false);
     };
 
@@ -53,6 +56,13 @@ export default function EditMilestoneModal({
       return;
     }
 
+    // Validate weight
+    const weightNum = Number(weight);
+    if (isNaN(weightNum) || weightNum < 0 || weightNum > 100) {
+      pushToast("Weight must be between 0 and 100", "warning");
+      return;
+    }
+
     setSaving(true);
 
     const { error } = await supabase
@@ -60,6 +70,7 @@ export default function EditMilestoneModal({
       .update({
         name: name.trim(),
         description: description.trim() || null,
+        weight: weightNum / 100, // FIXED Issue #2: Save weight as decimal
       })
       .eq("id", milestoneId);
 
@@ -106,6 +117,7 @@ export default function EditMilestoneModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Name *
@@ -114,11 +126,13 @@ export default function EditMilestoneModal({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Milestone name"
               autoFocus
             />
           </div>
 
+          {/* Description */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Description
@@ -126,19 +140,33 @@ export default function EditMilestoneModal({
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px]"
+              placeholder="Optional description"
             />
           </div>
 
-          <div className="bg-blue-50 p-3 rounded text-xs text-blue-800">
-            <p className="font-semibold mb-1">💡 Note:</p>
-            <p>
-              All dates, costs, and progress are automatically computed by the database based on deliverable completion within tasks.
+          {/* FIXED Issue #2: Added Weight field */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Weight (%)
+            </label>
+            <input
+              type="number"
+              step="1"
+              min="0"
+              max="100"
+              value={weight}
+              onChange={(e) => setWeight(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="0-100"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Weight affects project-level progress calculation
             </p>
           </div>
 
-          <div className="flex justify-end gap-2 pt-4 border-t">
+          {/* Buttons */}
+          <div className="flex justify-end gap-2 pt-4">
             <button
               type="button"
               onClick={onClose}
@@ -148,8 +176,8 @@ export default function EditMilestoneModal({
             </button>
             <button
               type="submit"
-              disabled={saving}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+              disabled={saving || !name.trim()}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? "Saving..." : "Save Changes"}
             </button>

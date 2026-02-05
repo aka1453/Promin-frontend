@@ -1,444 +1,307 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useState, use, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "../../../../lib/supabaseClient";
-import TaskFlowBoard from "../../../../components/TaskFlowBoard";
-import { formatPercent } from "../../../../utils/format";
-import DeltaBadge from "../../../../components/DeltaBadge";
+import TaskViewWrapper from "../../../../components/TaskViewWrapper";
 
-/* ================= TYPES ================= */
-
-type Milestone = {
-  id: number;
-  project_id: number;
-  name: string | null;
-
-  planned_start: string | null;
-  planned_end: string | null;
-  actual_start: string | null;
-  actual_end: string | null;
-
-  planned_progress: number | null;
-  actual_progress: number | null;
-
-  budgeted_cost: number | null;
-  actual_cost: number | null;
-
-  status: "pending" | "in_progress" | "completed" | string | null;
-};
-
-/* ================= UI HELPERS ================= */
-
-function getBubbleTone(
-  tone: "success" | "warning" | "danger" | "neutral"
-) {
-  switch (tone) {
-    case "success":
-      return "bg-emerald-50 border-emerald-200 text-emerald-700";
-    case "warning":
-      return "bg-amber-50 border-amber-200 text-amber-700";
-    case "danger":
-      return "bg-rose-50 border-rose-200 text-rose-700";
-    default:
-      return "bg-gray-50 border-gray-200 text-gray-700";
-  }
-}
-
-function MetricBubble({
-  label,
-  value,
-  tone = "neutral",
-  tooltip,
+export default function MilestonePage({
+  params,
 }: {
-  label: string;
-  value: any;
-  tone?: "success" | "warning" | "danger" | "neutral";
-  tooltip?: string;
+  params: Promise<{ projectId: string; milestoneId: string }>;
 }) {
-  return (
-    <div className="relative group">
-      <div
-        className={`rounded-lg border px-3 py-2 ${getBubbleTone(tone)}`}
-      >
-        <p className="text-[11px] font-semibold tracking-wide opacity-70">
-          {label}
-        </p>
-        <p className="text-sm font-bold">
-          {value ?? "—"}
-        </p>
-      </div>
+  const resolvedParams = use(params);
+  const router = useRouter();
+  const projectId = parseInt(resolvedParams.projectId);
+  const milestoneId = parseInt(resolvedParams.milestoneId);
 
-      {tooltip && (
-        <div className="pointer-events-none absolute z-50 left-1/2 top-full mt-2 w-max max-w-xs -translate-x-1/2 opacity-0 group-hover:opacity-100 transition">
-          <div className="rounded-md bg-gray-900 text-white text-xs px-3 py-1.5 shadow-lg">
-            {tooltip}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ================= PAGE ================= */
-
-export default function MilestonePage() {
-  const params = useParams<{ projectId: string; milestoneId: string }>();
-  const projectId = Number(params.projectId);
-  const milestoneId = Number(params.milestoneId);
-
-  const [milestone, setMilestone] = useState<Milestone | null>(null);
+  const [milestone, setMilestone] = useState<any>(null);
+  const [project, setProject] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
-  const [projectIsArchived, setProjectIsArchived] = useState<boolean>(false);
+  const initialLoadDone = useRef(false);
 
-  const [completionBlocked, setCompletionBlocked] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState(false);
-
-  const validateCompletion = useCallback(async () => {
-    const { data: tasks } = await supabase
-      .from("tasks")
-      .select("actual_end")
-      .eq("milestone_id", milestoneId);
-
-    if (!tasks || tasks.length === 0) {
-      setCompletionBlocked("No tasks exist in this milestone");
-      return;
-    }
-
-    const incomplete = tasks.some((t: any) => !t.actual_end);
-    setCompletionBlocked(
-      incomplete ? "Complete all tasks to finish this milestone" : null
-    );
-  }, [milestoneId]);
-
-  /* -------- LOAD MILESTONE -------- */
-  const loadMilestone = useCallback(async () => {
-    if (!projectId || !milestoneId) return;
-
-    setLoading(true);
-
+  const fetchData = useCallback(async () => {
     const { data: milestoneData } = await supabase
       .from("milestones")
       .select("*")
       .eq("id", milestoneId)
-      .eq("project_id", projectId)
       .single();
 
-    setMilestone(milestoneData ?? null);
-
-    const { data: projectData, error: projectErr } = await supabase
+    const { data: projectData } = await supabase
       .from("projects")
-      .select("status")
+      .select("*")
       .eq("id", projectId)
       .single();
 
-    if (projectErr) {
-      console.error("Failed to load project status:", projectErr);
-      setProjectIsArchived(false);
-    } else {
-      setProjectIsArchived(projectData?.status === "archived");
+    return { milestone: milestoneData, project: projectData };
+  }, [milestoneId, projectId]);
+
+  // Full load with spinner — mount and explicit actions
+  const loadData = useCallback(async () => {
+    setLoading(true);
+
+    const { milestone: m, project: p } = await fetchData();
+    setMilestone(m || null);
+    setProject(p || null);
+
+    // Get user role
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: memberData } = await supabase
+        .from("project_members")
+        .select("role")
+        .eq("project_id", projectId)
+        .eq("user_id", user.id)
+        .single();
+
+      if (memberData) {
+        setUserRole(memberData.role);
+      }
     }
 
     setLoading(false);
-  }, [projectId, milestoneId]);
+    initialLoadDone.current = true;
+  }, [fetchData, projectId]);
+
+  // Silent refresh — no spinner. Used by realtime.
+  const silentRefresh = useCallback(async () => {
+    const { milestone: m, project: p } = await fetchData();
+    if (m) setMilestone(m);
+    if (p) setProject(p);
+  }, [fetchData]);
 
   useEffect(() => {
-    loadMilestone();
-  }, [loadMilestone]);
+    loadData();
+  }, [loadData]);
 
+  // Realtime on milestones — actual_progress rollup from task completions
   useEffect(() => {
-    validateCompletion();
-  }, [validateCompletion]);
+    const ch = supabase
+      .channel("ms-detail-milestone-" + milestoneId)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "milestones",
+          filter: `id=eq.${milestoneId}`,
+        },
+        () => {
+          if (initialLoadDone.current) silentRefresh();
+        }
+      )
+      .subscribe();
 
-  /* -------- COMPLETE MILESTONE -------- */
-  async function handleCompleteMilestone() {
-    if (
-      !milestone ||
-      completionBlocked ||
-      actionLoading ||
-      milestone.status === "completed"
-    ) {
-      return;
-    }
+    return () => { supabase.removeChannel(ch); };
+  }, [milestoneId, silentRefresh]);
 
-    setActionLoading(true);
+  // Realtime on projects — actual_progress rollup from milestone changes
+  useEffect(() => {
+    const ch = supabase
+      .channel("ms-detail-project-" + projectId)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "projects",
+          filter: `id=eq.${projectId}`,
+        },
+        () => {
+          if (initialLoadDone.current) silentRefresh();
+        }
+      )
+      .subscribe();
 
-    const { data: tasks } = await supabase
-      .from("tasks")
-      .select("actual_end")
-      .eq("milestone_id", milestone.id);
+    return () => { supabase.removeChannel(ch); };
+  }, [projectId, silentRefresh]);
 
-    const incomplete = tasks?.some((t: any) => !t.actual_end);
-    if (incomplete) {
-      alert("You must complete all tasks before completing the milestone.");
-      await validateCompletion();
-      setActionLoading(false);
-      return;
-    }
+  // Realtime on tasks — so task status/progress changes reflect immediately
+  useEffect(() => {
+    const ch = supabase
+      .channel("ms-detail-tasks-" + milestoneId)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "tasks",
+          filter: `milestone_id=eq.${milestoneId}`,
+        },
+        () => {
+          if (initialLoadDone.current) silentRefresh();
+        }
+      )
+      .subscribe();
 
-    const today = new Date().toISOString().slice(0, 10);
+    return () => { supabase.removeChannel(ch); };
+  }, [milestoneId, silentRefresh]);
 
-    await supabase
-      .from("milestones")
-      .update({
-        actual_end: today,
-        status: "completed",
-      })
-      .eq("id", milestone.id)
-      .is("actual_end", null);
+  const handleBack = () => {
+    router.push(`/projects/${projectId}`);
+  };
 
-    await loadMilestone();
-    await validateCompletion();
-
-    setActionLoading(false);
-  }
+  const handleMilestoneUpdated = () => {
+    loadData();
+  };
 
   if (loading) {
-    return <div className="p-8 text-gray-500">Loading milestone…</div>;
-  }
-
-  if (!milestone) {
     return (
-      <div className="p-8">
-        <h1 className="text-3xl font-bold">Milestone not found</h1>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-500">Loading milestone...</div>
       </div>
     );
   }
 
-  /* -------- DERIVED METRICS -------- */
+  if (!milestone) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-500">Milestone not found</div>
+      </div>
+    );
+  }
 
-  const plannedProgress = milestone.planned_progress ?? 0;
-  const actualProgress = milestone.actual_progress ?? 0;
+  const canEdit = userRole === "owner" || userRole === "editor";
+  const isReadOnly = userRole === "viewer";
 
-  const today = new Date().toISOString().slice(0, 10);
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return "—";
+    return new Date(dateStr).toISOString().split("T")[0];
+  };
 
-  const scheduleDelta =
-    milestone.actual_end && milestone.planned_end
-      ? Math.ceil(
-          (new Date(milestone.actual_end).getTime() -
-            new Date(milestone.planned_end).getTime()) /
-            (1000 * 60 * 60 * 24)
-        )
-      : null;
-
-  const costDelta =
-    milestone.actual_cost != null && milestone.budgeted_cost != null
-      ? milestone.actual_cost - milestone.budgeted_cost
-      : null;
-
-  const tasksCriticalCount = completionBlocked ? 1 : 0;
-
-  const startDelta =
-    milestone.actual_start && milestone.planned_start
-      ? Math.ceil(
-          (new Date(milestone.actual_start).getTime() -
-            new Date(milestone.planned_start).getTime()) /
-            (1000 * 60 * 60 * 24)
-        )
-      : null;
-
-  const startTone =
-    startDelta == null
-      ? "neutral"
-      : startDelta > 0
-      ? "warning"
-      : "success";
-
-  const scheduleTone =
-    scheduleDelta == null
-      ? "neutral"
-      : scheduleDelta > 0
-      ? "danger"
-      : "success";
-
-  const costTone =
-    costDelta == null
-      ? "neutral"
-      : costDelta > 0
-      ? "danger"
-      : "success";
-
-  const progressTone =
-    actualProgress > plannedProgress
-      ? "success"
-      : actualProgress < plannedProgress
-      ? "warning"
-      : "neutral";
-
-  /* ================= RENDER ================= */
+  // Status badge reads actual_end (set by user action), not actual_progress
+  const getStatusBadge = () => {
+    if (milestone.actual_end) {
+      return (
+        <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
+          Completed
+        </span>
+      );
+    }
+    if (milestone.actual_start) {
+      return (
+        <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+          In Progress
+        </span>
+      );
+    }
+    return (
+      <span className="px-3 py-1 bg-gray-100 text-gray-800 rounded-full text-sm font-medium">
+        Not Started
+      </span>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6" style={{ maxWidth: '1400px' }}>
-        {/* ===== COMPACT HEADER ===== */}
-        <div className="bg-white rounded-xl border border-gray-200 px-6 py-4">
-          <div className="flex items-start justify-between mb-1">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Back button */}
+        <button
+          onClick={handleBack}
+          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          Back to Milestones
+        </button>
+
+        {/* Milestone header */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <div className="flex items-start justify-between mb-4">
             <div>
-              <button
-                onClick={() => window.location.href = `/projects/${projectId}`}
-                className="text-sm text-slate-500 hover:text-slate-800 mb-1 flex items-center gap-1"
-              >
-                ← Back to Milestones
-              </button>
-
-              <h1 className="text-xl font-semibold text-gray-900">
-                {milestone.name}
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">
+                {milestone.name || milestone.title}
               </h1>
+              {milestone.description && (
+                <p className="text-gray-600">{milestone.description}</p>
+              )}
             </div>
-
-            <span
-              className={`px-3 py-1 rounded-full text-xs font-semibold
-                ${
-                  milestone.status === "completed"
-                    ? "bg-emerald-100 text-emerald-700"
-                    : milestone.status === "in_progress"
-                    ? "bg-blue-100 text-blue-700"
-                    : "bg-gray-100 text-gray-700"
-                }`}
-            >
-              {milestone.status}
-            </span>
+            {getStatusBadge()}
           </div>
 
-          {/* METRIC BUBBLES */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
-            <MetricBubble label="P. START" value={milestone.planned_start} />
-            <MetricBubble label="P. END" value={milestone.planned_end} />
-            <MetricBubble
-              label="A. START"
-              value={milestone.actual_start}
-              tone={startTone}
-              tooltip={
-                startDelta == null
-                  ? "Task work has not started yet"
-                  : startDelta > 0
-                  ? `Started ${startDelta} days late`
-                  : `Started ${Math.abs(startDelta)} days early`
-              }
-            />
-
-            <MetricBubble
-              label="A. END"
-              value={milestone.actual_end}
-              tone={scheduleTone}
-              tooltip={
-                scheduleDelta == null
-                  ? "Milestone not completed yet"
-                  : scheduleDelta > 0
-                  ? `Completed ${scheduleDelta} days late`
-                  : `Completed ${Math.abs(scheduleDelta)} days early`
-              }
-            />
-            <MetricBubble
-              label="BUDGET"
-              value={milestone.budgeted_cost}
-            />
-            <MetricBubble
-              label="ACTUAL"
-              value={milestone.actual_cost}
-              tone={costTone}
-              tooltip={
-                costDelta == null
-                  ? "No cost variance"
-                  : costDelta > 0
-                  ? `Over budget by ${costDelta}`
-                  : `Under budget by ${Math.abs(costDelta)}`
-              }
-            />
-          </div>
-
-          {/* PROGRESS */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div className="rounded-lg border px-3 py-2 bg-gray-50 border-gray-200">
-              <p className="text-[11px] font-semibold tracking-wide opacity-70">
-                PLANNED %
-              </p>
-
-              <div className="mt-1 text-sm font-bold">
-                {formatPercent(plannedProgress, 2)}
-              </div>
-
-              <div className="mt-2 h-2 rounded-full bg-gray-200 overflow-hidden">
-                <div
-                  className="h-full bg-blue-500 transition-all duration-500"
-                  style={{ width: `${plannedProgress}%` }}
-                />
+          {/* Milestone stats */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
+            <div className="bg-gray-50 rounded p-3">
+              <div className="text-xs text-gray-500 mb-1">P. START</div>
+              <div className="font-medium text-gray-900">
+                {formatDate(milestone.planned_start)}
               </div>
             </div>
+            <div className="bg-gray-50 rounded p-3">
+              <div className="text-xs text-gray-500 mb-1">P. END</div>
+              <div className="font-medium text-gray-900">
+                {formatDate(milestone.planned_end)}
+              </div>
+            </div>
+            <div className="bg-orange-50 rounded p-3">
+              <div className="text-xs text-orange-700 mb-1">A. START</div>
+              <div className="font-medium text-orange-900">
+                {formatDate(milestone.actual_start)}
+              </div>
+            </div>
+            <div className="bg-orange-50 rounded p-3">
+              <div className="text-xs text-orange-700 mb-1">A. END</div>
+              <div className="font-medium text-orange-900">
+                {formatDate(milestone.actual_end)}
+              </div>
+            </div>
+            <div className="bg-blue-50 rounded p-3">
+              <div className="text-xs text-blue-700 mb-1">BUDGET</div>
+              <div className="font-medium text-blue-900">
+                {milestone.budgeted_cost || 0}
+              </div>
+            </div>
+          </div>
 
-            <div
-              className={`relative rounded-lg border px-3 py-2 ${getBubbleTone(progressTone)}`}
-            >
-              <p className="text-[11px] font-semibold tracking-wide opacity-70">
-                ACTUAL %
-              </p>
-
-              <div className="flex items-center justify-between mt-1">
-                <span className="text-sm font-bold">
-                  {formatPercent(actualProgress, 2)}
+          {/* Progress bars */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+            <div>
+              <div className="flex justify-between text-sm mb-2">
+                <span className="text-gray-600">Planned %</span>
+                <span className="font-semibold text-gray-900">
+                  {milestone.planned_progress?.toFixed(2) || 0}%
                 </span>
-
-                <DeltaBadge actual={actualProgress} planned={plannedProgress} />
               </div>
-
-              <div className="mt-2 h-2 rounded-full bg-gray-200 overflow-hidden">
+              <div className="w-full bg-gray-200 rounded-full h-3">
                 <div
-                  className={`h-full transition-all duration-500 ${
-                    actualProgress > plannedProgress
-                      ? "bg-emerald-500"
-                      : actualProgress < plannedProgress
-                      ? "bg-amber-500"
-                      : "bg-gray-400"
-                  }`}
-                  style={{ width: `${actualProgress}%` }}
+                  className="bg-blue-500 h-3 rounded-full transition-all"
+                  style={{ width: `${milestone.planned_progress || 0}%` }}
                 />
               </div>
             </div>
-          </div>
-
-          {/* ACTION */}
-          <div className="flex items-center gap-4">
-            <button
-              onClick={handleCompleteMilestone}
-              disabled={
-                !!completionBlocked ||
-                actionLoading ||
-                milestone!.status === "completed"
-              }
-              className={`px-4 py-2 rounded-md text-sm font-semibold
-                ${
-                  milestone!.status === "completed"
-                    ? "bg-emerald-200 text-emerald-700 cursor-not-allowed"
-                    : completionBlocked
-                    ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                    : "bg-blue-600 text-white hover:bg-blue-700"
-                }`}
-            >
-              {milestone!.status === "completed"
-                ? "Milestone Completed"
-                : actionLoading
-                ? "…"
-                : "Complete Milestone"}
-            </button>
-
-            {completionBlocked && (
-              <span className="text-xs italic text-gray-500">
-                {completionBlocked}
-              </span>
-            )}
+            <div>
+              <div className="flex justify-between text-sm mb-2">
+                <span className="text-gray-600">Actual %</span>
+                <span className="font-semibold text-gray-900">
+                  {milestone.actual_progress?.toFixed(2) || 0}%
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-3">
+                <div
+                  className="bg-green-500 h-3 rounded-full transition-all"
+                  style={{ width: `${milestone.actual_progress || 0}%` }}
+                />
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* ===== TASK FLOW ===== */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-xl font-semibold mb-4">Task Flow</h2>
-          <TaskFlowBoard
-  milestoneId={milestoneId}
-  canEdit={!projectIsArchived}
-  onMilestoneChanged={validateCompletion}
-  onMilestoneUpdated={loadMilestone}
-/>
+        {/* Task Flow Section */}
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">
+            Task Flow
+          </h2>
+
+          <TaskViewWrapper
+            milestoneId={milestoneId}
+            canEdit={canEdit}
+            isReadOnly={isReadOnly}
+            onMilestoneChanged={loadData}
+            onMilestoneUpdated={handleMilestoneUpdated}
+          />
         </div>
       </div>
     </div>

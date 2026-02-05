@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 import DeliverableInlineUploader from "./DeliverableInlineUploader";
 import EditDeliverableModal from "./EditDeliverableModal";
@@ -32,27 +32,40 @@ export default function DeliverableCard({
   const [editOpen, setEditOpen] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
   const [assignedUserName, setAssignedUserName] = useState<string | null>(null);
+  const [dependsOnDeliverable, setDependsOnDeliverable] = useState<any>(null);
 
   const readOnly = !canEdit;
 
-  // Load assigned user name if assigned_user_id exists
-  useState(() => {
-    const loadAssignedUser = async () => {
-      if (!localDeliverable.assigned_user_id) return;
-      
-      const { data } = await supabase
-        .from("profiles")
-        .select("full_name, email")
-        .eq("id", localDeliverable.assigned_user_id)
-        .single();
-      
-      if (data) {
-        setAssignedUserName(data.full_name || data.email || "Unknown");
+  // Load assigned user name and dependency info
+  useEffect(() => {
+    const loadData = async () => {
+      // Load assigned user
+      if (localDeliverable.assigned_user_id) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("full_name, email")
+          .eq("id", localDeliverable.assigned_user_id)
+          .single();
+        
+        if (data) {
+          setAssignedUserName(data.full_name || data.email || "Unknown");
+        }
+      }
+
+      // FIXED Issue #9: Load dependency info correctly
+      if (localDeliverable.depends_on_deliverable_id) {
+        const dependency = existingDeliverables.find(
+          d => d.id === localDeliverable.depends_on_deliverable_id
+        );
+        setDependsOnDeliverable(dependency);
+      } else {
+        // Clear dependency if none exists
+        setDependsOnDeliverable(null);
       }
     };
     
-    loadAssignedUser();
-  });
+    loadData();
+  }, [localDeliverable.assigned_user_id, localDeliverable.depends_on_deliverable_id, existingDeliverables]);
 
   async function toggleDone(checked: boolean) {
     if (readOnly) return;
@@ -72,33 +85,29 @@ export default function DeliverableCard({
     });
 
     const { error } = await supabase
-      .from("deliverables")
+      .from("subtasks")
       .update(updatePayload)
       .eq("id", localDeliverable.id);
 
     if (error) {
       console.error("Toggle deliverable error:", error);
       pushToast("Failed to update deliverable", "error");
-      setLocalDeliverable(deliverable);
-      setUpdating(false);
-      return;
+    } else {
+      pushToast(
+        checked ? "Deliverable marked as done" : "Deliverable marked as not done",
+        "success"
+      );
+      onChanged?.();
     }
 
     setUpdating(false);
-    // Call onChanged to update parent task
-    onChanged?.();
   }
 
   async function handleDelete() {
-    if (!canDelete) return;
-
-    const confirmed = confirm(
-      `Delete deliverable "${localDeliverable.title}"? This cannot be undone.`
-    );
-    if (!confirmed) return;
+    if (!confirm("Are you sure you want to delete this deliverable?")) return;
 
     const { error } = await supabase
-      .from("deliverables")
+      .from("subtasks")
       .delete()
       .eq("id", localDeliverable.id);
 
@@ -114,37 +123,79 @@ export default function DeliverableCard({
 
   const handleEditSuccess = async () => {
     setEditOpen(false);
-    await refreshLocalState();
-    // ADDED: Notify parent to update task progress
-    onChanged?.();
-  };
 
-  const refreshLocalState = async () => {
-    const { data } = await supabase
-      .from("deliverables")
+    // Reload deliverable data
+    const { data, error } = await supabase
+      .from("subtasks")
       .select("*")
       .eq("id", localDeliverable.id)
       .single();
 
-    if (data) {
+    if (!error && data) {
       setLocalDeliverable(data);
-      
-      // Reload assigned user name if changed
+
+      // Reload assigned user if changed
       if (data.assigned_user_id) {
         const { data: profile } = await supabase
           .from("profiles")
           .select("full_name, email")
           .eq("id", data.assigned_user_id)
           .single();
-        
+
         if (profile) {
           setAssignedUserName(profile.full_name || profile.email || "Unknown");
         }
       } else {
         setAssignedUserName(null);
       }
+
+      // Reload dependency info
+      if (data.depends_on_deliverable_id) {
+        const dependency = existingDeliverables.find(
+          d => d.id === data.depends_on_deliverable_id
+        );
+        setDependsOnDeliverable(dependency);
+      } else {
+        setDependsOnDeliverable(null);
+      }
     }
+
+    onChanged?.();
   };
+
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return "—";
+    return new Date(dateStr).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  // FIXED Issue #9: Determine dependency type correctly
+  const getDependencyDisplay = () => {
+    // Check if this deliverable depends on another
+    const hasDependency = localDeliverable.depends_on_deliverable_id !== null && 
+                         localDeliverable.depends_on_deliverable_id !== undefined;
+    
+    if (!hasDependency) {
+      return {
+        label: "⚡ Independent",
+        color: "bg-green-100 text-green-800 border-green-200",
+        description: "Can start immediately (parallel)"
+      };
+    }
+    
+    return {
+      label: "⏩ Sequential",
+      color: "bg-blue-100 text-blue-800 border-blue-200",
+      description: dependsOnDeliverable 
+        ? `Depends on: ${dependsOnDeliverable.title}`
+        : "Depends on another deliverable"
+    };
+  };
+
+  const dependencyInfo = getDependencyDisplay();
 
   return (
     <>
@@ -178,6 +229,16 @@ export default function DeliverableCard({
                   {localDeliverable.description}
                 </p>
               )}
+
+              {/* Dependency Badge */}
+              <div className="mt-2">
+                <span 
+                  className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${dependencyInfo.color}`}
+                  title={dependencyInfo.description}
+                >
+                  {dependencyInfo.label}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -202,6 +263,15 @@ export default function DeliverableCard({
         </div>
 
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs mb-3">
+          {/* FIXED Issue #7: Duration display */}
+          <div>
+            <span className="text-gray-500">Duration:</span>
+            <span className="ml-2 font-medium text-gray-900">
+              {localDeliverable.duration_days || 0} {(localDeliverable.duration_days || 0) === 1 ? 'day' : 'days'}
+            </span>
+          </div>
+
+          {/* Weight */}
           <div>
             <span className="text-gray-500">Weight:</span>
             <span className="ml-2 font-medium text-gray-900">
@@ -209,85 +279,82 @@ export default function DeliverableCard({
             </span>
           </div>
 
-          <div>
-            <span className="text-gray-500">Assigned:</span>
-            <span className="ml-2 font-medium text-gray-900">
-              {assignedUserName || "Unassigned"}
-            </span>
-          </div>
-
+          {/* Planned Start */}
           <div>
             <span className="text-gray-500">Planned Start:</span>
             <span className="ml-2 font-medium text-gray-900">
-              {localDeliverable.planned_start || "—"}
+              {formatDate(localDeliverable.planned_start)}
             </span>
           </div>
 
+          {/* Planned End */}
           <div>
             <span className="text-gray-500">Planned End:</span>
             <span className="ml-2 font-medium text-gray-900">
-              {localDeliverable.planned_end || "—"}
+              {formatDate(localDeliverable.planned_end)}
             </span>
           </div>
 
-          <div>
-            <span className="text-gray-500">Actual End:</span>
-            <span className="ml-2 font-medium text-gray-900">
-              {localDeliverable.actual_end || "—"}
-            </span>
-          </div>
+          {/* Assigned User */}
+          {assignedUserName && (
+            <div className="col-span-2">
+              <span className="text-gray-500">Assigned:</span>
+              <span className="ml-2 font-medium text-gray-900">
+                {assignedUserName}
+              </span>
+            </div>
+          )}
 
-          <div>
-            <span className="text-gray-500">Budget:</span>
-            <span className="ml-2 font-medium text-gray-900">
-              ${localDeliverable.budgeted_cost?.toLocaleString() ?? "0"}
-            </span>
-          </div>
-
-          <div>
-            <span className="text-gray-500">Actual Cost:</span>
-            <span
-              className={`ml-2 font-medium ${
-                localDeliverable.actual_cost != null &&
-                localDeliverable.budgeted_cost != null &&
-                localDeliverable.actual_cost > localDeliverable.budgeted_cost
-                  ? "text-red-600"
-                  : "text-emerald-600"
-              }`}
-            >
-              ${localDeliverable.actual_cost?.toLocaleString() ?? "0"}
-            </span>
-          </div>
+          {/* Dependency Details */}
+          {dependsOnDeliverable && (
+            <div className="col-span-2">
+              <span className="text-gray-500">After:</span>
+              <span className="ml-2 font-medium text-blue-700">
+                {dependsOnDeliverable.title}
+              </span>
+            </div>
+          )}
         </div>
 
-        {!readOnly && (
-          <div className="flex items-center justify-between pt-3 border-t">
-            <button
-              onClick={() => setShowFiles(!showFiles)}
-              className="text-xs text-blue-600 hover:underline font-medium"
+        {/* FIXED Issue #8: Upload button OUTSIDE collapsible section */}
+        <div className="border-t pt-3 space-y-2">
+          {/* Upload button always visible - FIXED PROP NAME */}
+          <DeliverableInlineUploader
+            deliverableId={localDeliverable.id}
+            deliverableTitle={localDeliverable.title}
+            onUploaded={onChanged}
+          />
+
+          {/* Files section collapsible - FIXED PROP NAME */}
+          <button
+            onClick={() => setShowFiles(!showFiles)}
+            className="w-full flex items-center justify-between text-sm font-medium text-gray-700 hover:text-gray-900"
+          >
+            <span className="flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+              Files {showFiles ? '(Hide)' : '(Show)'}
+            </span>
+            <svg
+              className={`w-4 h-4 transition-transform ${showFiles ? "rotate-180" : ""}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
             >
-              {showFiles ? "▼ Hide Files" : "▶ Show Files"}
-            </button>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
 
-            <DeliverableInlineUploader
-              deliverableId={localDeliverable.id}
-              deliverableTitle={localDeliverable.title}
-              onUploaded={() => {
-                setShowFiles(true);
-              }}
-            />
-          </div>
-        )}
-
-        {showFiles && (
-          <div className="mt-3 pt-3 border-t">
-            <DeliverableFileSection
-              deliverableId={localDeliverable.id}
-              deliverableTitle={localDeliverable.title}
-              key={showFiles ? "visible" : "hidden"}
-            />
-          </div>
-        )}
+          {showFiles && (
+            <div className="mt-2">
+              <DeliverableFileSection
+                deliverableId={localDeliverable.id}
+                deliverableTitle={localDeliverable.title}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {editOpen && projectId && (
@@ -300,4 +367,4 @@ export default function DeliverableCard({
       )}
     </>
   );
-}
+}``

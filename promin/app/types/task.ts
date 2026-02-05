@@ -25,4 +25,7 @@ export type Task = {
   actual_cost: number;
 
   progress?: number; // actual progress %
+  
+  duration_days: number; // Task duration - user input, updated when deliverables change
+  offset_days: number; // Buffer days after task completion before successor starts (default 0)
 };

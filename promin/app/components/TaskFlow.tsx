@@ -48,16 +48,14 @@ export default function TaskFlow({ milestoneId }: Props) {
     await loadTasks();
   };
 
-  // Debug logging
-  console.log("🔵 TaskFlow RENDER: selectedTask =", selectedTask?.title || "null");
-  console.log("🔵 TaskFlow RENDER: drawer open =", !!selectedTask);
-
   return (
-    <div className="mt-8">
+    <div className="mt-4">
+      {/* Add task button */}
       <div className="flex justify-end mb-4">
         <AddTaskButton milestoneId={milestoneId} onCreated={loadTasks} />
       </div>
 
+      {/* Horizontal scrollable task list */}
       <div className="flex gap-4 overflow-x-auto py-4">
         {loading && <p>Loading tasks…</p>}
         {!loading && tasks.length === 0 && (
@@ -73,6 +71,7 @@ export default function TaskFlow({ milestoneId }: Props) {
         ))}
       </div>
 
+      {/* Task details drawer */}
       <TaskDetailsDrawer
         open={!!selectedTask}
         task={selectedTask}

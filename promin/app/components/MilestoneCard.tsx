@@ -30,37 +30,58 @@ export default function MilestoneCard({
   const [allTasksComplete, setAllTasksComplete] = useState(false);
   const [loadingTaskStatus, setLoadingTaskStatus] = useState(true);
 
-  useEffect(() => {
-    async function checkTaskCompletion() {
-      setLoadingTaskStatus(true);
-      try {
-        const { data, error } = await supabase
-          .from("tasks")
-          .select("actual_end")
-          .eq("milestone_id", milestone.id);
+  async function checkTaskCompletion() {
+    setLoadingTaskStatus(true);
+    try {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select("actual_end")
+        .eq("milestone_id", milestone.id);
 
-        if (error) {
-          console.error("Failed to check task status:", error);
-          setAllTasksComplete(false);
-          return;
-        }
-
-        if (!data || data.length === 0) {
-          setAllTasksComplete(false);
-        } else {
-          const allComplete = data.every((task) => task.actual_end !== null);
-          setAllTasksComplete(allComplete);
-        }
-      } catch (err) {
-        console.error("Error checking tasks:", err);
+      if (error) {
+        console.error("Failed to check task status:", error);
         setAllTasksComplete(false);
-      } finally {
-        setLoadingTaskStatus(false);
+        return;
       }
-    }
 
+      if (!data || data.length === 0) {
+        setAllTasksComplete(false);
+      } else {
+        const allComplete = data.every((task) => task.actual_end !== null);
+        setAllTasksComplete(allComplete);
+      }
+    } catch (err) {
+      console.error("Error checking tasks:", err);
+      setAllTasksComplete(false);
+    } finally {
+      setLoadingTaskStatus(false);
+    }
+  }
+
+  useEffect(() => {
     checkTaskCompletion();
-  }, [milestone.id, milestone.actual_progress]);
+  }, [milestone.id, milestone.actual_progress, milestone.status]);
+
+  // Realtime on tasks for this milestone — updates allTasksComplete when tasks are completed
+  useEffect(() => {
+    const ch = supabase
+      .channel("milestone-card-tasks-" + milestone.id)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "tasks",
+          filter: `milestone_id=eq.${milestone.id}`,
+        },
+        () => {
+          checkTaskCompletion();
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(ch); };
+  }, [milestone.id]);
 
   React.useEffect(() => {
     if (!canEdit && !canDelete && menuOpen) {
@@ -79,24 +100,21 @@ export default function MilestoneCard({
     setMenuOpen(!menuOpen);
   };
 
-  const handleEdit = () => {
+  const handleEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
     setMenuOpen(false);
     setEditOpen(true);
   };
 
-  const handleDelete = async () => {
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
     setMenuOpen(false);
 
     const confirmed = window.confirm(
       `Delete milestone "${milestone.name}"? This will also delete all tasks and deliverables.`
     );
-    
-    if (!confirmed) {
-      console.log("Delete cancelled by user");
-      return;
-    }
 
-    console.log("Attempting to delete milestone:", milestone.id);
+    if (!confirmed) return;
 
     const { error } = await supabase
       .from("milestones")
@@ -109,7 +127,6 @@ export default function MilestoneCard({
       return;
     }
 
-    console.log("Milestone deleted successfully");
     pushToast("Milestone deleted", "success");
     onUpdated?.();
   };
@@ -146,8 +163,11 @@ export default function MilestoneCard({
 
   const actualProgress = milestone.actual_progress ?? 0;
 
+  // Status badge reads ONLY milestone.status.
+  // actual_progress reaching 100 via rollup does NOT mean completed —
+  // user must explicitly click "Complete Milestone" to set status + actual_end.
   const getStatusBadge = () => {
-    if (actualProgress === 100 || milestone.status === "completed") {
+    if (milestone.status === "completed") {
       return (
         <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold">
           <CheckCircle2 size={14} />
@@ -166,45 +186,26 @@ export default function MilestoneCard({
     }
 
     return (
-      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold">
+      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
         <Circle size={14} />
-        <span>Pending</span>
+        <span>Not Started</span>
       </div>
     );
   };
 
-  const formatCurrency = (amount: number | null | undefined): string => {
-    if (!amount) return "$0";
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount);
-  };
-
   return (
     <>
-      {/* BACKDROP - Close menu when clicking outside */}
-      {menuOpen && (
-        <div
-          className="fixed inset-0 z-[35]"
-          onClick={() => setMenuOpen(false)}
-        />
-      )}
-
       <div className="relative">
-        {/* 3 DOTS MENU BUTTON */}
         {(canEdit || canDelete) && (
           <button
+            className="absolute right-4 top-4 z-30 p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
             onClick={handleMenuClick}
-            className="absolute top-4 right-4 z-40 p-2 rounded-full hover:bg-slate-100 transition-colors"
+            aria-label="More options"
           >
-            <MoreVertical size={20} className="text-slate-400" />
+            <MoreVertical size={20} />
           </button>
         )}
 
-        {/* DROPDOWN MENU */}
         {menuOpen && (
           <div
             className="absolute right-4 top-12 bg-white shadow-lg border rounded-lg w-40 z-40"
@@ -212,7 +213,7 @@ export default function MilestoneCard({
           >
             {canEdit && (
               <button
-                className="w-full text-left px-4 py-2 flex items-center gap-2 hover:bg-gray-100"
+                className="w-full text-left px-4 py-2 flex items-center gap-2 hover:bg-gray-100 rounded-t-lg"
                 onClick={handleEdit}
               >
                 <Edit size={16} /> Edit
@@ -221,7 +222,7 @@ export default function MilestoneCard({
 
             {canDelete && (
               <button
-                className="w-full text-left px-4 py-2 flex items-center gap-2 text-red-600 hover:bg-red-50"
+                className="w-full text-left px-4 py-2 flex items-center gap-2 text-red-600 hover:bg-red-50 rounded-b-lg"
                 onClick={handleDelete}
               >
                 <Trash size={16} /> Delete
@@ -230,12 +231,10 @@ export default function MilestoneCard({
           </div>
         )}
 
-        {/* CLICKABLE CARD */}
         <div
           onClick={handleCardClick}
           className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 hover:shadow-md transition-all cursor-pointer"
         >
-          {/* HEADER */}
           <div className="flex items-start justify-between mb-4 pr-8">
             <div className="flex-1">
               <h3 className="text-lg font-semibold text-slate-800 line-clamp-2">
@@ -250,14 +249,12 @@ export default function MilestoneCard({
             </div>
           </div>
 
-          {/* DESCRIPTION */}
           {milestone.description && (
             <p className="text-sm text-slate-600 mb-4 line-clamp-2">
               {milestone.description}
             </p>
           )}
 
-          {/* DATES & COSTS GRID */}
           <div className="mb-4 bg-slate-50 rounded-lg p-3">
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
               <div>
@@ -279,102 +276,70 @@ export default function MilestoneCard({
             </div>
           </div>
 
-          <div className="mb-4 bg-slate-50 rounded-lg p-3">
-            <div className="grid grid-cols-2 gap-4 text-xs">
-              <div>
-                <div className="text-slate-500 font-medium">Budget</div>
-                <div className="text-slate-900 mt-0.5 font-semibold">
-                  {formatCurrency(milestone.budgeted_cost)}
-                </div>
-              </div>
-              <div>
-                <div className="text-slate-500 font-medium">Actual Cost</div>
-                <div
-                  className={`mt-0.5 font-semibold ${
-                    milestone.actual_cost != null &&
-                    milestone.budgeted_cost != null &&
-                    milestone.actual_cost > milestone.budgeted_cost
-                      ? "text-red-600"
-                      : "text-emerald-600"
-                  }`}
-                >
-                  {formatCurrency(milestone.actual_cost)}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* PROGRESS BARS */}
-          <div className="space-y-3 mb-4">
+          <div className="mb-4 space-y-3">
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-sm text-slate-500">Planned</span>
-                <span className="text-sm font-semibold text-blue-600">
-                  {milestone.planned_progress ?? 0}%
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="text-xs font-medium text-slate-600">Planned Progress</span>
+                <span className="text-xs font-semibold text-slate-700">
+                  {(milestone.planned_progress ?? 0).toFixed(1)}%
                 </span>
               </div>
-              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
                 <div
-                  className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-blue-500 to-blue-400"
-                  style={{ width: `${milestone.planned_progress ?? 0}%` }}
+                  className="h-full bg-gradient-to-r from-blue-400 to-blue-500 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.min(100, milestone.planned_progress ?? 0)}%` }}
                 />
               </div>
             </div>
+
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-sm text-slate-500">Actual</span>
-                <span className="text-sm font-semibold text-emerald-600">{actualProgress}%</span>
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="text-xs font-medium text-slate-600">Actual Progress</span>
+                <span className="text-xs font-semibold text-slate-700">
+                  {actualProgress.toFixed(1)}%
+                </span>
               </div>
-              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
                 <div
-                  className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-emerald-500 to-emerald-400"
-                  style={{ width: `${actualProgress}%` }}
+                  className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.min(100, actualProgress)}%` }}
                 />
               </div>
             </div>
           </div>
 
-          {/* COMPLETE BUTTON */}
-          <div className="mt-auto">
-            {milestone.status === "completed" ? (
-              <button
-                disabled
-                className="w-full px-4 py-2.5 text-sm font-semibold rounded-lg bg-emerald-100 text-emerald-700 cursor-not-allowed"
-              >
-                Milestone Completed
-              </button>
-            ) : canEdit ? (
-              <button
-                onClick={handleCompleteMilestone}
-                disabled={buttonDisabled}
-                className="w-full px-4 py-2.5 text-sm font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                title={
-                  loadingTaskStatus
-                    ? "Checking task status..."
-                    : !allTasksComplete
-                    ? "Complete all tasks first"
-                    : "Complete milestone"
+          {canComplete && (
+            <button
+              onClick={handleCompleteMilestone}
+              disabled={buttonDisabled}
+              className={`
+                w-full py-2.5 px-4 rounded-lg font-medium text-sm transition-all
+                ${
+                  buttonDisabled
+                    ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                    : "bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.98]"
                 }
-              >
-                {completing
+              `}
+              title={
+                !allTasksComplete
+                  ? "Complete all tasks before completing the milestone"
+                  : completing
                   ? "Completing..."
-                  : loadingTaskStatus
-                  ? "Checking..."
-                  : "Complete Milestone"}
-              </button>
-            ) : null}
-          </div>
+                  : "Mark milestone as complete"
+              }
+            >
+              {completing ? "Completing..." : "Complete Milestone"}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* EDIT MODAL */}
       {editOpen && (
         <EditMilestoneModal
           milestoneId={milestone.id}
           onClose={() => setEditOpen(false)}
           onSuccess={() => {
             setEditOpen(false);
-            pushToast("Milestone updated successfully", "success");
             onUpdated?.();
           }}
         />

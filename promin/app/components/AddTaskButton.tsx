@@ -28,9 +28,13 @@ export default function AddTaskButton({ milestoneId, onCreated }: Props) {
 
       const nextPosition = maxData && maxData[0] ? maxData[0].position + 1 : 0;
 
-      // Insert task (convert weight from percentage to decimal)
-      // NOTE: planned_start, planned_end, and budgeted_cost are NOT included
-      // They will be derived automatically by the database from deliverables
+      // Calculate planned_end = planned_start + 1 day (default)
+      // This will be updated when deliverables are added
+      const startDate = new Date(values.planned_start!);
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + 1);
+
+      // Insert task
       const { data, error } = await supabase
         .from("tasks")
         .insert({
@@ -38,6 +42,10 @@ export default function AddTaskButton({ milestoneId, onCreated }: Props) {
           title: values.title,
           description: values.description,
           weight: values.weight / 100, // Convert percentage (0-100) to decimal (0-1)
+          planned_start: values.planned_start,
+          planned_end: endDate.toISOString().split('T')[0],
+          duration_days: 1, // Default, will be updated by deliverables
+          offset_days: values.offset_days,
           position: nextPosition,
         })
         .select()

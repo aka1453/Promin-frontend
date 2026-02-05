@@ -4,9 +4,11 @@ import { supabase } from "./supabaseClient";
 export async function startTask(taskId: number) {
   const { error } = await supabase
     .from("tasks")
-    .update({ actual_start: new Date().toISOString().slice(0, 10) })
-    .eq("id", taskId)
-    .is("actual_start", null);
+    .update({
+      actual_start: new Date().toISOString().slice(0, 10),
+      status: "in_progress",
+    })
+    .eq("id", taskId);
 
   if (error) {
     console.error("Failed to start task:", error);
@@ -17,9 +19,12 @@ export async function startTask(taskId: number) {
 export async function completeTask(taskId: number) {
   const { error } = await supabase
     .from("tasks")
-    .update({ actual_end: new Date().toISOString().slice(0, 10) })
-    .eq("id", taskId)
-    .is("actual_end", null);
+    .update({
+      actual_end: new Date().toISOString().slice(0, 10),
+      status: "completed",
+      progress: 100,
+    })
+    .eq("id", taskId);
 
   if (error) {
     console.error("Failed to complete task:", error);
@@ -32,9 +37,9 @@ export async function completeMilestone(milestoneId: number) {
     .from("milestones")
     .update({
       actual_end: new Date().toISOString().slice(0, 10),
+      status: "completed",
     })
-    .eq("id", milestoneId)
-    .is("actual_end", null);
+    .eq("id", milestoneId);
 
   if (error) {
     console.error("Failed to complete milestone:", error);

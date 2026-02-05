@@ -65,8 +65,27 @@ useEffect(() => {
     }
   });
 
+  // Realtime: re-fetch all projects whenever any project row is updated.
+  // This covers planned_start/planned_end/actual_progress rolling up from
+  // milestone and task changes via DB triggers.
+  const projectsChannel = supabase
+    .channel("projects-context")
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "projects",
+      },
+      () => {
+        reloadProjects();
+      }
+    )
+    .subscribe();
+
   return () => {
     subscription.unsubscribe();
+    supabase.removeChannel(projectsChannel);
   };
 }, []);
 

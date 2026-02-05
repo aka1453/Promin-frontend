@@ -1,6 +1,8 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { BarChart2, Settings } from "lucide-react";
 import ProgressBar from "./ProgressBar";
 
 type Props = {
@@ -44,6 +46,9 @@ export default function ProjectOverviewCard({
   onOpenSettings,
   hideSettings,
 }: Props) {
+  const router = useRouter();
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const planned = Number(project.planned_progress ?? 0);
   const actual = Number(project.actual_progress ?? 0);
@@ -51,30 +56,49 @@ export default function ProjectOverviewCard({
   const pmName = project?.project_manager?.full_name;
   const pmId = project?.project_manager?.id;
 
-
   const delta = actual - planned;
-const absDelta = Math.abs(delta);
+  const absDelta = Math.abs(delta);
 
-const isOnTrack = Math.abs(delta) <= 3;
-const isAhead = delta > 3;
-const isBehind = delta < -3;
+  const isOnTrack = Math.abs(delta) <= 3;
+  const isAhead = delta > 3;
+  const isBehind = delta < -3;
 
-const statusColor = isCompleted
-  ? "text-emerald-700"
-  : isOnTrack
-  ? "text-slate-500"
-  : isAhead
-  ? "text-emerald-600"
-  : "text-amber-600";
+  const statusColor = isCompleted
+    ? "text-emerald-700"
+    : isOnTrack
+    ? "text-slate-500"
+    : isAhead
+    ? "text-emerald-600"
+    : "text-amber-600";
 
-const statusLabel = isCompleted
-  ? "Completed"
-  : isOnTrack
-  ? "On track"
-  : isAhead
-  ? `▲ ${absDelta.toFixed(1)}%`
-  : `▼ ${absDelta.toFixed(1)}%`;
+  const statusLabel = isCompleted
+    ? "Completed"
+    : isOnTrack
+    ? "On track"
+    : isAhead
+    ? `▲ ${absDelta.toFixed(1)}%`
+    : `▼ ${absDelta.toFixed(1)}%`;
 
+  // Close menu on outside click or Escape
+  useEffect(() => {
+    if (!showMenu) return;
+
+    const handleMouseDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowMenu(false);
+    };
+
+    document.addEventListener("mousedown", handleMouseDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showMenu]);
 
   return (
   <div
@@ -103,40 +127,73 @@ const statusLabel = isCompleted
         </h3>
       </div>
 
-      {/* RIGHT — STATUS + SETTINGS */}
+      {/* RIGHT — STATUS + ⋮ DROPDOWN */}
       <div className="flex items-center gap-3">
         <div className={`text-sm font-medium ${statusColor}`}>
           {statusLabel}
         </div>
 
-        {!hideSettings && onOpenSettings && (
-  <button
-    type="button"
-    onClick={(e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      onOpenSettings();
-    }}
-    className="
-      pointer-events-auto
-      text-slate-500
-      hover:text-slate-800
-      text-xl
-      font-semibold
-      px-2
-      py-1
-      rounded-md
-      hover:bg-slate-100
-      transition
-    "
-    title="Project settings"
-  >
-    ⋮
-  </button>
-)}
+        {!hideSettings && (
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowMenu(!showMenu);
+              }}
+              className="
+                pointer-events-auto
+                text-slate-500
+                hover:text-slate-800
+                text-xl
+                font-semibold
+                px-2
+                py-1
+                rounded-md
+                hover:bg-slate-100
+                transition
+              "
+              title="More options"
+            >
+              ⋮
+            </button>
 
+            {showMenu && (
+              <div className="absolute right-0 top-full mt-1 w-44 z-50 bg-white rounded-lg shadow-md border border-slate-200 py-1">
+                {/* Reports */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowMenu(false);
+                    router.push(`/projects/${project.id}/reports`);
+                  }}
+                  className="flex items-center gap-2 w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition"
+                >
+                  <BarChart2 size={15} className="text-blue-600" />
+                  Reports
+                </button>
 
-
+                {/* Settings */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowMenu(false);
+                    onOpenSettings?.();
+                  }}
+                  className="flex items-center gap-2 w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition"
+                >
+                  <Settings size={15} className="text-slate-500" />
+                  Settings
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
 

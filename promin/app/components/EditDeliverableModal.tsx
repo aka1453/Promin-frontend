@@ -1,13 +1,14 @@
+// app/components/EditDeliverableModal.tsx
 "use client";
 
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useToast } from "./ToastProvider";
-import UserPicker from "./UserPicker";
+import { recalculateTaskFromDeliverables } from "../lib/dependencyScheduling";
 
 type Props = {
   deliverableId: number;
-  projectId: number;
+  projectId: number; // Kept for compatibility, not used
   onClose: () => void;
   onSuccess: () => void;
 };
@@ -22,20 +23,20 @@ export default function EditDeliverableModal({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  const [taskId, setTaskId] = useState<number>(0);
+  const [existingDeliverables, setExistingDeliverables] = useState<any[]>([]);
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
   const [weight, setWeight] = useState("0");
-  const [plannedStart, setPlannedStart] = useState("");
-  const [plannedEnd, setPlannedEnd] = useState("");
-  const [actualEnd, setActualEnd] = useState("");
-  const [budgetedCost, setBudgetedCost] = useState("");
-  const [actualCost, setActualCost] = useState("");
-  const [assignedUserId, setAssignedUserId] = useState<string | null>(null);
+  const [durationDays, setDurationDays] = useState("1");
+  const [budgetedCost, setBudgetedCost] = useState("0");
+  const [actualCost, setActualCost] = useState("0");
+  const [dependsOnDeliverableId, setDependsOnDeliverableId] = useState<string>("");
 
   useEffect(() => {
     const load = async () => {
+      // Load the deliverable
       const { data, error } = await supabase
-        .from("deliverables")
+        .from("subtasks")
         .select("*")
         .eq("id", deliverableId)
         .single();
@@ -48,15 +49,24 @@ export default function EditDeliverableModal({
       }
 
       setTitle(data.title || "");
-      setDescription(data.description || "");
-      // Convert decimal to percentage for display
       setWeight(String((data.weight ?? 0) * 100));
-      setPlannedStart(data.planned_start || "");
-      setPlannedEnd(data.planned_end || "");
-      setActualEnd(data.actual_end || "");
-      setBudgetedCost(String(data.budgeted_cost ?? ""));
-      setActualCost(String(data.actual_cost ?? ""));
-      setAssignedUserId(data.assigned_user_id || null);
+      setDurationDays(String(data.duration_days ?? 1));
+      setBudgetedCost(String(data.budgeted_cost ?? 0));
+      setActualCost(String(data.actual_cost ?? 0));
+      setDependsOnDeliverableId(data.depends_on_deliverable_id ? String(data.depends_on_deliverable_id) : "");
+      setTaskId(data.task_id);
+
+      // Load all deliverables in the same task
+      const { data: deliverables, error: delError } = await supabase
+        .from("subtasks")
+        .select("*")
+        .eq("task_id", data.task_id)
+        .order("created_at", { ascending: true });
+
+      if (!delError && deliverables) {
+        setExistingDeliverables(deliverables);
+      }
+
       setLoading(false);
     };
 
@@ -71,21 +81,22 @@ export default function EditDeliverableModal({
       return;
     }
 
+    if (!durationDays || Number(durationDays) < 1) {
+      pushToast("Duration must be at least 1 day", "warning");
+      return;
+    }
+
     setSaving(true);
 
-    // Phase 4C: Weight will be auto-normalized with siblings after update
     const { error } = await supabase
-      .from("deliverables")
+      .from("subtasks")
       .update({
         title: title.trim(),
-        description: description.trim() || null,
         weight: Number(weight) / 100, // Convert percentage to decimal
-        planned_start: plannedStart || null,
-        planned_end: plannedEnd || null,
-        actual_end: actualEnd || null,
-        budgeted_cost: budgetedCost ? Number(budgetedCost) : null,
-        actual_cost: actualCost ? Number(actualCost) : null,
-        assigned_user_id: assignedUserId,
+        duration_days: Number(durationDays),
+        budgeted_cost: Number(budgetedCost) || 0,
+        actual_cost: Number(actualCost) || 0,
+        depends_on_deliverable_id: dependsOnDeliverableId ? Number(dependsOnDeliverableId) : null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", deliverableId);
@@ -97,13 +108,16 @@ export default function EditDeliverableModal({
       return;
     }
 
-    pushToast("Deliverable updated - weights auto-normalized", "success");
+    // Recalculate task dates based on updated deliverable
+    await recalculateTaskFromDeliverables(taskId);
+
+    pushToast("Deliverable updated - task dates recalculated", "success");
     onSuccess();
   };
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50">
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
         <div className="bg-white rounded-lg p-8">
           <p className="text-gray-600">Loading...</p>
         </div>
@@ -111,11 +125,25 @@ export default function EditDeliverableModal({
     );
   }
 
+  // Filter out current deliverable from dependency options
+  const availableForDependency = existingDeliverables.filter(d => d.id !== deliverableId);
+
+  // Calculate total weight
+  const sum = (existingDeliverables || []).reduce(
+    (acc: number, d: any) => {
+      // Exclude current deliverable from sum
+      if (d.id === deliverableId) return acc;
+      return acc + Number(d.weight ?? 0) * 100;
+    },
+    0
+  );
+  const proposed = sum + Number(weight);
+
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 bg-white">
-          <h2 className="text-xl font-semibold">Edit Deliverable</h2>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div className="px-6 py-4 border-b flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Edit Deliverable</h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
@@ -124,164 +152,139 @@ export default function EditDeliverableModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
+          {/* Title */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Title *
-            </label>
+            <label className="block text-sm font-medium mb-1">Title *</label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              className="w-full border rounded px-3 py-2 text-sm"
+              placeholder="Deliverable title"
               autoFocus
             />
           </div>
 
+          {/* Weight */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Description
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+            <label className="block text-sm font-medium mb-1">Weight (%) *</label>
+            <input
+              type="number"
+              step="1"
+              min="0"
+              value={weight}
+              onChange={(e) => setWeight(e.target.value)}
+              className="w-full border rounded px-3 py-2 text-sm"
             />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Weight (%)
-              </label>
-              <input
-                type="number"
-                step="1"
-                min="0"
-                value={weight}
-                onChange={(e) => setWeight(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-              />
-              <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
-                <span>⚖️</span>
-                <span>Auto-normalized across all deliverables</span>
+            <div className="mt-2 bg-blue-50 border border-blue-200 rounded-md p-2">
+              <p className="text-xs text-blue-800">
+                <strong>⚖️ Auto-Normalization:</strong> All deliverable weights will be 
+                automatically adjusted to sum to 100% proportionally.
               </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Assigned User
-              </label>
-              <UserPicker
-                projectId={projectId}
-                value={assignedUserId}
-                onChange={setAssignedUserId}
-                placeholder="Assign to someone..."
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Planned Start
-              </label>
-              <input
-                type="date"
-                value={plannedStart}
-                onChange={(e) => setPlannedStart(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-              />
-              <p className="text-xs text-blue-600 mt-1">
-                📊 Updates task planned start
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Planned End
-              </label>
-              <input
-                type="date"
-                value={plannedEnd}
-                onChange={(e) => setPlannedEnd(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-              />
-              <p className="text-xs text-blue-600 mt-1">
-                📊 Updates task planned end
+              <p className="text-xs text-blue-700 mt-1">
+                Other deliverables: {sum.toFixed(0)}% | After update: {proposed.toFixed(0)}% → Will normalize to 100%
               </p>
             </div>
           </div>
 
+          {/* Duration */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Actual End
+            <label className="block text-sm font-medium mb-1">
+              Duration (days) *
             </label>
             <input
-              type="date"
-              value={actualEnd}
-              disabled
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-gray-50 cursor-not-allowed"
-              title="Auto-filled when deliverable is marked as done"
+              type="number"
+              step="1"
+              min="1"
+              value={durationDays}
+              onChange={(e) => setDurationDays(e.target.value)}
+              className="w-full border rounded px-3 py-2 text-sm"
+              placeholder="Number of days"
             />
-            <p className="text-xs text-gray-500 mt-1">
-              Auto-filled when deliverable is marked as done
-            </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          {/* Budgeted Cost + Actual Cost — side by side */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Budgeted Cost
-              </label>
+              <label className="block text-sm font-medium mb-1">Budgeted Cost ($)</label>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 value={budgetedCost}
                 onChange={(e) => setBudgetedCost(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                className="w-full border rounded px-3 py-2 text-sm"
                 placeholder="0.00"
               />
-              <p className="text-xs text-blue-600 mt-1">
-                📊 Updates task budgeted cost
-              </p>
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Actual Cost
-              </label>
+              <label className="block text-sm font-medium mb-1">Actual Cost ($)</label>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 value={actualCost}
                 onChange={(e) => setActualCost(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                className="w-full border rounded px-3 py-2 text-sm"
                 placeholder="0.00"
               />
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+          {/* Depends On */}
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Dependency
+            </label>
+            <select
+              value={dependsOnDeliverableId}
+              onChange={(e) => setDependsOnDeliverableId(e.target.value)}
+              className="w-full border rounded px-3 py-2 text-sm"
             >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
-            >
-              {saving ? "Saving..." : "Save Changes"}
-            </button>
+              <option value="">Independent (parallel)</option>
+              {availableForDependency.map((d) => (
+                <option key={d.id} value={d.id}>
+                  Depends on: {d.title} ({d.duration_days || 0} days)
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              {dependsOnDeliverableId 
+                ? "⏩ Sequential: Starts after selected deliverable completes"
+                : "⚡ Parallel: Can start immediately with the task"
+              }
+            </p>
+          </div>
+
+          {/* Info Notice */}
+          <div className="bg-purple-50 border border-purple-200 rounded-md p-3">
+            <p className="text-xs text-purple-800">
+              <strong>🔗 Duration Calculation:</strong><br />
+              • <strong>Independent:</strong> Task duration = MAX of all parallel deliverables<br />
+              • <strong>Dependent:</strong> Task duration = SUM along sequential chain<br />
+              • Task dates will recalculate when you save
+            </p>
           </div>
         </form>
+
+        <div className="px-6 py-4 border-t flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium border rounded hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            onClick={handleSubmit}
+            disabled={saving || !title.trim()}
+            className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saving ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
       </div>
     </div>
   );

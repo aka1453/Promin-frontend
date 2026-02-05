@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useToast } from "./ToastProvider";
+import { recalculateTaskFromDeliverables } from "../lib/dependencyScheduling";
 
 type Props = {
   taskId: number;
@@ -21,17 +22,13 @@ export default function DeliverableCreateModal({
   const { pushToast } = useToast();
 
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
   const [weight, setWeight] = useState("0");
-  const [plannedStart, setPlannedStart] = useState("");
-  const [plannedEnd, setPlannedEnd] = useState("");
-  const [budgetedCost, setBudgetedCost] = useState("0");
-  const [assignedUser, setAssignedUser] = useState("");
+  const [durationDays, setDurationDays] = useState("1");
+  const [dependsOnDeliverableId, setDependsOnDeliverableId] = useState<string>("");
 
   const [creating, setCreating] = useState(false);
 
   // Calculate total weight as percentage for display only
-  // With Phase 4C, weights are auto-normalized, so this is informational
   const sum = (existingDeliverables || []).reduce(
     (acc: number, d: any) => acc + Number(d.weight ?? 0) * 100,
     0
@@ -44,30 +41,32 @@ export default function DeliverableCreateModal({
       return;
     }
 
+    if (!durationDays || Number(durationDays) < 1) {
+      pushToast("Duration must be at least 1 day", "warning");
+      return;
+    }
+
     setCreating(true);
     try {
-      // Convert percentage to decimal for database storage
-      // Phase 4C: Database will auto-normalize all deliverable weights within this task
-      const { error } = await supabase.from("deliverables").insert({
+      // Insert deliverable with duration and optional dependency
+      const { error } = await supabase.from("subtasks").insert({
         task_id: taskId,
         title: title.trim(),
-        description: description.trim() || null,
         weight: Number(weight) / 100, // Store as decimal (0-1)
-        planned_start: plannedStart || null,
-        planned_end: plannedEnd || null,
-        budgeted_cost: Number(budgetedCost),
-        actual_cost: 0,
-        is_done: false,
-        assigned_user: assignedUser.trim() || null,
+        duration_days: Number(durationDays),
+        depends_on_deliverable_id: dependsOnDeliverableId ? Number(dependsOnDeliverableId) : null,
       });
 
       if (error) {
         console.error("Create deliverable error:", error);
-        pushToast("Failed to create deliverable", "error");
+        pushToast(`Failed to create deliverable: ${error.message}`, "error");
         return;
       }
 
-      pushToast("Deliverable created - weights auto-normalized", "success");
+      // Recalculate task dates based on new deliverable
+      await recalculateTaskFromDeliverables(taskId);
+
+      pushToast("Deliverable created - task dates updated", "success");
       onSuccess();
     } catch (e: any) {
       console.error("Create deliverable exception:", e);
@@ -91,6 +90,7 @@ export default function DeliverableCreateModal({
         </div>
 
         <div className="px-6 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+          {/* Title */}
           <div>
             <label className="block text-sm font-medium mb-1">Title *</label>
             <input
@@ -103,17 +103,7 @@ export default function DeliverableCreateModal({
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">Description</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              className="w-full border rounded px-3 py-2 text-sm"
-              placeholder="Optional description"
-            />
-          </div>
-
+          {/* Weight */}
           <div>
             <label className="block text-sm font-medium mb-1">Weight (%) *</label>
             <input
@@ -135,51 +125,55 @@ export default function DeliverableCreateModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium mb-1">Planned Start</label>
-              <input
-                type="date"
-                value={plannedStart}
-                onChange={(e) => setPlannedStart(e.target.value)}
-                className="w-full border rounded px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Planned End</label>
-              <input
-                type="date"
-                value={plannedEnd}
-                onChange={(e) => setPlannedEnd(e.target.value)}
-                className="w-full border rounded px-3 py-2 text-sm"
-              />
-            </div>
-          </div>
-
+          {/* Duration */}
           <div>
-            <label className="block text-sm font-medium mb-1">Budgeted Cost</label>
+            <label className="block text-sm font-medium mb-1">
+              Duration (days) *
+            </label>
             <input
               type="number"
-              step="0.01"
-              min="0"
-              value={budgetedCost}
-              onChange={(e) => setBudgetedCost(e.target.value)}
+              step="1"
+              min="1"
+              value={durationDays}
+              onChange={(e) => setDurationDays(e.target.value)}
               className="w-full border rounded px-3 py-2 text-sm"
+              placeholder="Number of days"
             />
+          </div>
+
+          {/* Depends On */}
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Dependency
+            </label>
+            <select
+              value={dependsOnDeliverableId}
+              onChange={(e) => setDependsOnDeliverableId(e.target.value)}
+              className="w-full border rounded px-3 py-2 text-sm"
+            >
+              <option value="">Independent (parallel)</option>
+              {existingDeliverables.map((d) => (
+                <option key={d.id} value={d.id}>
+                  Depends on: {d.title} ({d.duration_days || 0} days)
+                </option>
+              ))}
+            </select>
             <p className="text-xs text-gray-500 mt-1">
-              💡 Task budget is automatically calculated from all deliverables
+              {dependsOnDeliverableId 
+                ? "⏩ Sequential: Starts after selected deliverable completes"
+                : "⚡ Parallel: Can start immediately with the task"
+              }
             </p>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">Assigned User</label>
-            <input
-              type="text"
-              value={assignedUser}
-              onChange={(e) => setAssignedUser(e.target.value)}
-              className="w-full border rounded px-3 py-2 text-sm"
-              placeholder="User name"
-            />
+          {/* Info Notice */}
+          <div className="bg-purple-50 border border-purple-200 rounded-md p-3">
+            <p className="text-xs text-purple-800">
+              <strong>🔗 Duration Calculation:</strong><br />
+              • <strong>Independent:</strong> Task duration = MAX of all parallel deliverables<br />
+              • <strong>Dependent:</strong> Task duration = SUM along sequential chain<br />
+              • Task dates auto-update when deliverables change
+            </p>
           </div>
         </div>
 

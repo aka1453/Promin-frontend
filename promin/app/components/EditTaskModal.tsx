@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { updateTaskDatesAndCascade } from "../lib/dependencyScheduling";
 import { useToast } from "./ToastProvider";
 
 type Props = {
@@ -18,8 +19,9 @@ export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
   const [loading, setLoading] = useState(true);
 
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
   const [weight, setWeight] = useState("0");
+  const [plannedStart, setPlannedStart] = useState("");
+  const [offsetDays, setOffsetDays] = useState("0");
 
   const [saving, setSaving] = useState(false);
 
@@ -40,9 +42,10 @@ export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
 
       setTask(data);
       setTitle(data.title || "");
-      setDescription(data.description || "");
       // Convert decimal to percentage for display
       setWeight(String((data.weight ?? 0) * 100));
+      setPlannedStart(data.planned_start || "");
+      setOffsetDays(String(data.offset_days ?? 0));
       setLoading(false);
     };
 
@@ -55,14 +58,20 @@ export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
       return;
     }
 
+    if (!plannedStart.trim()) {
+      pushToast("Planned start is required", "warning");
+      return;
+    }
+
     setSaving(true);
     try {
       const { error } = await supabase
         .from("tasks")
         .update({
           title: title.trim(),
-          description: description.trim() || null,
           weight: Number(weight) / 100, // Convert percentage to decimal
+          planned_start: plannedStart,
+          offset_days: Number(offsetDays),
           updated_at: new Date().toISOString(),
         })
         .eq("id", taskId);
@@ -72,6 +81,10 @@ export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
         pushToast("Failed to update task", "error");
         return;
       }
+
+      // Cascade: recalculate this task's planned_end from its deliverables,
+      // then propagate new dates down to all successor tasks and their deliverables.
+      await updateTaskDatesAndCascade(taskId);
 
       pushToast("Task updated successfully", "success");
       onSuccess();
@@ -101,23 +114,9 @@ export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
     );
   }
 
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return "—";
-    return new Date(dateStr).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric"
-    });
-  };
-
-  const formatCurrency = (value: number | null) => {
-    if (value === null || value === undefined) return "$0.00";
-    return `$${value.toFixed(2)}`;
-  };
-
   return (
     <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b flex items-center justify-between">
           <h2 className="text-xl font-semibold">Edit Task</h2>
           <button
@@ -129,6 +128,7 @@ export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
         </div>
 
         <div className="p-6 space-y-4">
+          {/* Title */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Title *
@@ -143,19 +143,7 @@ export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Description
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-              placeholder="Optional description"
-            />
-          </div>
-
+          {/* Weight */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Weight (%)
@@ -170,54 +158,47 @@ export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
             />
             <p className="text-xs text-gray-500 mt-1">
-              Weight affects milestone-level progress calculation. Weights are automatically normalized across all tasks.
+              Weight affects milestone-level progress calculation
             </p>
           </div>
 
-          {/* Derived Fields - Read Only Display */}
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
-            <h3 className="text-sm font-semibold text-blue-900 mb-3 flex items-center gap-2">
-              <span className="text-lg">📊</span>
-              Derived from Deliverables
-            </h3>
-            
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <p className="text-xs font-medium text-blue-700 mb-1">Planned Start</p>
-                <p className="text-sm font-semibold text-blue-900">
-                  {formatDate(task?.planned_start)}
-                </p>
-              </div>
-              
-              <div>
-                <p className="text-xs font-medium text-blue-700 mb-1">Planned End</p>
-                <p className="text-sm font-semibold text-blue-900">
-                  {formatDate(task?.planned_end)}
-                </p>
-              </div>
-              
-              <div>
-                <p className="text-xs font-medium text-blue-700 mb-1">Budgeted Cost</p>
-                <p className="text-sm font-semibold text-blue-900">
-                  {formatCurrency(task?.budgeted_cost)}
-                </p>
-              </div>
-            </div>
+          {/* Planned Start */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Planned Start *
+            </label>
+            <input
+              type="date"
+              value={plannedStart}
+              onChange={(e) => setPlannedStart(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+            />
+          </div>
 
-            <p className="text-xs text-blue-700 mt-3 leading-relaxed">
-              These values are automatically calculated as:
-              <br />• <strong>Planned Start:</strong> earliest deliverable start date
-              <br />• <strong>Planned End:</strong> latest deliverable end date
-              <br />• <strong>Budgeted Cost:</strong> sum of all deliverable budgets
+          {/* Offset - FIXED DESCRIPTION */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Offset (days)
+            </label>
+            <input
+              type="number"
+              step="1"
+              min="0"
+              value={offsetDays}
+              onChange={(e) => setOffsetDays(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Buffer days before THIS task starts (after predecessor completes)
             </p>
           </div>
 
+          {/* Info Note */}
           <div className="bg-blue-50 p-3 rounded text-xs text-blue-800">
             <p className="font-semibold mb-1">💡 Note:</p>
             <p>
-              Lifecycle dates (actual start/end) and progress are managed by the
-              database based on deliverable completion. Edit those via task
-              actions and deliverable checkboxes.
+              Task duration and end date are calculated automatically from deliverables.
+              Add or edit deliverables to adjust task duration.
             </p>
           </div>
         </div>

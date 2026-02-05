@@ -49,8 +49,9 @@ export default function TaskDetailsDrawer({
 
     setLoading(true);
     try {
+      // FIXED: Changed from 'deliverables' to 'subtasks' (correct table name)
       const { data, error } = await supabase
-        .from("deliverables")
+        .from("subtasks")
         .select("*")
         .eq("task_id", task.id)
         .order("weight", { ascending: false });
@@ -183,90 +184,109 @@ export default function TaskDetailsDrawer({
             </button>
           </div>
 
-          {/* Status Badge */}
-          <div className="flex items-center gap-2">
-            <span
-              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold
-                ${
-                  localTask.status === "completed"
-                    ? "bg-emerald-100 text-emerald-700"
-                    : localTask.status === "in_progress"
-                    ? "bg-blue-100 text-blue-700"
-                    : "bg-gray-100 text-gray-700"
-                }`}
-            >
-              {localTask.status || "pending"}
-            </span>
-          </div>
-        </div>
-
-        {/* LIFECYCLE ACTIONS */}
-        <div className="px-6 py-3 border-b bg-gray-50">
-          {!localTask.actual_start && (
-            <button
-              onClick={handleStartTask}
-              className="px-4 py-2 text-sm font-semibold rounded-md bg-blue-600 text-white hover:bg-blue-700"
-            >
-              Start Task
-            </button>
-          )}
-
-          {localTask.actual_start && !localTask.actual_end && (
-            <>
-              {allDeliverablesComplete ? (
-                <button
-                  onClick={handleCompleteTask}
-                  className="px-4 py-2 text-sm font-semibold rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
-                >
-                  Complete Task
-                </button>
-              ) : (
-                <div className="text-sm text-amber-700 bg-amber-50 px-3 py-2 rounded-md border border-amber-200">
-                  ⚠️ Complete all deliverables to finish this task
-                  {deliverables.length > 0 && (
-                    <span className="ml-2 text-xs">
-                      ({deliverables.filter(d => d.is_done).length}/{deliverables.length} done)
-                    </span>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-
-          {localTask.actual_end && (
-            <div className="text-sm text-emerald-700 font-medium">
-              ✓ Task completed on {localTask.actual_end}
-            </div>
-          )}
-        </div>
-
-        {/* TABS */}
-        <div className="px-6 py-3 border-b bg-gray-50">
-          <div className="flex gap-4">
+          {/* Tabs */}
+          <div className="flex gap-4 border-b -mb-px">
             <button
               onClick={() => setActiveTab("deliverables")}
-              className={`px-3 py-2 text-sm font-semibold rounded-md transition-colors ${
+              className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === "deliverables"
-                  ? "bg-white text-blue-600 shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
-              Deliverables ({deliverables.length})
+              Deliverables
             </button>
             <button
               onClick={() => setActiveTab("comments")}
-              className={`px-3 py-2 text-sm font-semibold rounded-md transition-colors ${
+              className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === "comments"
-                  ? "bg-white text-blue-600 shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
               Comments
             </button>
           </div>
+
+          {/* Task Info Grid */}
+          <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+            {/* Planned Dates */}
+            <div>
+              <span className="text-gray-500">Planned Start:</span>
+              <span className="ml-2 font-medium">
+                {localTask.planned_start
+                  ? new Date(localTask.planned_start).toLocaleDateString()
+                  : "—"}
+              </span>
+            </div>
+            <div>
+              <span className="text-gray-500">Planned End:</span>
+              <span className="ml-2 font-medium">
+                {localTask.planned_end
+                  ? new Date(localTask.planned_end).toLocaleDateString()
+                  : "—"}
+              </span>
+            </div>
+
+            {/* Actual Dates */}
+            <div>
+              <span className="text-gray-500">Actual Start:</span>
+              <span className="ml-2 font-medium">
+                {localTask.actual_start
+                  ? new Date(localTask.actual_start).toLocaleDateString()
+                  : "—"}
+              </span>
+            </div>
+            <div>
+              <span className="text-gray-500">Actual End:</span>
+              <span className="ml-2 font-medium">
+                {localTask.actual_end
+                  ? new Date(localTask.actual_end).toLocaleDateString()
+                  : "—"}
+              </span>
+            </div>
+
+            {/* Weight */}
+            <div>
+              <span className="text-gray-500">Weight:</span>
+              <span className="ml-2 font-medium">
+                {((localTask.weight ?? 0) * 100).toFixed(0)}%
+              </span>
+            </div>
+
+            {/* Duration */}
+            <div>
+              <span className="text-gray-500">Duration:</span>
+              <span className="ml-2 font-medium">
+                {localTask.duration_days || 0} days
+              </span>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="mt-4 flex gap-2">
+            {!localTask.actual_start && (
+              <button
+                onClick={handleStartTask}
+                className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700"
+              >
+                Start Task
+              </button>
+            )}
+            {localTask.actual_start && !localTask.actual_end && (
+              <button
+                onClick={handleCompleteTask}
+                disabled={!allDeliverablesComplete}
+                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={!allDeliverablesComplete ? "Complete all deliverables first" : ""}
+              >
+                Complete Task
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* SCROLLABLE CONTENT */}
+        {/* BODY */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {/* DESCRIPTION */}
           {localTask.description && (
@@ -331,15 +351,15 @@ export default function TaskDetailsDrawer({
         </div>
       </div>
 
-      {/* CREATE DELIVERABLE MODAL */}
+      {/* CREATE DELIVERABLE MODAL - FIXED: Removed projectId prop */}
       {createModalOpen && (
         <DeliverableCreateModal
           taskId={localTask.id}
           existingDeliverables={deliverables}
           onClose={() => setCreateModalOpen(false)}
-          onSuccess={() => {
+          onSuccess={async () => {
             setCreateModalOpen(false);
-            handleDeliverableChanged();
+            await handleDeliverableChanged();
           }}
         />
       )}
