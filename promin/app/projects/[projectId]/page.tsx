@@ -268,14 +268,27 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
               </div>
 
               {/* Actual Cost */}
-              <div className="bg-emerald-50 rounded-xl px-5 py-3 border border-emerald-200">
-                <p className="text-xs font-medium text-emerald-600 uppercase tracking-wide">
-                  Actual Cost
-                </p>
-                <p className="text-xl font-bold text-emerald-700 mt-0.5">
-                  {formatCurrency(project?.actual_cost ?? 0)}
-                </p>
-              </div>
+              {(() => {
+                const budget = project?.budgeted_cost ?? 0;
+                const actual = project?.actual_cost ?? 0;
+                const ratio = budget > 0 ? actual / budget : (actual > 0 ? 2 : 1);
+                const isOver = ratio > 1.05;
+                const isNear = ratio >= 0.95 && ratio <= 1.05;
+                const bg = isOver ? "bg-red-50" : isNear ? "bg-amber-50" : "bg-emerald-50";
+                const border = isOver ? "border-red-200" : isNear ? "border-amber-200" : "border-emerald-200";
+                const labelColor = isOver ? "text-red-600" : isNear ? "text-amber-600" : "text-emerald-600";
+                const valueColor = isOver ? "text-red-700" : isNear ? "text-amber-700" : "text-emerald-700";
+                return (
+                  <div className={`${bg} rounded-xl px-5 py-3 border ${border}`}>
+                    <p className={`text-xs font-medium ${labelColor} uppercase tracking-wide`}>
+                      Actual Cost
+                    </p>
+                    <p className={`text-xl font-bold ${valueColor} mt-0.5`}>
+                      {formatCurrency(actual)}
+                    </p>
+                  </div>
+                );
+              })()}
 
               {/* Reports Button */}
               <button

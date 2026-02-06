@@ -89,6 +89,7 @@ function ProgressLineChart({
   milestones: Milestone[];
 }) {
   const [period, setPeriod] = useState<PeriodKey>("monthly");
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; date: string; planned: number; actual: number | null; milestoneLabel?: string } | null>(null);
 
   const startStr = project.planned_start || project.actual_start;
   const endStr = project.planned_end || project.actual_end;
@@ -334,6 +335,18 @@ function ProgressLineChart({
     { key: "monthly", label: "Monthly" },
   ];
 
+  // Build tooltip data per period point
+  const tooltipData = periodDates.map((d, i) => {
+    const isInPast = d <= today;
+    return {
+      date: d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      planned: plannedAtDate(d),
+      actual: isInPast ? actualAtDate(d) : null,
+      svgX: xOf(fracOf(d)),
+      svgY: yOf(plannedAtDate(d)),
+    };
+  });
+
   return (
     <div className="w-full">
       {/* Period toggle — top-right of chart card */}
@@ -354,6 +367,27 @@ function ProgressLineChart({
           ))}
         </div>
       </div>
+
+      <div className="relative" onMouseLeave={() => setTooltip(null)}>
+      {/* Tooltip overlay */}
+      {tooltip && (
+        <div
+          className="absolute z-10 bg-white border border-slate-200 rounded-lg shadow-lg px-3 py-2 text-xs pointer-events-none"
+          style={{ left: `${(tooltip.x / W) * 100}%`, top: `${(tooltip.y / H) * 100 - 15}%`, transform: "translate(-50%, -100%)" }}
+        >
+          {tooltip.milestoneLabel ? (
+            <div className="font-semibold text-purple-700">{tooltip.milestoneLabel}</div>
+          ) : (
+            <>
+              <div className="font-semibold text-slate-700 mb-1">{tooltip.date}</div>
+              <div className="text-blue-600">Planned: {tooltip.planned.toFixed(1)}%</div>
+              {tooltip.actual !== null && (
+                <div className="text-emerald-600">Actual: {tooltip.actual.toFixed(1)}%</div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-64" preserveAspectRatio="none">
         {/* Grid lines */}
@@ -443,17 +477,28 @@ function ProgressLineChart({
           <circle key={`ap-${i}`} cx={p[0]} cy={p[1]} r={2.5} fill="#10b981" />
         ))}
 
-        {/* Milestone diamond markers */}
+        {/* Milestone diamond markers with hover */}
         {milestoneMarkers.map((m, i) => {
           const s = 5; // half-size of diamond
           return (
-            <polygon
-              key={`ms-${i}`}
-              points={`${m.x},${m.y - s} ${m.x + s},${m.y} ${m.x},${m.y + s} ${m.x - s},${m.y}`}
-              fill="#7c3aed"
-              stroke="#fff"
-              strokeWidth={1.5}
-            />
+            <g key={`ms-${i}`}>
+              <polygon
+                points={`${m.x},${m.y - s} ${m.x + s},${m.y} ${m.x},${m.y + s} ${m.x - s},${m.y}`}
+                fill="#7c3aed"
+                stroke="#fff"
+                strokeWidth={1.5}
+              />
+              <rect
+                x={m.x - 10}
+                y={m.y - 10}
+                width={20}
+                height={20}
+                fill="transparent"
+                style={{ cursor: "pointer" }}
+                onMouseEnter={() => setTooltip({ x: m.x, y: m.y, date: "", planned: 0, actual: null, milestoneLabel: `Milestone completed: ${m.label}` })}
+                onMouseLeave={() => setTooltip(null)}
+              />
+            </g>
           );
         })}
 
@@ -481,7 +526,23 @@ function ProgressLineChart({
             </text>
           </g>
         )}
+
+        {/* Invisible hover targets for tooltip */}
+        {tooltipData.map((td, i) => (
+          <rect
+            key={`hover-${i}`}
+            x={td.svgX - 8}
+            y={padT}
+            width={16}
+            height={chartH}
+            fill="transparent"
+            onMouseEnter={() => setTooltip({ x: td.svgX, y: td.svgY, date: td.date, planned: td.planned, actual: td.actual })}
+            onMouseLeave={() => setTooltip(null)}
+            style={{ cursor: "crosshair" }}
+          />
+        ))}
       </svg>
+      </div>
 
       {/* Legend */}
       <div className="flex justify-center gap-6 mt-2">
@@ -761,7 +822,7 @@ function OverviewTab({
   return (
     <div className="grid grid-cols-3 gap-6">
       {/* Left — Progress Over Time */}
-      <div className="col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+      <div className="col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6" data-scurve-chart>
         <h3 className="text-lg font-semibold text-slate-700 mb-4">Progress Over Time</h3>
         <ProgressLineChart project={project} milestones={milestones} />
       </div>
@@ -1034,17 +1095,451 @@ function TasksTab({
 // ─────────────────────────────────────────────
 // TAB: EXPORT
 // ─────────────────────────────────────────────
-function ExportTab() {
-  const [options, setOptions] = useState({
-    milestoneDetails: true,
-    taskBreakdown: true,
-    financialSummary: true,
-    ganttTimeline: false, // disabled / coming soon
-  });
+function ExportTab({
+  project,
+  milestones,
+  tasks,
+}: {
+  project: Project;
+  milestones: Milestone[];
+  tasks: Task[];
+}) {
+  const [exporting, setExporting] = useState<string | null>(null);
 
-  const toggleOption = (key: keyof typeof options) => {
-    if (key === "ganttTimeline") return; // locked
-    setOptions((prev) => ({ ...prev, [key]: !prev[key] }));
+  const handleExportCSV = async () => {
+    setExporting("csv");
+    try {
+      const headers = ["Task", "Milestone", "Status", "Planned Start", "Planned End", "Actual Start", "Actual End", "Progress"];
+      const msNames: Record<number, string> = {};
+      milestones.forEach((m) => { msNames[m.id] = m.name || "Untitled"; });
+
+      const rows = tasks.map((t) => [
+        t.title,
+        msNames[t.milestone_id] || "",
+        t.status,
+        t.planned_start || "",
+        t.planned_end || "",
+        t.actual_start || "",
+        t.actual_end || "",
+        String(t.progress ?? 0),
+      ]);
+
+      const csvContent = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project.name || "project"}_tasks.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const handleExportExcel = async () => {
+    setExporting("excel");
+    try {
+      const XLSX = await import("xlsx");
+      const wb = XLSX.utils.book_new();
+
+      // Build MS Project-like schedule sheet with milestones and tasks interleaved
+      const msNames: Record<number, string> = {};
+      milestones.forEach((m) => { msNames[m.id] = m.name || "Untitled"; });
+
+      // Build rows: milestones as header rows, tasks indented underneath
+      const scheduleRows: Record<string, string | number>[] = [];
+      let rowNum = 1;
+
+      for (const ms of milestones) {
+        // Milestone row (bold/highlighted via naming convention)
+        scheduleRows.push({
+          "#": rowNum++,
+          "Task Name": `[M] ${ms.name || "Untitled Milestone"}`,
+          "Planned Start": ms.planned_start || "",
+          "Planned End": ms.planned_end || "",
+          "Actual Start": ms.actual_start || "",
+          "Actual End": ms.actual_end || "",
+          "Predecessor": "",
+        });
+
+        // Tasks under this milestone
+        const msTasks = tasks.filter((t) => t.milestone_id === ms.id);
+        for (const t of msTasks) {
+          // Build predecessor string from task dependencies
+          const predecessorNames: string[] = [];
+          // Check if task has dependencies via the tasks list
+          if ((t as any).depends_on_task_ids) {
+            for (const depId of (t as any).depends_on_task_ids) {
+              const depTask = tasks.find((tt) => tt.id === depId);
+              if (depTask) predecessorNames.push(depTask.title);
+            }
+          }
+
+          scheduleRows.push({
+            "#": rowNum++,
+            "Task Name": `    ${t.title}`,
+            "Planned Start": t.planned_start || "",
+            "Planned End": t.planned_end || "",
+            "Actual Start": t.actual_start || "",
+            "Actual End": t.actual_end || "",
+            "Predecessor": predecessorNames.join(", "),
+          });
+        }
+      }
+
+      const schedSheet = XLSX.utils.json_to_sheet(scheduleRows);
+      XLSX.utils.book_append_sheet(wb, schedSheet, "Schedule");
+
+      const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project.name || "project"}_schedule.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const handleExportPDF = async () => {
+    setExporting("pdf");
+    try {
+      const { default: jsPDF } = await import("jspdf");
+      const doc = new jsPDF();
+      const pageW = 210;
+      let y = 20;
+
+      // ── Title ──
+      doc.setFontSize(20);
+      doc.setTextColor(30, 41, 59);
+      doc.text(project.name || "Project Report", 14, y);
+      y += 7;
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Generated: ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`, 14, y);
+      y += 10;
+
+      // ── KPI Cards Row ──
+      const cardW = 42;
+      const cardH = 22;
+      const cardGap = 4;
+      const cardStartX = 14;
+
+      const actual = project.actual_progress ?? 0;
+      const planned = project.planned_progress ?? 0;
+      const delta = actual - planned;
+      const completedMs = milestones.filter((m) => m.status === "completed").length;
+      const totalMs = milestones.length;
+      const budget = project.budgeted_cost ?? 0;
+      const spent = project.actual_cost ?? 0;
+      const budgetPct = budget > 0 ? Math.round((spent / budget) * 100) : 0;
+      const plannedEnd = project.planned_end ? new Date(project.planned_end + "T00:00:00") : null;
+      const todayForPdf = new Date(); todayForPdf.setHours(0, 0, 0, 0);
+      const daysRem = plannedEnd ? Math.max(0, Math.round((plannedEnd.getTime() - todayForPdf.getTime()) / (1000 * 60 * 60 * 24))) : null;
+
+      const kpis = [
+        { label: "Overall Progress", value: `${actual.toFixed(1)}%`, sub: delta > 0 ? `+${delta.toFixed(1)}% vs plan` : delta < 0 ? `${delta.toFixed(1)}% vs plan` : "On track" },
+        { label: "Milestones", value: `${completedMs} / ${totalMs}`, sub: `${totalMs - completedMs} remaining` },
+        { label: "Days Remaining", value: daysRem !== null ? String(daysRem) : "—", sub: daysRem !== null && daysRem <= 0 ? "Overdue" : "On schedule" },
+        { label: "Budget Used", value: `${budgetPct}%`, sub: `$${spent.toLocaleString()} of $${budget.toLocaleString()}` },
+      ];
+
+      kpis.forEach((kpi, i) => {
+        const cx = cardStartX + i * (cardW + cardGap);
+        doc.setDrawColor(226, 232, 240);
+        doc.setFillColor(248, 250, 252);
+        doc.roundedRect(cx, y, cardW, cardH, 2, 2, "FD");
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.text(kpi.label, cx + 3, y + 5);
+        doc.setFontSize(14);
+        doc.setTextColor(30, 41, 59);
+        doc.text(kpi.value, cx + 3, y + 13);
+        doc.setFontSize(6);
+        doc.setTextColor(100, 116, 139);
+        doc.text(kpi.sub, cx + 3, y + 18);
+      });
+
+      y += cardH + 10;
+
+      // ── Milestones Table ──
+      doc.setFontSize(13);
+      doc.setTextColor(30, 41, 59);
+      doc.text("Milestones", 14, y);
+      y += 7;
+
+      // Table header
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.setFillColor(248, 250, 252);
+      doc.rect(14, y - 3, pageW - 28, 6, "F");
+      doc.text("Name", 16, y);
+      doc.text("Status", 75, y);
+      doc.text("Plan %", 100, y);
+      doc.text("Actual %", 118, y);
+      doc.text("Start", 140, y);
+      doc.text("End", 162, y);
+      doc.text("Weight", 182, y);
+      y += 5;
+
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(8);
+      milestones.forEach((m) => {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.text(String(m.name || "Untitled").substring(0, 28), 16, y);
+        doc.text(m.status || "pending", 75, y);
+        doc.text(`${(m.planned_progress ?? 0).toFixed(0)}%`, 100, y);
+        doc.text(`${(m.actual_progress ?? 0).toFixed(0)}%`, 118, y);
+        doc.text(m.planned_start || "—", 140, y);
+        doc.text(m.planned_end || "—", 162, y);
+        doc.text(`${((m.weight ?? 0) * 100).toFixed(0)}%`, 182, y);
+        y += 5;
+      });
+      y += 6;
+
+      // ── Tasks Table ──
+      if (y > 240) { doc.addPage(); y = 20; }
+      doc.setFontSize(13);
+      doc.setTextColor(30, 41, 59);
+      doc.text("Tasks", 14, y);
+      y += 7;
+
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.setFillColor(248, 250, 252);
+      doc.rect(14, y - 3, pageW - 28, 6, "F");
+      doc.text("Task", 16, y);
+      doc.text("Milestone", 80, y);
+      doc.text("Status", 120, y);
+      doc.text("Progress", 145, y);
+      doc.text("Start", 165, y);
+      doc.text("End", 182, y);
+      y += 5;
+
+      const msNames: Record<number, string> = {};
+      milestones.forEach((m) => { msNames[m.id] = m.name || "Untitled"; });
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(8);
+      tasks.forEach((t) => {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.text(String(t.title).substring(0, 30), 16, y);
+        doc.text(String(msNames[t.milestone_id] || "—").substring(0, 18), 80, y);
+        doc.text(t.status || "pending", 120, y);
+        doc.text(`${(t.progress ?? 0).toFixed(0)}%`, 145, y);
+        doc.text(t.planned_start || "—", 165, y);
+        doc.text(t.planned_end || "—", 182, y);
+        y += 5;
+      });
+
+      doc.save(`${project.name || "project"}_report.pdf`);
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const handleExportSCurve = async () => {
+    setExporting("scurve");
+    try {
+      const { default: jsPDF } = await import("jspdf");
+      const doc = new jsPDF("l", "mm", "a4"); // landscape
+      let y = 15;
+
+      // Title
+      doc.setFontSize(16);
+      doc.text(`${project.name || "Project"} — S-Curve Report`, 14, y);
+      y += 6;
+      doc.setFontSize(9);
+      doc.setTextColor(100);
+      doc.text(`Generated: ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`, 14, y);
+      doc.setTextColor(0);
+      y += 10;
+
+      // Draw S-curve chart directly using jsPDF
+      const startStr = project.planned_start || project.actual_start;
+      const endStr = project.planned_end || project.actual_end;
+      const chartDrawn = startStr && endStr;
+
+      if (chartDrawn) {
+        const chartX = 20;
+        const chartY = y;
+        const chartW = 250;
+        const chartH = 80;
+        const startDate = new Date(startStr + "T00:00:00");
+        const endDate = new Date(endStr + "T00:00:00");
+        const todayD = new Date(); todayD.setHours(0, 0, 0, 0);
+        const totalDaysVal = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+        const fracOfD = (d: Date) => Math.max(0, Math.min(1, Math.round((d.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) / totalDaysVal));
+
+        // Axes
+        doc.setDrawColor(200);
+        doc.setLineWidth(0.3);
+        doc.line(chartX, chartY, chartX, chartY + chartH); // Y axis
+        doc.line(chartX, chartY + chartH, chartX + chartW, chartY + chartH); // X axis
+
+        // Y-axis labels
+        doc.setFontSize(7);
+        doc.setTextColor(100);
+        for (const pct of [0, 25, 50, 75, 100]) {
+          const ly = chartY + chartH - (pct / 100) * chartH;
+          doc.text(`${pct}%`, chartX - 2, ly + 1, { align: "right" });
+          doc.setDrawColor(230);
+          doc.line(chartX, ly, chartX + chartW, ly);
+        }
+
+        // X-axis labels
+        const months = Math.ceil(totalDaysVal / 30);
+        for (let i = 0; i <= Math.min(months, 12); i++) {
+          const d = new Date(startDate);
+          d.setDate(d.getDate() + i * 30);
+          const fx = fracOfD(d);
+          if (fx <= 1) {
+            doc.text(d.toLocaleDateString("en-US", { month: "short" }), chartX + fx * chartW, chartY + chartH + 4, { align: "center" });
+          }
+        }
+
+        // Planned S-curve (dashed blue)
+        const plannedPtsForPdf = (d: Date): number => {
+          if (milestones.length === 0) return Math.max(0, Math.min(100, fracOfD(d) * 100));
+          let pctVal = 0; let twVal = 0;
+          for (const msItem of milestones) {
+            const wVal = msItem.weight ?? 0; twVal += wVal;
+            if (!msItem.planned_start || !msItem.planned_end) { pctVal += wVal * Math.max(0, Math.min(1, fracOfD(d))); continue; }
+            const msS = new Date(msItem.planned_start + "T00:00:00");
+            const msE = new Date(msItem.planned_end + "T00:00:00");
+            const msD = Math.max(1, Math.round((msE.getTime() - msS.getTime()) / (1000 * 60 * 60 * 24)));
+            pctVal += wVal * Math.max(0, Math.min(1, Math.round((d.getTime() - msS.getTime()) / (1000 * 60 * 60 * 24)) / msD));
+          }
+          return twVal > 0 ? Math.max(0, Math.min(100, (pctVal / twVal) * 100)) : Math.max(0, Math.min(100, fracOfD(d) * 100));
+        };
+
+        // Generate points for planned line
+        const numPts = 20;
+        doc.setDrawColor(59, 130, 246); // blue
+        doc.setLineDashPattern([2, 2], 0);
+        doc.setLineWidth(0.5);
+        for (let i = 0; i < numPts; i++) {
+          const d1 = new Date(startDate); d1.setDate(d1.getDate() + Math.round((i / numPts) * totalDaysVal));
+          const d2 = new Date(startDate); d2.setDate(d2.getDate() + Math.round(((i + 1) / numPts) * totalDaysVal));
+          const x1 = chartX + fracOfD(d1) * chartW;
+          const y1 = chartY + chartH - (plannedPtsForPdf(d1) / 100) * chartH;
+          const x2 = chartX + fracOfD(d2) * chartW;
+          const y2 = chartY + chartH - (plannedPtsForPdf(d2) / 100) * chartH;
+          doc.line(x1, y1, x2, y2);
+        }
+
+        // Actual S-curve (solid green) up to today
+        doc.setDrawColor(16, 185, 129); // green
+        doc.setLineDashPattern([], 0);
+        doc.setLineWidth(0.5);
+        const actualFrac = Math.min(1, fracOfD(todayD));
+        const actualPtsCount = Math.max(2, Math.round(numPts * actualFrac));
+        const actualPtsForPdf = (d: Date): number => {
+          if (milestones.length === 0) {
+            const ap = project.actual_progress ?? 0;
+            const tf = fracOfD(todayD);
+            const df = fracOfD(d);
+            return tf > 0 ? Math.max(0, Math.min(100, (df / tf) * ap)) : 0;
+          }
+          let pctVal = 0; let twVal = 0;
+          for (const msItem of milestones) {
+            const wVal = msItem.weight ?? 0; twVal += wVal;
+            const effS = msItem.actual_start ? new Date(msItem.actual_start + "T00:00:00") : msItem.planned_start ? new Date(msItem.planned_start + "T00:00:00") : null;
+            if (!effS || d < effS) continue;
+            if (msItem.status === "completed" && msItem.actual_end) {
+              const effE = new Date(msItem.actual_end + "T00:00:00");
+              const md = Math.max(1, Math.round((effE.getTime() - effS.getTime()) / (1000 * 60 * 60 * 24)));
+              pctVal += wVal * Math.max(0, Math.min(1, Math.round((d.getTime() - effS.getTime()) / (1000 * 60 * 60 * 24)) / md));
+            } else if (msItem.status === "in_progress") {
+              const md = Math.max(1, Math.round((todayD.getTime() - effS.getTime()) / (1000 * 60 * 60 * 24)));
+              const msAct = (msItem.actual_progress ?? 0) / 100;
+              pctVal += wVal * Math.max(0, Math.min(1, Math.round((d.getTime() - effS.getTime()) / (1000 * 60 * 60 * 24)) / md)) * msAct;
+            }
+          }
+          return twVal > 0 ? Math.max(0, Math.min(100, (pctVal / twVal) * 100)) : 0;
+        };
+
+        for (let i = 0; i < actualPtsCount; i++) {
+          const d1 = new Date(startDate); d1.setDate(d1.getDate() + Math.round((i / actualPtsCount) * fracOfD(todayD) * totalDaysVal));
+          const d2 = new Date(startDate); d2.setDate(d2.getDate() + Math.round(((i + 1) / actualPtsCount) * fracOfD(todayD) * totalDaysVal));
+          const x1 = chartX + fracOfD(d1) * chartW;
+          const y1 = chartY + chartH - (actualPtsForPdf(d1) / 100) * chartH;
+          const x2 = chartX + fracOfD(d2) * chartW;
+          const y2 = chartY + chartH - (actualPtsForPdf(d2) / 100) * chartH;
+          doc.line(x1, y1, x2, y2);
+        }
+
+        // Today line
+        if (fracOfD(todayD) > 0 && fracOfD(todayD) < 1) {
+          doc.setDrawColor(245, 158, 11);
+          doc.setLineDashPattern([1.5, 1.5], 0);
+          doc.setLineWidth(0.3);
+          const todayX = chartX + fracOfD(todayD) * chartW;
+          doc.line(todayX, chartY, todayX, chartY + chartH);
+          doc.setFontSize(6);
+          doc.setTextColor(245, 158, 11);
+          doc.text("Today", todayX, chartY - 1, { align: "center" });
+        }
+
+        // Legend
+        doc.setLineDashPattern([], 0);
+        doc.setTextColor(0);
+        doc.setFontSize(7);
+        const legY = chartY + chartH + 10;
+        doc.setDrawColor(59, 130, 246); doc.setLineDashPattern([2, 2], 0);
+        doc.line(chartX, legY, chartX + 10, legY);
+        doc.text("Planned", chartX + 12, legY + 1);
+        doc.setDrawColor(16, 185, 129); doc.setLineDashPattern([], 0);
+        doc.line(chartX + 40, legY, chartX + 50, legY);
+        doc.text("Actual", chartX + 52, legY + 1);
+
+        y = chartY + chartH + 18;
+      } else {
+        doc.setFontSize(10);
+        doc.text("No date range available for chart.", 14, y);
+        y += 10;
+      }
+
+      // Progress table
+      if (y > 160) { doc.addPage(); y = 15; }
+      doc.setLineDashPattern([], 0);
+      doc.setFontSize(12);
+      doc.setTextColor(0);
+      doc.text("Progress Data", 14, y);
+      y += 8;
+
+      doc.setFontSize(8);
+      doc.setTextColor(80);
+      // Headers
+      doc.text("Milestone", 14, y);
+      doc.text("Status", 80, y);
+      doc.text("Planned %", 110, y);
+      doc.text("Actual %", 140, y);
+      doc.text("Planned Dates", 170, y);
+      doc.text("Weight", 240, y);
+      y += 2;
+      doc.setDrawColor(200);
+      doc.line(14, y, 270, y);
+      y += 4;
+
+      doc.setTextColor(0);
+      milestones.forEach((m) => {
+        if (y > 190) { doc.addPage(); y = 15; }
+        doc.text(String(m.name || "Untitled").substring(0, 30), 14, y);
+        doc.text(m.status || "pending", 80, y);
+        doc.text(`${(m.planned_progress ?? 0).toFixed(1)}%`, 110, y);
+        doc.text(`${(m.actual_progress ?? 0).toFixed(1)}%`, 140, y);
+        doc.text(`${m.planned_start || "?"} — ${m.planned_end || "?"}`, 170, y);
+        doc.text(`${((m.weight ?? 0) * 100).toFixed(1)}%`, 240, y);
+        y += 5;
+      });
+
+      doc.save(`${project.name || "project"}_scurve.pdf`);
+    } finally {
+      setExporting(null);
+    }
   };
 
   const exports = [
@@ -1056,6 +1551,7 @@ function ExportTab() {
       iconBg: "bg-red-50",
       iconColor: "text-red-600",
       btnLabel: "Generate PDF",
+      handler: handleExportPDF,
     },
     {
       id: "excel",
@@ -1065,6 +1561,7 @@ function ExportTab() {
       iconBg: "bg-green-50",
       iconColor: "text-green-600",
       btnLabel: "Export Excel",
+      handler: handleExportExcel,
     },
     {
       id: "csv",
@@ -1074,17 +1571,28 @@ function ExportTab() {
       iconBg: "bg-slate-50",
       iconColor: "text-slate-600",
       btnLabel: "Export CSV",
+      handler: handleExportCSV,
+    },
+    {
+      id: "scurve",
+      label: "S-Curve PDF",
+      desc: "Progress S-curve chart with planned vs actual data table",
+      iconText: "S",
+      iconBg: "bg-purple-50",
+      iconColor: "text-purple-600",
+      btnLabel: "Export S-Curve",
+      handler: handleExportSCurve,
     },
   ];
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-3xl mx-auto">
       <div className="text-center">
         <h3 className="text-xl font-semibold text-slate-800 mb-1">Export Project Report</h3>
-        <p className="text-sm text-slate-500">Choose a format and customize what to include</p>
+        <p className="text-sm text-slate-500">Choose a format to download</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mt-6">
+      <div className="grid grid-cols-4 gap-4 mt-6">
         {exports.map((exp) => (
           <div
             key={exp.id}
@@ -1095,45 +1603,15 @@ function ExportTab() {
             </div>
             <p className="text-sm font-semibold text-slate-800 mb-1">{exp.label}</p>
             <p className="text-xs text-slate-500 mb-4 leading-relaxed">{exp.desc}</p>
-            <button className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors">
-              {exp.btnLabel}
+            <button
+              onClick={exp.handler}
+              disabled={exporting !== null}
+              className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+            >
+              {exporting === exp.id ? "Exporting..." : exp.btnLabel}
             </button>
           </div>
         ))}
-      </div>
-
-      {/* Report Options */}
-      <div className="mt-8">
-        <p className="text-sm font-semibold text-slate-700 mb-3">Report Options</p>
-        <div className="grid grid-cols-2 gap-3">
-          {[
-            { key: "milestoneDetails" as const, label: "Include milestone details" },
-            { key: "taskBreakdown" as const, label: "Include task breakdown" },
-            { key: "financialSummary" as const, label: "Include financial summary" },
-            { key: "ganttTimeline" as const, label: "Include Gantt timeline" },
-          ].map((opt) => {
-            const isLocked = opt.key === "ganttTimeline";
-            return (
-              <label
-                key={opt.key}
-                className={`flex items-center gap-2 ${isLocked ? "opacity-40 pointer-events-none" : "cursor-pointer"}`}
-              >
-                <input
-                  type="checkbox"
-                  checked={options[opt.key]}
-                  onChange={() => toggleOption(opt.key)}
-                  className="accent-blue-600 w-4 h-4"
-                />
-                <span className="text-sm text-slate-700">{opt.label}</span>
-                {isLocked && (
-                  <span className="bg-slate-100 text-slate-500 text-xs px-1.5 py-0.5 rounded ml-1">
-                    Coming soon
-                  </span>
-                )}
-              </label>
-            );
-          })}
-        </div>
       </div>
     </div>
   );
@@ -1244,14 +1722,27 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
               </div>
 
               {/* Actual Cost */}
-              <div className="bg-emerald-50 rounded-xl px-5 py-3 border border-emerald-200">
-                <p className="text-xs font-medium text-emerald-600 uppercase tracking-wide">
-                  Actual Cost
-                </p>
-                <p className="text-xl font-bold text-emerald-700 mt-0.5">
-                  {formatCurrencyLocal(project.actual_cost ?? 0)}
-                </p>
-              </div>
+              {(() => {
+                const budget = project.budgeted_cost ?? 0;
+                const actual = project.actual_cost ?? 0;
+                const ratio = budget > 0 ? actual / budget : (actual > 0 ? 2 : 1);
+                const isOver = ratio > 1.05;
+                const isNear = ratio >= 0.95 && ratio <= 1.05;
+                const bg = isOver ? "bg-red-50" : isNear ? "bg-amber-50" : "bg-emerald-50";
+                const border = isOver ? "border-red-200" : isNear ? "border-amber-200" : "border-emerald-200";
+                const labelColor = isOver ? "text-red-600" : isNear ? "text-amber-600" : "text-emerald-600";
+                const valueColor = isOver ? "text-red-700" : isNear ? "text-amber-700" : "text-emerald-700";
+                return (
+                  <div className={`${bg} rounded-xl px-5 py-3 border ${border}`}>
+                    <p className={`text-xs font-medium ${labelColor} uppercase tracking-wide`}>
+                      Actual Cost
+                    </p>
+                    <p className={`text-xl font-bold ${valueColor} mt-0.5`}>
+                      {formatCurrencyLocal(actual)}
+                    </p>
+                  </div>
+                );
+              })()}
 
               {/* Activity Toggle — same as project detail */}
               <button
@@ -1330,7 +1821,7 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
             {activeTab === "tasks" && (
               <TasksTab milestones={milestones} tasks={tasks} />
             )}
-            {activeTab === "export" && <ExportTab />}
+            {activeTab === "export" && <ExportTab project={project} milestones={milestones} tasks={tasks} />}
           </div>
 
           {/* Activity Sidebar — same panel as project detail */}

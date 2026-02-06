@@ -49,9 +49,8 @@ export default function TaskDetailsDrawer({
 
     setLoading(true);
     try {
-      // FIXED: Changed from 'deliverables' to 'subtasks' (correct table name)
       const { data, error } = await supabase
-        .from("subtasks")
+        .from("deliverables")
         .select("*")
         .eq("task_id", task.id)
         .order("weight", { ascending: false });

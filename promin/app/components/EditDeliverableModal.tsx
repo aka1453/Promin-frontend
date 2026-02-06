@@ -36,7 +36,7 @@ export default function EditDeliverableModal({
     const load = async () => {
       // Load the deliverable
       const { data, error } = await supabase
-        .from("subtasks")
+        .from("deliverables")
         .select("*")
         .eq("id", deliverableId)
         .single();
@@ -58,7 +58,7 @@ export default function EditDeliverableModal({
 
       // Load all deliverables in the same task
       const { data: deliverables, error: delError } = await supabase
-        .from("subtasks")
+        .from("deliverables")
         .select("*")
         .eq("task_id", data.task_id)
         .order("created_at", { ascending: true });
@@ -89,7 +89,7 @@ export default function EditDeliverableModal({
     setSaving(true);
 
     const { error } = await supabase
-      .from("subtasks")
+      .from("deliverables")
       .update({
         title: title.trim(),
         weight: Number(weight) / 100, // Convert percentage to decimal

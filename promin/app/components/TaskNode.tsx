@@ -37,36 +37,17 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
   // Get task duration
   const taskDuration = task.duration_days || 0;
 
-  // Determine task status and delay
-  const getTaskStatus = () => {
+  // Use DB-authoritative status; only derive isDelayed for display
+  const status = task.status || "unknown";
+  const isDelayed = (() => {
+    if (status !== "in_progress") return false;
+    const plannedEnd = task.planned_end ? new Date(task.planned_end) : null;
+    if (!plannedEnd) return false;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
-    const plannedEnd = task.planned_end ? new Date(task.planned_end) : null;
-    if (plannedEnd) plannedEnd.setHours(0, 0, 0, 0);
-    
-    const actualEnd = task.actual_end ? new Date(task.actual_end) : null;
-    if (actualEnd) actualEnd.setHours(0, 0, 0, 0);
-    
-    const actualStart = task.actual_start ? new Date(task.actual_start) : null;
-    if (actualStart) actualStart.setHours(0, 0, 0, 0);
-
-    // Completed
-    if (actualEnd) {
-      return { status: "completed", isDelayed: false };
-    }
-
-    // Not started
-    if (!actualStart) {
-      return { status: "not_started", isDelayed: false };
-    }
-
-    // In progress - check if delayed
-    const isDelayed = plannedEnd && today > plannedEnd;
-    return { status: "in_progress", isDelayed: !!isDelayed };
-  };
-
-  const { status, isDelayed } = getTaskStatus();
+    plannedEnd.setHours(0, 0, 0, 0);
+    return today > plannedEnd;
+  })();
 
   // Get colors based on status
   const getStatusColors = () => {

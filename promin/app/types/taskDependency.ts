@@ -12,6 +12,7 @@ export interface TaskWithDependencies {
   id: number;
   title: string;
   milestone_id: number;
+  status?: string;
   weight: number;
   description: string | null;
   planned_start: string | null;

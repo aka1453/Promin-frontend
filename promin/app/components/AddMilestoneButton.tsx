@@ -49,18 +49,13 @@ export default function AddMilestoneButton({
 
     setLoading(true);
 
-    // Keep computed model clean:
-    // - status/dates/costs are computed bottom-up
-    // - insert minimal fields only
+    // Insert only business fields; lifecycle fields (status, dates, progress)
+    // are DB defaults and computed by triggers.
     const { error } = await supabase.from("milestones").insert({
       project_id: projectId,
       name: trimmed,
-      weight: w,
-      status: "pending",
-      planned_start: null,
-      planned_end: null,
-      actual_start: null,
-      actual_end: null,
+      weight: w / 100, // Store as decimal (0-1), matching EditMilestoneModal pattern
+      // TODO: budgeted_cost should become a DB default if always 0
       budgeted_cost: 0,
       actual_cost: 0,
     });

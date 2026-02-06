@@ -223,7 +223,7 @@ export default function MilestonePage({
           </div>
 
           {/* Milestone stats */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mt-6">
             <div className="bg-gray-50 rounded p-3">
               <div className="text-xs text-gray-500 mb-1">P. START</div>
               <div className="font-medium text-gray-900">
@@ -236,22 +236,56 @@ export default function MilestonePage({
                 {formatDate(milestone.planned_end)}
               </div>
             </div>
-            <div className="bg-orange-50 rounded p-3">
-              <div className="text-xs text-orange-700 mb-1">A. START</div>
-              <div className="font-medium text-orange-900">
-                {formatDate(milestone.actual_start)}
-              </div>
-            </div>
-            <div className="bg-orange-50 rounded p-3">
-              <div className="text-xs text-orange-700 mb-1">A. END</div>
-              <div className="font-medium text-orange-900">
-                {formatDate(milestone.actual_end)}
-              </div>
-            </div>
+            {(() => {
+              const planned = milestone.planned_start;
+              const actual = milestone.actual_start;
+              let color = "text-gray-900";
+              let tooltip = "";
+              if (actual && planned) {
+                const diff = Math.round((new Date(actual + "T00:00:00").getTime() - new Date(planned + "T00:00:00").getTime()) / (1000 * 60 * 60 * 24));
+                if (diff > 0) { color = "text-red-600"; tooltip = `${diff} day${diff !== 1 ? "s" : ""} delayed`; }
+                else if (diff < 0) { color = "text-green-600"; tooltip = `${Math.abs(diff)} day${Math.abs(diff) !== 1 ? "s" : ""} ahead`; }
+                else { color = "text-green-600"; tooltip = "On schedule"; }
+              }
+              return (
+                <div className="bg-orange-50 rounded p-3">
+                  <div className="text-xs text-orange-700 mb-1">A. START</div>
+                  <div className={`font-medium ${color}`} title={tooltip}>
+                    {formatDate(actual)}
+                  </div>
+                </div>
+              );
+            })()}
+            {(() => {
+              const planned = milestone.planned_end;
+              const actual = milestone.actual_end;
+              let color = "text-gray-900";
+              let tooltip = "";
+              if (actual && planned) {
+                const diff = Math.round((new Date(actual + "T00:00:00").getTime() - new Date(planned + "T00:00:00").getTime()) / (1000 * 60 * 60 * 24));
+                if (diff > 0) { color = "text-red-600"; tooltip = `${diff} day${diff !== 1 ? "s" : ""} delayed`; }
+                else if (diff < 0) { color = "text-green-600"; tooltip = `${Math.abs(diff)} day${Math.abs(diff) !== 1 ? "s" : ""} ahead`; }
+                else { color = "text-green-600"; tooltip = "On schedule"; }
+              }
+              return (
+                <div className="bg-orange-50 rounded p-3">
+                  <div className="text-xs text-orange-700 mb-1">A. END</div>
+                  <div className={`font-medium ${color}`} title={tooltip}>
+                    {formatDate(actual)}
+                  </div>
+                </div>
+              );
+            })()}
             <div className="bg-blue-50 rounded p-3">
               <div className="text-xs text-blue-700 mb-1">BUDGET</div>
               <div className="font-medium text-blue-900">
-                {milestone.budgeted_cost || 0}
+                ${(milestone.budgeted_cost || 0).toLocaleString()}
+              </div>
+            </div>
+            <div className="bg-purple-50 rounded p-3">
+              <div className="text-xs text-purple-700 mb-1">ACTUAL COST</div>
+              <div className={`font-medium ${(milestone.actual_cost ?? 0) > (milestone.budgeted_cost ?? 0) && (milestone.budgeted_cost ?? 0) > 0 ? "text-red-600" : "text-purple-900"}`}>
+                ${(milestone.actual_cost || 0).toLocaleString()}
               </div>
             </div>
           </div>

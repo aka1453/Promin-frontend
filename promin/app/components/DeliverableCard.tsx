@@ -72,11 +72,8 @@ export default function DeliverableCard({
 
     setUpdating(true);
 
-    const now = new Date().toISOString();
     const updatePayload: any = {
       is_done: checked,
-      completed_at: checked ? now : null,
-      actual_end: checked ? now.slice(0, 10) : null,
     };
 
     setLocalDeliverable({
@@ -85,7 +82,7 @@ export default function DeliverableCard({
     });
 
     const { error } = await supabase
-      .from("subtasks")
+      .from("deliverables")
       .update(updatePayload)
       .eq("id", localDeliverable.id);
 
@@ -107,7 +104,7 @@ export default function DeliverableCard({
     if (!confirm("Are you sure you want to delete this deliverable?")) return;
 
     const { error } = await supabase
-      .from("subtasks")
+      .from("deliverables")
       .delete()
       .eq("id", localDeliverable.id);
 
@@ -126,7 +123,7 @@ export default function DeliverableCard({
 
     // Reload deliverable data
     const { data, error } = await supabase
-      .from("subtasks")
+      .from("deliverables")
       .select("*")
       .eq("id", localDeliverable.id)
       .single();
@@ -294,6 +291,26 @@ export default function DeliverableCard({
               {formatDate(localDeliverable.planned_end)}
             </span>
           </div>
+
+          {/* Budgeted Cost */}
+          {(localDeliverable.budgeted_cost != null && localDeliverable.budgeted_cost > 0) && (
+            <div>
+              <span className="text-gray-500">Budget:</span>
+              <span className="ml-2 font-medium text-gray-900">
+                ${localDeliverable.budgeted_cost.toLocaleString()}
+              </span>
+            </div>
+          )}
+
+          {/* Actual Cost */}
+          {(localDeliverable.actual_cost != null && localDeliverable.actual_cost > 0) && (
+            <div>
+              <span className="text-gray-500">Actual Cost:</span>
+              <span className={`ml-2 font-medium ${localDeliverable.actual_cost > (localDeliverable.budgeted_cost ?? 0) && (localDeliverable.budgeted_cost ?? 0) > 0 ? "text-red-600" : "text-gray-900"}`}>
+                ${localDeliverable.actual_cost.toLocaleString()}
+              </span>
+            </div>
+          )}
 
           {/* Assigned User */}
           {assignedUserName && (

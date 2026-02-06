@@ -1,4 +1,6 @@
-// app/lib/lifecycle.ts
+// TODO: Replace with DB RPCs; frontend must not write lifecycle fields.
+// Currently only writing date fields as a temporary mitigation.
+// Status and progress must be derived by DB triggers.
 import { supabase } from "./supabaseClient";
 
 export async function startTask(taskId: number) {
@@ -6,7 +8,6 @@ export async function startTask(taskId: number) {
     .from("tasks")
     .update({
       actual_start: new Date().toISOString().slice(0, 10),
-      status: "in_progress",
     })
     .eq("id", taskId);
 
@@ -21,8 +22,6 @@ export async function completeTask(taskId: number) {
     .from("tasks")
     .update({
       actual_end: new Date().toISOString().slice(0, 10),
-      status: "completed",
-      progress: 100,
     })
     .eq("id", taskId);
 
@@ -37,7 +36,6 @@ export async function completeMilestone(milestoneId: number) {
     .from("milestones")
     .update({
       actual_end: new Date().toISOString().slice(0, 10),
-      status: "completed",
     })
     .eq("id", milestoneId);
 

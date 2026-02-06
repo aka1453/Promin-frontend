@@ -39,7 +39,7 @@ export default function SubtaskCard({
     };
 
     const { error } = await supabase
-      .from("subtasks")
+      .from("deliverables")
       .update(updatePayload)
       .eq("id", subtask.id);
 
@@ -120,8 +120,8 @@ export default function SubtaskCard({
       {!readOnly && (
         <div className="mt-2 flex justify-end">
           <SubtaskInlineUploader
-            subtaskId={subtask.id}
-            subtaskTitle={subtask.title}
+            deliverableId={subtask.id}
+            deliverableTitle={subtask.title}
             onUploaded={onChanged}
           />
         </div>

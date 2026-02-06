@@ -1,6 +1,7 @@
 "use client";
 
-import TaskCard, { Task } from "../../../../components/TaskCard";
+import type { Task } from "../../../../types/task";
+import TaskCard from "../../../../components/TaskCard";
 
 export default function TaskList({
   tasks,

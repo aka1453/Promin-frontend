@@ -241,7 +241,8 @@ export default function MilestoneCard({
                 {milestone.name || "Untitled Milestone"}
               </h3>
               <div className="text-xs text-slate-500 mt-1">
-                Weight: <span className="font-semibold text-slate-700">{((milestone.weight ?? 0) * 100).toFixed(1)}%</span>
+                <span>Weight: <span className="font-semibold text-slate-700">{((milestone.weight ?? 0) * 100).toFixed(1)}%</span></span>
+                <span className="ml-2 text-gray-400">(Normalized: <span className="font-semibold">{((milestone.weight ?? 0) * 100).toFixed(1)}%</span>)</span>
               </div>
             </div>
             <div className="flex items-center justify-start flex-shrink-0">
@@ -255,26 +256,62 @@ export default function MilestoneCard({
             </p>
           )}
 
-          <div className="mb-4 bg-slate-50 rounded-lg p-3">
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-              <div>
-                <div className="text-slate-500 font-medium">Planned Start</div>
-                <div className="text-slate-900 mt-0.5">{milestone.planned_start || "—"}</div>
+          {(() => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const plannedEnd = milestone.planned_end ? new Date(milestone.planned_end + "T00:00:00") : null;
+            const actualEnd = milestone.actual_end ? new Date(milestone.actual_end + "T00:00:00") : null;
+            const isCompleted = milestone.status === "completed";
+            const isDelayed = !isCompleted && plannedEnd && today > plannedEnd;
+            const isOnTrack = isCompleted || (plannedEnd && today <= plannedEnd);
+
+            let daysDiff = 0;
+            let hoverText = "";
+            if (plannedEnd) {
+              if (isCompleted && actualEnd) {
+                daysDiff = Math.round((plannedEnd.getTime() - actualEnd.getTime()) / (1000 * 60 * 60 * 24));
+              } else {
+                daysDiff = Math.round((plannedEnd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+              }
+              if (daysDiff > 0) hoverText = `${daysDiff} day${daysDiff !== 1 ? "s" : ""} ahead`;
+              else if (daysDiff < 0) hoverText = `${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? "s" : ""} delayed`;
+              else hoverText = "On schedule";
+            }
+
+            const bgColor = isDelayed
+              ? "bg-red-50 border-red-200"
+              : isOnTrack
+              ? "bg-emerald-50 border-emerald-200"
+              : "bg-slate-50 border-slate-200";
+
+            return (
+              <div className={`mb-4 rounded-lg p-3 border ${bgColor}`} title={hoverText}>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                  <div>
+                    <div className="text-slate-500 font-medium">Planned Start</div>
+                    <div className="text-slate-900 mt-0.5">{milestone.planned_start || "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-500 font-medium">Planned End</div>
+                    <div className="text-slate-900 mt-0.5">{milestone.planned_end || "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-500 font-medium">Actual Start</div>
+                    <div className="text-slate-900 mt-0.5">{milestone.actual_start || "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-500 font-medium">Actual End</div>
+                    <div className="text-slate-900 mt-0.5">{milestone.actual_end || "—"}</div>
+                  </div>
+                </div>
+                {hoverText && (
+                  <div className={`mt-2 text-xs font-medium ${isDelayed ? "text-red-600" : "text-emerald-600"}`}>
+                    {hoverText}
+                  </div>
+                )}
               </div>
-              <div>
-                <div className="text-slate-500 font-medium">Planned End</div>
-                <div className="text-slate-900 mt-0.5">{milestone.planned_end || "—"}</div>
-              </div>
-              <div>
-                <div className="text-slate-500 font-medium">Actual Start</div>
-                <div className="text-slate-900 mt-0.5">{milestone.actual_start || "—"}</div>
-              </div>
-              <div>
-                <div className="text-slate-500 font-medium">Actual End</div>
-                <div className="text-slate-900 mt-0.5">{milestone.actual_end || "—"}</div>
-              </div>
-            </div>
-          </div>
+            );
+          })()}
 
           <div className="mb-4 space-y-3">
             <div>

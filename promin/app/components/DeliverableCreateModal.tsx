@@ -49,7 +49,7 @@ export default function DeliverableCreateModal({
     setCreating(true);
     try {
       // Insert deliverable with duration and optional dependency
-      const { error } = await supabase.from("subtasks").insert({
+      const { error } = await supabase.from("deliverables").insert({
         task_id: taskId,
         title: title.trim(),
         weight: Number(weight) / 100, // Store as decimal (0-1)

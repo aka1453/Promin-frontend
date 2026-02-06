@@ -9,7 +9,7 @@ export async function calculateTaskDurationFromDeliverables(
   taskId: number
 ): Promise<number> {
   const { data: deliverables, error } = await supabase
-    .from("subtasks")
+    .from("deliverables")
     .select("id, duration_days, depends_on_deliverable_id")
     .eq("task_id", taskId);
 
@@ -192,7 +192,7 @@ export async function updateDeliverableDates(
 ): Promise<boolean> {
   // Get all deliverables for this task with dependencies
   const { data: deliverables, error } = await supabase
-    .from("subtasks")
+    .from("deliverables")
     .select("id, duration_days, depends_on_deliverable_id")
     .eq("task_id", taskId)
     .order("created_at", { ascending: true });
@@ -250,7 +250,7 @@ export async function updateDeliverableDates(
   // Update all deliverable dates in database
   for (const [deliverableId, dates] of deliverableDates.entries()) {
     const { error: updateError } = await supabase
-      .from("subtasks")
+      .from("deliverables")
       .update({
         planned_start: dates.start.toISOString().split("T")[0],
         planned_end: dates.end.toISOString().split("T")[0],

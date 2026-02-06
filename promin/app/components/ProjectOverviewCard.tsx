@@ -202,16 +202,16 @@ export default function ProjectOverviewCard({
       <div>
         <div className="flex justify-between items-center mb-1">
           <span className="text-xs font-medium text-slate-600">
-            Actual Progress
+            Planned Progress
           </span>
-          <span className="text-sm font-semibold text-emerald-600">
-            {actual.toFixed(1)}%
+          <span className="text-sm font-semibold text-blue-600">
+            {planned.toFixed(1)}%
           </span>
         </div>
         <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
           <div
-            className="h-full rounded-full bg-emerald-500 transition-all"
-            style={{ width: `${actual}%` }}
+            className="h-full rounded-full bg-blue-500 transition-all"
+            style={{ width: `${planned}%` }}
           />
         </div>
       </div>
@@ -219,16 +219,16 @@ export default function ProjectOverviewCard({
       <div>
         <div className="flex justify-between items-center mb-1">
           <span className="text-xs font-medium text-slate-600">
-            Planned Progress
+            Actual Progress
           </span>
-          <span className="text-xs font-semibold text-blue-600">
-            {planned.toFixed(1)}%
+          <span className="text-xs font-semibold text-emerald-600">
+            {actual.toFixed(1)}%
           </span>
         </div>
         <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
           <div
-            className="h-full rounded-full bg-blue-500 transition-all"
-            style={{ width: `${planned}%` }}
+            className="h-full rounded-full bg-emerald-500 transition-all"
+            style={{ width: `${actual}%` }}
           />
         </div>
       </div>

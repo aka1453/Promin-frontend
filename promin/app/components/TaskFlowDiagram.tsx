@@ -161,7 +161,7 @@ export default function TaskFlowDiagram({ milestoneId }: Props) {
     const tasksWithDeliverables = await Promise.all(
       tasksData.map(async (task) => {
         const { data: subtasks, error: subtasksError } = await supabase
-          .from("subtasks")
+          .from("deliverables")
           .select("id, is_done")
           .eq("task_id", task.id);
 
