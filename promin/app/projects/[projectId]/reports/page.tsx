@@ -270,7 +270,7 @@ function ProgressLineChart({
     pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p[0]} ${p[1]}`).join(" ");
 
   // ── Milestone markers (diamonds on the Actual line at each milestone's completion date) ──
-  const milestoneMarkers: { x: number; y: number; label: string }[] = [];
+  const milestoneMarkers: { x: number; y: number; label: string; completed: boolean }[] = [];
   for (const ms of milestones) {
     // Use actual_end if completed, otherwise planned_end
     const markerDateStr = ms.status === "completed" && ms.actual_end
@@ -287,6 +287,7 @@ function ProgressLineChart({
       x: xOf(frac),
       y: yOf(yPct),
       label: ms.name || "Milestone",
+      completed: ms.status === "completed",
     });
   }
 
@@ -495,7 +496,7 @@ function ProgressLineChart({
                 height={20}
                 fill="transparent"
                 style={{ cursor: "pointer" }}
-                onMouseEnter={() => setTooltip({ x: m.x, y: m.y, date: "", planned: 0, actual: null, milestoneLabel: `Milestone completed: ${m.label}` })}
+                onMouseEnter={() => setTooltip({ x: m.x, y: m.y, date: "", planned: 0, actual: null, milestoneLabel: m.completed ? `Milestone completed: ${m.label}` : `Milestone (planned): ${m.label}` })}
                 onMouseLeave={() => setTooltip(null)}
               />
             </g>
@@ -1140,7 +1141,9 @@ function ExportTab({
   const handleExportExcel = async () => {
     setExporting("excel");
     try {
-      const XLSX = await import("xlsx");
+      const XLSXModule = await import("xlsx");
+      // CJS default may be empty object — check for utils to pick the right ref
+      const XLSX = (XLSXModule.default?.utils ? XLSXModule.default : XLSXModule) as typeof import("xlsx");
       const wb = XLSX.utils.book_new();
 
       // Build MS Project-like schedule sheet with milestones and tasks interleaved

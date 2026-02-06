@@ -8,12 +8,22 @@ import { supabase } from "./supabaseClient";
 export async function calculateTaskDurationFromDeliverables(
   taskId: number
 ): Promise<number> {
-  const { data: deliverables, error } = await supabase
+  // Try selecting dependency columns first; fall back to id-only if they
+  // don't exist in the view (PGRST204).
+  let deliverables: any[] | null = null;
+  const { data, error } = await supabase
     .from("deliverables")
     .select("id, duration_days, depends_on_deliverable_id")
     .eq("task_id", taskId);
 
-  if (error || !deliverables || deliverables.length === 0) {
+  if (error) {
+    // Columns may not exist — fall back to safe defaults (no scheduling)
+    console.warn("dependencyScheduling: columns missing, skipping", error.message);
+    return 0;
+  }
+  deliverables = data;
+
+  if (!deliverables || deliverables.length === 0) {
     return 0;
   }
 
@@ -190,15 +200,20 @@ export async function updateDeliverableDates(
   taskId: number,
   taskPlannedStart: string
 ): Promise<boolean> {
-  // Get all deliverables for this task with dependencies
+  // Get all deliverables for this task with dependencies.
+  // Falls back gracefully if duration_days / depends_on_deliverable_id
+  // columns don't exist in the view yet (PGRST204).
   const { data: deliverables, error } = await supabase
     .from("deliverables")
     .select("id, duration_days, depends_on_deliverable_id")
     .eq("task_id", taskId)
     .order("created_at", { ascending: true });
 
-  if (error || !deliverables) {
-    console.error("Error fetching deliverables:", error);
+  if (error) {
+    console.warn("updateDeliverableDates: columns missing, skipping", error.message);
+    return false;
+  }
+  if (!deliverables) {
     return false;
   }
 

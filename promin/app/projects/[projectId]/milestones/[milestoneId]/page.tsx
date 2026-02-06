@@ -241,15 +241,17 @@ export default function MilestonePage({
               const actual = milestone.actual_start;
               let color = "text-gray-900";
               let tooltip = "";
+              let bgColor = "bg-gray-50";
+              let labelColor = "text-gray-500";
               if (actual && planned) {
                 const diff = Math.round((new Date(actual + "T00:00:00").getTime() - new Date(planned + "T00:00:00").getTime()) / (1000 * 60 * 60 * 24));
-                if (diff > 0) { color = "text-red-600"; tooltip = `${diff} day${diff !== 1 ? "s" : ""} delayed`; }
-                else if (diff < 0) { color = "text-green-600"; tooltip = `${Math.abs(diff)} day${Math.abs(diff) !== 1 ? "s" : ""} ahead`; }
-                else { color = "text-green-600"; tooltip = "On schedule"; }
+                if (diff > 0) { color = "text-red-600"; tooltip = `${diff} day${diff !== 1 ? "s" : ""} delayed`; bgColor = "bg-red-50"; labelColor = "text-red-700"; }
+                else if (diff < 0) { color = "text-green-600"; tooltip = `${Math.abs(diff)} day${Math.abs(diff) !== 1 ? "s" : ""} ahead`; bgColor = "bg-green-50"; labelColor = "text-green-700"; }
+                else { color = "text-green-600"; tooltip = "On schedule"; bgColor = "bg-green-50"; labelColor = "text-green-700"; }
               }
               return (
-                <div className="bg-orange-50 rounded p-3">
-                  <div className="text-xs text-orange-700 mb-1">A. START</div>
+                <div className={`${bgColor} rounded p-3`}>
+                  <div className={`text-xs ${labelColor} mb-1`}>A. START</div>
                   <div className={`font-medium ${color}`} title={tooltip}>
                     {formatDate(actual)}
                   </div>
@@ -261,15 +263,17 @@ export default function MilestonePage({
               const actual = milestone.actual_end;
               let color = "text-gray-900";
               let tooltip = "";
+              let bgColor = "bg-gray-50";
+              let labelColor = "text-gray-500";
               if (actual && planned) {
                 const diff = Math.round((new Date(actual + "T00:00:00").getTime() - new Date(planned + "T00:00:00").getTime()) / (1000 * 60 * 60 * 24));
-                if (diff > 0) { color = "text-red-600"; tooltip = `${diff} day${diff !== 1 ? "s" : ""} delayed`; }
-                else if (diff < 0) { color = "text-green-600"; tooltip = `${Math.abs(diff)} day${Math.abs(diff) !== 1 ? "s" : ""} ahead`; }
-                else { color = "text-green-600"; tooltip = "On schedule"; }
+                if (diff > 0) { color = "text-red-600"; tooltip = `${diff} day${diff !== 1 ? "s" : ""} delayed`; bgColor = "bg-red-50"; labelColor = "text-red-700"; }
+                else if (diff < 0) { color = "text-green-600"; tooltip = `${Math.abs(diff)} day${Math.abs(diff) !== 1 ? "s" : ""} ahead`; bgColor = "bg-green-50"; labelColor = "text-green-700"; }
+                else { color = "text-green-600"; tooltip = "On schedule"; bgColor = "bg-green-50"; labelColor = "text-green-700"; }
               }
               return (
-                <div className="bg-orange-50 rounded p-3">
-                  <div className="text-xs text-orange-700 mb-1">A. END</div>
+                <div className={`${bgColor} rounded p-3`}>
+                  <div className={`text-xs ${labelColor} mb-1`}>A. END</div>
                   <div className={`font-medium ${color}`} title={tooltip}>
                     {formatDate(actual)}
                   </div>

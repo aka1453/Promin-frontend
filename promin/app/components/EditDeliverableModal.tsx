@@ -88,16 +88,17 @@ export default function EditDeliverableModal({
 
     setSaving(true);
 
+    // Only send columns that exist on the deliverables view.
+    // duration_days, depends_on_deliverable_id, updated_at are NOT in the
+    // base view unless a later migration has been applied — omitting them
+    // prevents PGRST204 errors.
     const { error } = await supabase
       .from("deliverables")
       .update({
         title: title.trim(),
         weight: Number(weight) / 100, // Convert percentage to decimal
-        duration_days: Number(durationDays),
         budgeted_cost: Number(budgetedCost) || 0,
         actual_cost: Number(actualCost) || 0,
-        depends_on_deliverable_id: dependsOnDeliverableId ? Number(dependsOnDeliverableId) : null,
-        updated_at: new Date().toISOString(),
       })
       .eq("id", deliverableId);
 

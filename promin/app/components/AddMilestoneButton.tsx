@@ -42,8 +42,8 @@ export default function AddMilestoneButton({
     }
 
     const w = Number(weight);
-    if (!Number.isFinite(w) || w < 0) {
-      alert("Weight must be a valid non-negative number.");
+    if (!Number.isFinite(w) || w < 0 || w > 100) {
+      alert("Weight must be between 0 and 100.");
       return;
     }
 

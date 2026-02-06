@@ -48,13 +48,13 @@ export default function DeliverableCreateModal({
 
     setCreating(true);
     try {
-      // Insert deliverable with duration and optional dependency
+      // Only send columns that exist on the deliverables view.
+      // duration_days and depends_on_deliverable_id are NOT in the base view
+      // unless a later migration has been applied — omitting prevents PGRST204.
       const { error } = await supabase.from("deliverables").insert({
         task_id: taskId,
         title: title.trim(),
         weight: Number(weight) / 100, // Store as decimal (0-1)
-        duration_days: Number(durationDays),
-        depends_on_deliverable_id: dependsOnDeliverableId ? Number(dependsOnDeliverableId) : null,
       });
 
       if (error) {
