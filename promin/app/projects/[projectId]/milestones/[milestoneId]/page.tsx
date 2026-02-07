@@ -286,12 +286,17 @@ export default function MilestonePage({
                 ${(milestone.budgeted_cost || 0).toLocaleString()}
               </div>
             </div>
-            <div className="bg-purple-50 rounded p-3">
-              <div className="text-xs text-purple-700 mb-1">ACTUAL COST</div>
-              <div className={`font-medium ${(milestone.actual_cost ?? 0) > (milestone.budgeted_cost ?? 0) && (milestone.budgeted_cost ?? 0) > 0 ? "text-red-600" : "text-purple-900"}`}>
-                ${(milestone.actual_cost || 0).toLocaleString()}
-              </div>
-            </div>
+            {(() => {
+              const isOverBudget = (milestone.actual_cost ?? 0) > (milestone.budgeted_cost ?? 0) && (milestone.budgeted_cost ?? 0) > 0;
+              return (
+                <div className={`${isOverBudget ? "bg-red-50" : "bg-purple-50"} rounded p-3`}>
+                  <div className={`text-xs ${isOverBudget ? "text-red-700" : "text-purple-700"} mb-1`}>ACTUAL COST</div>
+                  <div className={`font-medium ${isOverBudget ? "text-red-600" : "text-purple-900"}`}>
+                    ${(milestone.actual_cost || 0).toLocaleString()}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Progress bars */}

@@ -243,10 +243,8 @@ export default function MilestoneCard({
                 {milestone.name || "Untitled Milestone"}
               </h3>
               <div className="text-xs text-slate-500 mt-1">
-                <span>Weight: <span className="font-semibold text-slate-700">{((milestone.weight ?? 0) * 100).toFixed(1)}%</span></span>
-                {totalWeight > 0 && (
-                  <span className="ml-2 text-gray-400">(Normalized: <span className="font-semibold">{(((milestone.weight ?? 0) / totalWeight) * 100).toFixed(1)}%</span>)</span>
-                )}
+                <span>Weight: <span className="font-semibold text-slate-700">{(((milestone.user_weight ?? milestone.weight ?? 0)) * 100).toFixed(1)}%</span></span>
+                <span className="ml-2 text-gray-400">(Normalized: <span className="font-semibold">{((milestone.weight ?? 0) * 100).toFixed(1)}%</span>)</span>
               </div>
             </div>
             <div className="flex items-center justify-start flex-shrink-0">

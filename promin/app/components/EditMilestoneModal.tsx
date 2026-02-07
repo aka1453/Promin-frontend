@@ -40,8 +40,8 @@ export default function EditMilestoneModal({
 
       setName(data.name || "");
       setDescription(data.description || "");
-      // FIXED Issue #2: Load weight and convert to percentage
-      setWeight(String((data.weight ?? 0) * 100));
+      // Load user-entered weight (fall back to normalized weight for pre-migration data)
+      setWeight(String(((data.user_weight ?? data.weight ?? 0) * 100)));
       setLoading(false);
     };
 
@@ -70,7 +70,7 @@ export default function EditMilestoneModal({
       .update({
         name: name.trim(),
         description: description.trim() || null,
-        weight: weightNum / 100, // FIXED Issue #2: Save weight as decimal
+        user_weight: weightNum / 100, // Write to user_weight; DB trigger normalizes `weight`
       })
       .eq("id", milestoneId);
 

@@ -54,7 +54,7 @@ export default function AddMilestoneButton({
     const { error } = await supabase.from("milestones").insert({
       project_id: projectId,
       name: trimmed,
-      weight: w / 100, // Store as decimal (0-1), matching EditMilestoneModal pattern
+      user_weight: w / 100, // Store user-entered weight; DB trigger normalizes into `weight`
       // TODO: budgeted_cost should become a DB default if always 0
       budgeted_cost: 0,
       actual_cost: 0,

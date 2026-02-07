@@ -19,4 +19,5 @@ export type Milestone = {
   actual_cost: number | null;
 
   weight: number | null;
+  user_weight?: number | null;
 };

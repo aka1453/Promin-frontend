@@ -1142,20 +1142,45 @@ function ExportTab({
     setExporting("excel");
     try {
       const XLSXModule = await import("xlsx");
-      // CJS default may be empty object — check for utils to pick the right ref
       const XLSX = (XLSXModule.default?.utils ? XLSXModule.default : XLSXModule) as typeof import("xlsx");
       const wb = XLSX.utils.book_new();
 
-      // Build MS Project-like schedule sheet with milestones and tasks interleaved
+      // Query task_dependencies for all tasks in this project
+      const taskIds = tasks.map((t) => t.id);
+      let depMap: Record<number, number[]> = {};
+      if (taskIds.length > 0) {
+        const { data: deps } = await (await import("../../../lib/supabaseClient")).supabase
+          .from("task_dependencies")
+          .select("task_id, depends_on_task_id")
+          .in("task_id", taskIds);
+        if (deps) {
+          for (const d of deps) {
+            if (!depMap[d.task_id]) depMap[d.task_id] = [];
+            depMap[d.task_id].push(d.depends_on_task_id);
+          }
+        }
+      }
+
+      // Build a row-number lookup so predecessors reference row #
+      const taskRowMap: Record<number, number> = {};
       const msNames: Record<number, string> = {};
       milestones.forEach((m) => { msNames[m.id] = m.name || "Untitled"; });
 
-      // Build rows: milestones as header rows, tasks indented underneath
+      // Pre-compute row numbers
+      let preRowNum = 1;
+      for (const ms of milestones) {
+        preRowNum++; // milestone row
+        const msTasks = tasks.filter((t) => t.milestone_id === ms.id);
+        for (const t of msTasks) {
+          taskRowMap[t.id] = preRowNum++;
+        }
+      }
+
+      // Build rows
       const scheduleRows: Record<string, string | number>[] = [];
       let rowNum = 1;
 
       for (const ms of milestones) {
-        // Milestone row (bold/highlighted via naming convention)
         scheduleRows.push({
           "#": rowNum++,
           "Task Name": `[M] ${ms.name || "Untitled Milestone"}`,
@@ -1166,18 +1191,14 @@ function ExportTab({
           "Predecessor": "",
         });
 
-        // Tasks under this milestone
         const msTasks = tasks.filter((t) => t.milestone_id === ms.id);
         for (const t of msTasks) {
-          // Build predecessor string from task dependencies
-          const predecessorNames: string[] = [];
-          // Check if task has dependencies via the tasks list
-          if ((t as any).depends_on_task_ids) {
-            for (const depId of (t as any).depends_on_task_ids) {
-              const depTask = tasks.find((tt) => tt.id === depId);
-              if (depTask) predecessorNames.push(depTask.title);
-            }
-          }
+          const predIds = depMap[t.id] || [];
+          const predecessorLabels = predIds.map((depId) => {
+            const depTask = tasks.find((tt) => tt.id === depId);
+            const depRow = taskRowMap[depId];
+            return depTask ? `#${depRow} ${depTask.title}` : `#${depId}`;
+          });
 
           scheduleRows.push({
             "#": rowNum++,
@@ -1186,7 +1207,7 @@ function ExportTab({
             "Planned End": t.planned_end || "",
             "Actual Start": t.actual_start || "",
             "Actual End": t.actual_end || "",
-            "Predecessor": predecessorNames.join(", "),
+            "Predecessor": predecessorLabels.join(", "),
           });
         }
       }
@@ -1268,30 +1289,33 @@ function ExportTab({
 
       y += cardH + 10;
 
+      // ── Helper: draw milestone table header ──
+      const drawMsHeader = () => {
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.setFillColor(248, 250, 252);
+        doc.rect(14, y - 3, pageW - 28, 6, "F");
+        doc.text("Name", 16, y);
+        doc.text("Status", 75, y);
+        doc.text("Plan %", 100, y);
+        doc.text("Actual %", 118, y);
+        doc.text("Start", 140, y);
+        doc.text("End", 162, y);
+        doc.text("Weight", 182, y);
+        y += 6;
+      };
+
       // ── Milestones Table ──
       doc.setFontSize(13);
       doc.setTextColor(30, 41, 59);
       doc.text("Milestones", 14, y);
       y += 7;
-
-      // Table header
-      doc.setFontSize(7);
-      doc.setTextColor(100, 116, 139);
-      doc.setFillColor(248, 250, 252);
-      doc.rect(14, y - 3, pageW - 28, 6, "F");
-      doc.text("Name", 16, y);
-      doc.text("Status", 75, y);
-      doc.text("Plan %", 100, y);
-      doc.text("Actual %", 118, y);
-      doc.text("Start", 140, y);
-      doc.text("End", 162, y);
-      doc.text("Weight", 182, y);
-      y += 5;
+      drawMsHeader();
 
       doc.setTextColor(30, 41, 59);
       doc.setFontSize(8);
       milestones.forEach((m) => {
-        if (y > 270) { doc.addPage(); y = 20; }
+        if (y > 270) { doc.addPage(); y = 20; drawMsHeader(); doc.setTextColor(30, 41, 59); doc.setFontSize(8); }
         doc.text(String(m.name || "Untitled").substring(0, 28), 16, y);
         doc.text(m.status || "pending", 75, y);
         doc.text(`${(m.planned_progress ?? 0).toFixed(0)}%`, 100, y);
@@ -1301,7 +1325,22 @@ function ExportTab({
         doc.text(`${((m.weight ?? 0) * 100).toFixed(0)}%`, 182, y);
         y += 5;
       });
-      y += 6;
+      y += 8;
+
+      // ── Helper: draw task table header ──
+      const drawTaskHeader = () => {
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.setFillColor(248, 250, 252);
+        doc.rect(14, y - 3, pageW - 28, 6, "F");
+        doc.text("Task", 16, y);
+        doc.text("Milestone", 80, y);
+        doc.text("Status", 120, y);
+        doc.text("Progress", 145, y);
+        doc.text("Start", 165, y);
+        doc.text("End", 182, y);
+        y += 6;
+      };
 
       // ── Tasks Table ──
       if (y > 240) { doc.addPage(); y = 20; }
@@ -1309,25 +1348,14 @@ function ExportTab({
       doc.setTextColor(30, 41, 59);
       doc.text("Tasks", 14, y);
       y += 7;
-
-      doc.setFontSize(7);
-      doc.setTextColor(100, 116, 139);
-      doc.setFillColor(248, 250, 252);
-      doc.rect(14, y - 3, pageW - 28, 6, "F");
-      doc.text("Task", 16, y);
-      doc.text("Milestone", 80, y);
-      doc.text("Status", 120, y);
-      doc.text("Progress", 145, y);
-      doc.text("Start", 165, y);
-      doc.text("End", 182, y);
-      y += 5;
+      drawTaskHeader();
 
       const msNames: Record<number, string> = {};
       milestones.forEach((m) => { msNames[m.id] = m.name || "Untitled"; });
       doc.setTextColor(30, 41, 59);
       doc.setFontSize(8);
       tasks.forEach((t) => {
-        if (y > 270) { doc.addPage(); y = 20; }
+        if (y > 270) { doc.addPage(); y = 20; drawTaskHeader(); doc.setTextColor(30, 41, 59); doc.setFontSize(8); }
         doc.text(String(t.title).substring(0, 30), 16, y);
         doc.text(String(msNames[t.milestone_id] || "—").substring(0, 18), 80, y);
         doc.text(t.status || "pending", 120, y);
@@ -1392,14 +1420,15 @@ function ExportTab({
           doc.line(chartX, ly, chartX + chartW, ly);
         }
 
-        // X-axis labels
+        // X-axis labels (month + year for clarity)
         const months = Math.ceil(totalDaysVal / 30);
         for (let i = 0; i <= Math.min(months, 12); i++) {
           const d = new Date(startDate);
           d.setDate(d.getDate() + i * 30);
           const fx = fracOfD(d);
           if (fx <= 1) {
-            doc.text(d.toLocaleDateString("en-US", { month: "short" }), chartX + fx * chartW, chartY + chartH + 4, { align: "center" });
+            const label = d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+            doc.text(label, chartX + fx * chartW, chartY + chartH + 4, { align: "center" });
           }
         }
 
@@ -1431,6 +1460,15 @@ function ExportTab({
           const x2 = chartX + fracOfD(d2) * chartW;
           const y2 = chartY + chartH - (plannedPtsForPdf(d2) / 100) * chartH;
           doc.line(x1, y1, x2, y2);
+        }
+        // Plot points on planned curve
+        doc.setLineDashPattern([], 0);
+        doc.setFillColor(59, 130, 246);
+        for (let i = 0; i <= numPts; i++) {
+          const d = new Date(startDate); d.setDate(d.getDate() + Math.round((i / numPts) * totalDaysVal));
+          const px = chartX + fracOfD(d) * chartW;
+          const py = chartY + chartH - (plannedPtsForPdf(d) / 100) * chartH;
+          doc.circle(px, py, 0.7, "F");
         }
 
         // Actual S-curve (solid green) up to today
@@ -1474,6 +1512,37 @@ function ExportTab({
           doc.line(x1, y1, x2, y2);
         }
 
+        // Plot points on actual curve
+        doc.setFillColor(16, 185, 129);
+        for (let i = 0; i <= actualPtsCount; i++) {
+          const d = new Date(startDate); d.setDate(d.getDate() + Math.round((i / actualPtsCount) * fracOfD(todayD) * totalDaysVal));
+          const px = chartX + fracOfD(d) * chartW;
+          const py = chartY + chartH - (actualPtsForPdf(d) / 100) * chartH;
+          doc.circle(px, py, 0.7, "F");
+        }
+
+        // Milestone completion markers
+        for (const msItem of milestones) {
+          if (msItem.status === "completed" && msItem.actual_end) {
+            const mDate = new Date(msItem.actual_end + "T00:00:00");
+            const mx = chartX + fracOfD(mDate) * chartW;
+            const mPct = actualPtsForPdf(mDate);
+            const my = chartY + chartH - (mPct / 100) * chartH;
+            // Diamond marker
+            doc.setFillColor(139, 92, 246); // purple
+            doc.setDrawColor(139, 92, 246);
+            doc.setLineWidth(0.3);
+            const ds = 1.5;
+            doc.triangle(mx, my - ds, mx + ds, my, mx, my + ds, "F");
+            doc.triangle(mx, my - ds, mx - ds, my, mx, my + ds, "F");
+            // Label
+            doc.setFontSize(5);
+            doc.setTextColor(139, 92, 246);
+            const msLabel = `${String(msItem.name || "").substring(0, 16)} (${mDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })})`;
+            doc.text(msLabel, mx + 2, my - 2);
+          }
+        }
+
         // Today line
         if (fracOfD(todayD) > 0 && fracOfD(todayD) < 1) {
           doc.setDrawColor(245, 158, 11);
@@ -1499,45 +1568,63 @@ function ExportTab({
         doc.text("Actual", chartX + 52, legY + 1);
 
         y = chartY + chartH + 18;
+
+        // ── Progress Data Table (inside chartDrawn scope for access to plannedPtsForPdf/actualPtsForPdf) ──
+        if (y > 160) { doc.addPage(); y = 15; }
+        doc.setLineDashPattern([], 0);
+        doc.setFontSize(12);
+        doc.setTextColor(0);
+        doc.text("Progress Data", 14, y);
+        y += 8;
+
+        // Build milestone completion lookup by month
+        const msCompletions: Record<string, string[]> = {};
+        milestones.forEach((m) => {
+          if (m.status === "completed" && m.actual_end) {
+            const d = new Date(m.actual_end + "T00:00:00");
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+            if (!msCompletions[key]) msCompletions[key] = [];
+            msCompletions[key].push(`${m.name || "Untitled"} (${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })})`);
+          }
+        });
+
+        doc.setFontSize(7);
+        doc.setTextColor(80);
+        doc.setFillColor(248, 250, 252);
+        doc.rect(14, y - 3, 256, 6, "F");
+        doc.text("Date", 16, y);
+        doc.text("Planned %", 55, y);
+        doc.text("Actual %", 90, y);
+        doc.text("Milestone Completed", 125, y);
+        y += 2;
+        doc.setDrawColor(200);
+        doc.line(14, y, 270, y);
+        y += 4;
+
+        const tableMonths = Math.ceil(totalDaysVal / 30);
+        doc.setFontSize(7);
+        doc.setTextColor(0);
+        for (let i = 0; i <= Math.min(tableMonths, 18); i++) {
+          if (y > 190) { doc.addPage(); y = 15; }
+          const d = new Date(startDate); d.setDate(d.getDate() + i * 30);
+          if (d > endDate) break;
+          const dateLabel = d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+          const plannedVal = plannedPtsForPdf(d).toFixed(1);
+          const actualVal = d <= todayD ? actualPtsForPdf(d).toFixed(1) : "—";
+          const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+          const msLabel = (msCompletions[monthKey] || []).join(", ");
+
+          doc.text(dateLabel, 16, y);
+          doc.text(`${plannedVal}%`, 55, y);
+          doc.text(actualVal === "—" ? "—" : `${actualVal}%`, 90, y);
+          doc.text(String(msLabel).substring(0, 55), 125, y);
+          y += 5;
+        }
       } else {
         doc.setFontSize(10);
         doc.text("No date range available for chart.", 14, y);
         y += 10;
       }
-
-      // Progress table
-      if (y > 160) { doc.addPage(); y = 15; }
-      doc.setLineDashPattern([], 0);
-      doc.setFontSize(12);
-      doc.setTextColor(0);
-      doc.text("Progress Data", 14, y);
-      y += 8;
-
-      doc.setFontSize(8);
-      doc.setTextColor(80);
-      // Headers
-      doc.text("Milestone", 14, y);
-      doc.text("Status", 80, y);
-      doc.text("Planned %", 110, y);
-      doc.text("Actual %", 140, y);
-      doc.text("Planned Dates", 170, y);
-      doc.text("Weight", 240, y);
-      y += 2;
-      doc.setDrawColor(200);
-      doc.line(14, y, 270, y);
-      y += 4;
-
-      doc.setTextColor(0);
-      milestones.forEach((m) => {
-        if (y > 190) { doc.addPage(); y = 15; }
-        doc.text(String(m.name || "Untitled").substring(0, 30), 14, y);
-        doc.text(m.status || "pending", 80, y);
-        doc.text(`${(m.planned_progress ?? 0).toFixed(1)}%`, 110, y);
-        doc.text(`${(m.actual_progress ?? 0).toFixed(1)}%`, 140, y);
-        doc.text(`${m.planned_start || "?"} — ${m.planned_end || "?"}`, 170, y);
-        doc.text(`${((m.weight ?? 0) * 100).toFixed(1)}%`, 240, y);
-        y += 5;
-      });
 
       doc.save(`${project.name || "project"}_scurve.pdf`);
     } finally {
