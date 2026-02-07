@@ -21,6 +21,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { reorderProjects } from "../lib/reorderProjects";
 import { useProjects } from "../context/ProjectsContext";
+import { useUserTimezone } from "../context/UserTimezoneContext";
 
 // Define the shape of a project
 type Project = {
@@ -93,6 +94,7 @@ function SortableProjectItem({
 export default function Sidebar() {
   const router = useRouter();
   const { projects, reloadProjects } = useProjects();
+  const { timezone, setTimezone } = useUserTimezone();
   const [currentUser, setCurrentUser] = useState<any>(null);
 
   // Optimistic order for sidebar (prevents snap-back while DB saves)
@@ -294,6 +296,41 @@ export default function Sidebar() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* TIMEZONE SELECTOR */}
+        <div className="mb-3">
+          <label className="text-xs text-gray-500 block mb-1">Timezone</label>
+          <select
+            value={timezone}
+            onChange={(e) => setTimezone(e.target.value)}
+            className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {(() => {
+              try {
+                return Intl.supportedValuesOf("timeZone");
+              } catch {
+                return [
+                  "UTC",
+                  "America/New_York",
+                  "America/Chicago",
+                  "America/Denver",
+                  "America/Los_Angeles",
+                  "Europe/London",
+                  "Europe/Paris",
+                  "Europe/Berlin",
+                  "Asia/Tokyo",
+                  "Asia/Shanghai",
+                  "Asia/Kolkata",
+                  "Australia/Sydney",
+                ];
+              }
+            })().map((tz) => (
+              <option key={tz} value={tz}>
+                {tz.replace(/_/g, " ")}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* LOG OUT BUTTON */}

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Shell from "./Shell";
 import ToastProvider from "@/components/ToastProvider";
 import { ProjectsProvider } from "./context/ProjectsContext";
+import { UserTimezoneProvider } from "./context/UserTimezoneContext";
 
 export const metadata: Metadata = {
   title: "ProMin",
@@ -18,11 +19,13 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <ToastProvider>
-          <ProjectsProvider>
-            <Shell>
-              {children}
-            </Shell>
-          </ProjectsProvider>
+          <UserTimezoneProvider>
+            <ProjectsProvider>
+              <Shell>
+                {children}
+              </Shell>
+            </ProjectsProvider>
+          </UserTimezoneProvider>
         </ToastProvider>
       </body>
     </html>

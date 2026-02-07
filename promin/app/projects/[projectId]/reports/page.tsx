@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabaseClient";
 import { ProjectRoleProvider } from "../../../context/ProjectRoleContext";
+import { useUserTimezone } from "../../../context/UserTimezoneContext";
 import {
   ArrowLeft,
   Settings,
@@ -39,6 +40,13 @@ type Project = {
 type TabId = "overview" | "milestones" | "tasks" | "export";
 type PeriodKey = "daily" | "weekly" | "biweekly" | "monthly";
 
+type ScurveRow = {
+  dt: string;
+  planned: number;
+  actual: number;
+  baseline: number | null;
+};
+
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
@@ -72,28 +80,57 @@ function clamp(val: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, val));
 }
 
-function addDays(date: Date, days: number): Date {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d;
-}
-
 // ─────────────────────────────────────────────
 // SVG CHART: LINE CHART (Progress Over Time)
 // ─────────────────────────────────────────────
 function ProgressLineChart({
-  project,
+  projectId,
   milestones,
+  userToday,
 }: {
-  project: Project;
+  projectId: number;
   milestones: Milestone[];
+  userToday: Date;
 }) {
   const [period, setPeriod] = useState<PeriodKey>("monthly");
   const [tooltip, setTooltip] = useState<{ x: number; y: number; date: string; planned: number; actual: number | null; milestoneLabel?: string } | null>(null);
+  const [scurveData, setScurveData] = useState<ScurveRow[]>([]);
+  const [chartLoading, setChartLoading] = useState(true);
 
-  const startStr = project.planned_start || project.actual_start;
-  const endStr = project.planned_end || project.actual_end;
-  if (!startStr || !endStr) {
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchScurve() {
+      setChartLoading(true);
+      const { data: rows } = await supabase.rpc("get_project_scurve", {
+        p_project_id: projectId,
+        p_granularity: period,
+        p_include_baseline: false,
+      });
+      if (!cancelled) {
+        setScurveData(
+          (rows ?? []).map((r: Record<string, unknown>) => ({
+            dt: String(r.dt),
+            planned: Number(r.planned),
+            actual: Number(r.actual),
+            baseline: r.baseline != null ? Number(r.baseline) : null,
+          }))
+        );
+        setChartLoading(false);
+      }
+    }
+    fetchScurve();
+    return () => { cancelled = true; };
+  }, [projectId, period]);
+
+  if (chartLoading) {
+    return (
+      <div className="h-64 flex items-center justify-center text-slate-400 text-sm">
+        Loading chart…
+      </div>
+    );
+  }
+
+  if (scurveData.length === 0) {
     return (
       <div className="h-64 flex items-center justify-center text-slate-400 text-sm">
         No date range available
@@ -101,138 +138,11 @@ function ProgressLineChart({
     );
   }
 
-  const startDate = new Date(startStr + "T00:00:00");
-  const endDate = new Date(endStr + "T00:00:00");
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const startDate = new Date(scurveData[0].dt + "T00:00:00");
+  const endDate = new Date(scurveData[scurveData.length - 1].dt + "T00:00:00");
+  const today = userToday;
   const totalDays = daysBetween(startDate, endDate);
   if (totalDays <= 0) return null;
-
-  // ── Period step in days ──
-  const stepDays: Record<PeriodKey, number> = {
-    daily: 1,
-    weekly: 7,
-    biweekly: 14,
-    monthly: 30,
-  };
-  const step = stepDays[period];
-
-  // ── Generate period boundary dates from startDate to endDate ──
-  const periodDates: Date[] = [];
-  {
-    let cursor = new Date(startDate);
-    while (cursor <= endDate) {
-      periodDates.push(new Date(cursor));
-      cursor = addDays(cursor, step);
-    }
-    // Always include endDate as the final point
-    const last = periodDates[periodDates.length - 1];
-    if (daysBetween(last, endDate) > 0) {
-      periodDates.push(new Date(endDate));
-    }
-  }
-
-  // ── Compute Planned progress at each period date ──
-  // For each date d: planned_pct = Σ (milestone.weight * lerp(d, ms.planned_start, ms.planned_end)) * 100
-  // lerp returns 0 before planned_start, 1 after planned_end, linearly interpolated in between
-  const plannedAtDate = (d: Date): number => {
-    if (milestones.length === 0) {
-      // Fallback: linear 0→100 across project span
-      return clamp((daysBetween(startDate, d) / totalDays) * 100, 0, 100);
-    }
-    let pct = 0;
-    let totalWeight = 0;
-    for (const ms of milestones) {
-      const w = ms.weight ?? 0;
-      totalWeight += w;
-      if (!ms.planned_start || !ms.planned_end) {
-        // Milestone with no dates: assume linear across full project span
-        pct += w * clamp(daysBetween(startDate, d) / totalDays, 0, 1);
-        continue;
-      }
-      const msStart = new Date(ms.planned_start + "T00:00:00");
-      const msEnd = new Date(ms.planned_end + "T00:00:00");
-      const msDays = daysBetween(msStart, msEnd);
-      if (msDays <= 0) {
-        // Zero-duration milestone: contributes fully once d >= msStart
-        pct += w * (d >= msStart ? 1 : 0);
-      } else {
-        pct += w * clamp(daysBetween(msStart, d) / msDays, 0, 1);
-      }
-    }
-    // Normalise in case weights don't sum to 1
-    if (totalWeight > 0) pct = (pct / totalWeight) * 100;
-    else pct = clamp((daysBetween(startDate, d) / totalDays) * 100, 0, 100);
-    return clamp(pct, 0, 100);
-  };
-
-  // ── Compute Actual progress at each period date (up to today) ──
-  // Uses milestone actual dates where available, planned dates otherwise.
-  // Milestones that haven't started yet contribute 0.
-  const actualAtDate = (d: Date): number => {
-    if (milestones.length === 0) {
-      // Fallback: linear ramp to project.actual_progress at today
-      const todayFrac = clamp(daysBetween(startDate, today) / totalDays, 0, 1);
-      const dFrac = clamp(daysBetween(startDate, d) / totalDays, 0, 1);
-      const ap = project.actual_progress ?? 0;
-      return todayFrac > 0 ? clamp((dFrac / todayFrac) * ap, 0, 100) : 0;
-    }
-    let pct = 0;
-    let totalWeight = 0;
-    for (const ms of milestones) {
-      const w = ms.weight ?? 0;
-      totalWeight += w;
-
-      // Determine effective start / end for actual interpolation
-      const effStart = ms.actual_start
-        ? new Date(ms.actual_start + "T00:00:00")
-        : ms.planned_start
-        ? new Date(ms.planned_start + "T00:00:00")
-        : null;
-
-      // If milestone is completed, use actual_end; otherwise use today as moving end
-      let effEnd: Date | null = null;
-      if (ms.status === "completed" && ms.actual_end) {
-        effEnd = new Date(ms.actual_end + "T00:00:00");
-      } else if (ms.status === "in_progress") {
-        effEnd = today; // still in progress — contribution grows to current actual_progress
-      }
-      // else: pending / not started — contributes 0
-
-      if (!effStart) {
-        // No start info at all — contributes 0
-        continue;
-      }
-
-      if (d < effStart) {
-        // Date is before this milestone started — 0 contribution
-        continue;
-      }
-
-      if (ms.status === "completed" && effEnd) {
-        // Completed: full contribution once d >= effEnd, lerp before
-        const msDays = daysBetween(effStart, effEnd);
-        if (msDays <= 0) {
-          pct += w; // instant completion
-        } else {
-          pct += w * clamp(daysBetween(effStart, d) / msDays, 0, 1);
-        }
-      } else if (ms.status === "in_progress" && effEnd) {
-        // In progress: lerp from effStart to today, scaled by milestone's actual_progress
-        const msDays = daysBetween(effStart, effEnd);
-        const msActual = (ms.actual_progress ?? 0) / 100;
-        if (msDays <= 0) {
-          pct += w * msActual;
-        } else {
-          // Progress grows linearly from 0 at effStart to msActual at today
-          pct += w * clamp(daysBetween(effStart, d) / msDays, 0, 1) * msActual;
-        }
-      }
-      // pending: contributes 0 (already skipped above)
-    }
-    if (totalWeight > 0) pct = (pct / totalWeight) * 100;
-    return clamp(pct, 0, 100);
-  };
 
   // ── SVG dimensions ──
   const W = 600;
@@ -248,41 +158,49 @@ function ProgressLineChart({
   const yOf = (pct: number) => padT + chartH - (pct / 100) * chartH;
   const fracOf = (d: Date) => clamp(daysBetween(startDate, d) / totalDays, 0, 1);
 
-  // ── Build point arrays ──
-  const plannedPoints: [number, number][] = periodDates.map((d) => [
-    xOf(fracOf(d)),
-    yOf(plannedAtDate(d)),
-  ]);
+  // ── Build point arrays from RPC data ──
+  const plannedPoints: [number, number][] = scurveData.map((row) => {
+    const d = new Date(row.dt + "T00:00:00");
+    return [xOf(fracOf(d)), yOf(row.planned * 100)];
+  });
 
   // Actual: only up to today
-  const actualDates = periodDates.filter((d) => d <= today);
-  // Always include today itself as the last actual point
-  const lastActual = actualDates[actualDates.length - 1];
-  if (!lastActual || daysBetween(lastActual, today) > 0) {
-    actualDates.push(today);
-  }
-  const actualPoints: [number, number][] = actualDates.map((d) => [
-    xOf(fracOf(d)),
-    yOf(actualAtDate(d)),
-  ]);
+  const actualRows = scurveData.filter((row) => new Date(row.dt + "T00:00:00") <= today);
+  const actualPoints: [number, number][] = actualRows.map((row) => {
+    const d = new Date(row.dt + "T00:00:00");
+    return [xOf(fracOf(d)), yOf(row.actual * 100)];
+  });
 
   const toPath = (pts: [number, number][]) =>
     pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p[0]} ${p[1]}`).join(" ");
 
-  // ── Milestone markers (diamonds on the Actual line at each milestone's completion date) ──
+  // ── Helper: interpolate RPC data at a given date ──
+  const interpolateAt = (d: Date, field: "planned" | "actual"): number => {
+    if (scurveData.length === 0) return 0;
+    const dTime = d.getTime();
+    for (let i = 0; i < scurveData.length - 1; i++) {
+      const t1 = new Date(scurveData[i].dt + "T00:00:00").getTime();
+      const t2 = new Date(scurveData[i + 1].dt + "T00:00:00").getTime();
+      if (dTime >= t1 && dTime <= t2) {
+        const frac = t2 === t1 ? 0 : (dTime - t1) / (t2 - t1);
+        return (scurveData[i][field] + frac * (scurveData[i + 1][field] - scurveData[i][field])) * 100;
+      }
+    }
+    if (dTime <= new Date(scurveData[0].dt + "T00:00:00").getTime()) return scurveData[0][field] * 100;
+    return scurveData[scurveData.length - 1][field] * 100;
+  };
+
+  // ── Milestone markers (diamonds on the curve at each milestone's date) ──
   const milestoneMarkers: { x: number; y: number; label: string; completed: boolean; dateStr: string }[] = [];
   for (const ms of milestones) {
-    // Use actual_end if completed, otherwise planned_end
     const markerDateStr = ms.status === "completed" && ms.actual_end
       ? ms.actual_end
       : ms.planned_end;
     if (!markerDateStr) continue;
     const markerDate = new Date(markerDateStr + "T00:00:00");
     const frac = fracOf(markerDate);
-    // Only show if within chart range
     if (frac < 0 || frac > 1) continue;
-    // Y = planned or actual progress at that date
-    const yPct = markerDate <= today ? actualAtDate(markerDate) : plannedAtDate(markerDate);
+    const yPct = markerDate <= today ? interpolateAt(markerDate, "actual") : interpolateAt(markerDate, "planned");
     milestoneMarkers.push({
       x: xOf(frac),
       y: yOf(yPct),
@@ -296,31 +214,23 @@ function ProgressLineChart({
   const todayFrac = fracOf(today);
   const showTodayLine = todayFrac > 0 && todayFrac < 1;
 
-  // ── X-axis labels: derive from period dates ──
-  // For monthly: show month names. For shorter periods: show "Jan 6", "Jan 13", etc.
+  // ── X-axis labels from RPC data ──
   const xLabels: { label: string; x: number }[] = [];
   {
     let lastMonth = -1;
-    for (const d of periodDates) {
+    for (const row of scurveData) {
+      const d = new Date(row.dt + "T00:00:00");
       const frac = fracOf(d);
       const x = xOf(frac);
       if (period === "monthly") {
-        // Show month name once per month
         if (d.getMonth() !== lastMonth) {
-          xLabels.push({
-            label: d.toLocaleDateString("en-US", { month: "short" }),
-            x,
-          });
+          xLabels.push({ label: d.toLocaleDateString("en-US", { month: "short" }), x });
           lastMonth = d.getMonth();
         }
       } else {
-        // Show "Mon D" but deduplicate if two points fall in the same pixel column
         const prev = xLabels[xLabels.length - 1];
         if (!prev || x - prev.x > 28) {
-          xLabels.push({
-            label: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-            x,
-          });
+          xLabels.push({ label: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }), x });
         }
       }
     }
@@ -337,15 +247,16 @@ function ProgressLineChart({
     { key: "monthly", label: "Monthly" },
   ];
 
-  // Build tooltip data per period point
-  const tooltipData = periodDates.map((d, i) => {
+  // Build tooltip data from RPC
+  const tooltipData = scurveData.map((row) => {
+    const d = new Date(row.dt + "T00:00:00");
     const isInPast = d <= today;
     return {
       date: d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-      planned: plannedAtDate(d),
-      actual: isInPast ? actualAtDate(d) : null,
+      planned: row.planned * 100,
+      actual: isInPast ? row.actual * 100 : null,
       svgX: xOf(fracOf(d)),
-      svgY: yOf(plannedAtDate(d)),
+      svgY: yOf(row.planned * 100),
     };
   });
 
@@ -706,9 +617,11 @@ function CostBreakdown({ project }: { project: Project }) {
 function KPIStrip({
   project,
   milestones,
+  userToday,
 }: {
   project: Project;
   milestones: Milestone[];
+  userToday: Date;
 }) {
   const actual = project.actual_progress ?? 0;
   const planned = project.planned_progress ?? 0;
@@ -719,7 +632,7 @@ function KPIStrip({
   const remainingMs = totalMs - completedMs;
 
   // Days remaining
-  const today = new Date();
+  const today = userToday;
   const plannedEnd = project.planned_end ? new Date(project.planned_end + "T00:00:00") : null;
   const daysRemaining = plannedEnd ? daysBetween(today, plannedEnd) : null;
   const isOverdue = plannedEnd && today > plannedEnd && project.status !== "completed";
@@ -817,16 +730,18 @@ function KPIStrip({
 function OverviewTab({
   project,
   milestones,
+  userToday,
 }: {
   project: Project;
   milestones: Milestone[];
+  userToday: Date;
 }) {
   return (
     <div className="grid grid-cols-3 gap-6">
       {/* Left — Progress Over Time */}
       <div className="col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6" data-scurve-chart>
         <h3 className="text-lg font-semibold text-slate-700 mb-4">Progress Over Time</h3>
-        <ProgressLineChart project={project} milestones={milestones} />
+        <ProgressLineChart projectId={project.id} milestones={milestones} userToday={userToday} />
       </div>
 
       {/* Right — Milestone Status + Cost Breakdown */}
@@ -1101,10 +1016,12 @@ function ExportTab({
   project,
   milestones,
   tasks,
+  userToday,
 }: {
   project: Project;
   milestones: Milestone[];
   tasks: Task[];
+  userToday: Date;
 }) {
   const [exporting, setExporting] = useState<string | null>(null);
   const [scurveGranularity, setScurveGranularity] = useState<PeriodKey>("monthly");
@@ -1263,7 +1180,7 @@ function ExportTab({
       const spent = project.actual_cost ?? 0;
       const budgetPct = budget > 0 ? Math.round((spent / budget) * 100) : 0;
       const plannedEnd = project.planned_end ? new Date(project.planned_end + "T00:00:00") : null;
-      const todayForPdf = new Date(); todayForPdf.setHours(0, 0, 0, 0);
+      const todayForPdf = userToday;
       const daysRem = plannedEnd ? Math.max(0, Math.round((plannedEnd.getTime() - todayForPdf.getTime()) / (1000 * 60 * 60 * 24))) : null;
 
       const kpis = [
@@ -1376,6 +1293,19 @@ function ExportTab({
   const handleExportSCurve = async () => {
     setExporting("scurve");
     try {
+      // Fetch S-curve data from DB RPC
+      const { data: rawRows } = await supabase.rpc("get_project_scurve", {
+        p_project_id: project.id,
+        p_granularity: scurveGranularity,
+        p_include_baseline: false,
+      });
+      const scurveRows: ScurveRow[] = (rawRows ?? []).map((r: Record<string, unknown>) => ({
+        dt: String(r.dt),
+        planned: Number(r.planned),
+        actual: Number(r.actual),
+        baseline: r.baseline != null ? Number(r.baseline) : null,
+      }));
+
       const { default: jsPDF } = await import("jspdf");
       const doc = new jsPDF("l", "mm", "a4"); // landscape
       let y = 15;
@@ -1391,27 +1321,22 @@ function ExportTab({
       doc.setTextColor(0);
       y += 10;
 
-      // Draw S-curve chart directly using jsPDF
-      const startStr = project.planned_start || project.actual_start;
-      const endStr = project.planned_end || project.actual_end;
-      const chartDrawn = startStr && endStr;
-
-      if (chartDrawn) {
+      if (scurveRows.length > 0) {
         const chartX = 20;
         const chartY = y;
         const chartW = 250;
         const chartH = 80;
-        const startDate = new Date(startStr + "T00:00:00");
-        const endDate = new Date(endStr + "T00:00:00");
-        const todayD = new Date(); todayD.setHours(0, 0, 0, 0);
-        const totalDaysVal = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
-        const fracOfD = (d: Date) => Math.max(0, Math.min(1, Math.round((d.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) / totalDaysVal));
+        const firstDate = new Date(scurveRows[0].dt + "T00:00:00");
+        const lastDate = new Date(scurveRows[scurveRows.length - 1].dt + "T00:00:00");
+        const todayD = userToday;
+        const totalDaysVal = Math.max(1, daysBetween(firstDate, lastDate));
+        const fracOfD = (d: Date) => clamp(daysBetween(firstDate, d) / totalDaysVal, 0, 1);
 
         // Axes
         doc.setDrawColor(200);
         doc.setLineWidth(0.3);
-        doc.line(chartX, chartY, chartX, chartY + chartH); // Y axis
-        doc.line(chartX, chartY + chartH, chartX + chartW, chartY + chartH); // X axis
+        doc.line(chartX, chartY, chartX, chartY + chartH);
+        doc.line(chartX, chartY + chartH, chartX + chartW, chartY + chartH);
 
         // Y-axis labels
         doc.setFontSize(7);
@@ -1423,130 +1348,92 @@ function ExportTab({
           doc.line(chartX, ly, chartX + chartW, ly);
         }
 
-        // X-axis labels using selected granularity
-        const stepDaysExport: Record<PeriodKey, number> = { daily: 1, weekly: 7, biweekly: 14, monthly: 30 };
-        const exportStep = stepDaysExport[scurveGranularity];
-        const numSteps = Math.ceil(totalDaysVal / exportStep);
-        // Limit label density to avoid crowding
+        // X-axis labels from RPC data
         const maxLabels = 20;
-        const labelEvery = Math.max(1, Math.ceil(numSteps / maxLabels));
-        for (let i = 0; i <= numSteps; i++) {
-          const d = new Date(startDate);
-          d.setDate(d.getDate() + i * exportStep);
+        const labelEvery = Math.max(1, Math.ceil(scurveRows.length / maxLabels));
+        scurveRows.forEach((row, i) => {
+          if (i % labelEvery !== 0) return;
+          const d = new Date(row.dt + "T00:00:00");
           const fx = fracOfD(d);
-          if (fx > 1) break;
-          if (i % labelEvery === 0) {
-            const label = scurveGranularity === "monthly"
-              ? d.toLocaleDateString("en-US", { month: "short", year: "2-digit" })
-              : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-            doc.text(label, chartX + fx * chartW, chartY + chartH + 4, { align: "center" });
-          }
-        }
+          const label = scurveGranularity === "monthly"
+            ? d.toLocaleDateString("en-US", { month: "short", year: "2-digit" })
+            : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+          doc.text(label, chartX + fx * chartW, chartY + chartH + 4, { align: "center" });
+        });
 
-        // Planned S-curve (dashed blue)
-        const plannedPtsForPdf = (d: Date): number => {
-          if (milestones.length === 0) return Math.max(0, Math.min(100, fracOfD(d) * 100));
-          let pctVal = 0; let twVal = 0;
-          for (const msItem of milestones) {
-            const wVal = msItem.weight ?? 0; twVal += wVal;
-            if (!msItem.planned_start || !msItem.planned_end) { pctVal += wVal * Math.max(0, Math.min(1, fracOfD(d))); continue; }
-            const msS = new Date(msItem.planned_start + "T00:00:00");
-            const msE = new Date(msItem.planned_end + "T00:00:00");
-            const msD = Math.max(1, Math.round((msE.getTime() - msS.getTime()) / (1000 * 60 * 60 * 24)));
-            pctVal += wVal * Math.max(0, Math.min(1, Math.round((d.getTime() - msS.getTime()) / (1000 * 60 * 60 * 24)) / msD));
-          }
-          return twVal > 0 ? Math.max(0, Math.min(100, (pctVal / twVal) * 100)) : Math.max(0, Math.min(100, fracOfD(d) * 100));
-        };
-
-        // Generate points for planned line using selected granularity
-        const numPts = Math.min(60, numSteps);
-        doc.setDrawColor(59, 130, 246); // blue
+        // Planned line (dashed blue) from RPC data
+        doc.setDrawColor(59, 130, 246);
         doc.setLineDashPattern([2, 2], 0);
         doc.setLineWidth(0.5);
-        for (let i = 0; i < numPts; i++) {
-          const d1 = new Date(startDate); d1.setDate(d1.getDate() + Math.round((i / numPts) * totalDaysVal));
-          const d2 = new Date(startDate); d2.setDate(d2.getDate() + Math.round(((i + 1) / numPts) * totalDaysVal));
-          const x1 = chartX + fracOfD(d1) * chartW;
-          const y1 = chartY + chartH - (plannedPtsForPdf(d1) / 100) * chartH;
-          const x2 = chartX + fracOfD(d2) * chartW;
-          const y2 = chartY + chartH - (plannedPtsForPdf(d2) / 100) * chartH;
+        for (let i = 0; i < scurveRows.length - 1; i++) {
+          const r1 = scurveRows[i];
+          const r2 = scurveRows[i + 1];
+          const x1 = chartX + fracOfD(new Date(r1.dt + "T00:00:00")) * chartW;
+          const y1 = chartY + chartH - r1.planned * chartH;
+          const x2 = chartX + fracOfD(new Date(r2.dt + "T00:00:00")) * chartW;
+          const y2 = chartY + chartH - r2.planned * chartH;
           doc.line(x1, y1, x2, y2);
         }
-        // Plot points on planned curve
+        // Planned dots
         doc.setLineDashPattern([], 0);
         doc.setFillColor(59, 130, 246);
-        for (let i = 0; i <= numPts; i++) {
-          const d = new Date(startDate); d.setDate(d.getDate() + Math.round((i / numPts) * totalDaysVal));
+        for (const row of scurveRows) {
+          const d = new Date(row.dt + "T00:00:00");
           const px = chartX + fracOfD(d) * chartW;
-          const py = chartY + chartH - (plannedPtsForPdf(d) / 100) * chartH;
+          const py = chartY + chartH - row.planned * chartH;
           doc.circle(px, py, 0.7, "F");
         }
 
-        // Actual S-curve (solid green) up to today
-        doc.setDrawColor(16, 185, 129); // green
+        // Actual line (solid green) — only up to today
+        doc.setDrawColor(16, 185, 129);
         doc.setLineDashPattern([], 0);
         doc.setLineWidth(0.5);
-        const actualFrac = Math.min(1, fracOfD(todayD));
-        const actualPtsCount = Math.max(2, Math.round(numPts * actualFrac));
-        const actualPtsForPdf = (d: Date): number => {
-          if (milestones.length === 0) {
-            const ap = project.actual_progress ?? 0;
-            const tf = fracOfD(todayD);
-            const df = fracOfD(d);
-            return tf > 0 ? Math.max(0, Math.min(100, (df / tf) * ap)) : 0;
-          }
-          let pctVal = 0; let twVal = 0;
-          for (const msItem of milestones) {
-            const wVal = msItem.weight ?? 0; twVal += wVal;
-            const effS = msItem.actual_start ? new Date(msItem.actual_start + "T00:00:00") : msItem.planned_start ? new Date(msItem.planned_start + "T00:00:00") : null;
-            if (!effS || d < effS) continue;
-            if (msItem.status === "completed" && msItem.actual_end) {
-              const effE = new Date(msItem.actual_end + "T00:00:00");
-              const md = Math.max(1, Math.round((effE.getTime() - effS.getTime()) / (1000 * 60 * 60 * 24)));
-              pctVal += wVal * Math.max(0, Math.min(1, Math.round((d.getTime() - effS.getTime()) / (1000 * 60 * 60 * 24)) / md));
-            } else if (msItem.status === "in_progress") {
-              const md = Math.max(1, Math.round((todayD.getTime() - effS.getTime()) / (1000 * 60 * 60 * 24)));
-              const msAct = (msItem.actual_progress ?? 0) / 100;
-              pctVal += wVal * Math.max(0, Math.min(1, Math.round((d.getTime() - effS.getTime()) / (1000 * 60 * 60 * 24)) / md)) * msAct;
-            }
-          }
-          return twVal > 0 ? Math.max(0, Math.min(100, (pctVal / twVal) * 100)) : 0;
-        };
-
-        for (let i = 0; i < actualPtsCount; i++) {
-          const d1 = new Date(startDate); d1.setDate(d1.getDate() + Math.round((i / actualPtsCount) * fracOfD(todayD) * totalDaysVal));
-          const d2 = new Date(startDate); d2.setDate(d2.getDate() + Math.round(((i + 1) / actualPtsCount) * fracOfD(todayD) * totalDaysVal));
-          const x1 = chartX + fracOfD(d1) * chartW;
-          const y1 = chartY + chartH - (actualPtsForPdf(d1) / 100) * chartH;
-          const x2 = chartX + fracOfD(d2) * chartW;
-          const y2 = chartY + chartH - (actualPtsForPdf(d2) / 100) * chartH;
+        const actualRowsExport = scurveRows.filter((r) => new Date(r.dt + "T00:00:00") <= todayD);
+        for (let i = 0; i < actualRowsExport.length - 1; i++) {
+          const r1 = actualRowsExport[i];
+          const r2 = actualRowsExport[i + 1];
+          const x1 = chartX + fracOfD(new Date(r1.dt + "T00:00:00")) * chartW;
+          const y1 = chartY + chartH - r1.actual * chartH;
+          const x2 = chartX + fracOfD(new Date(r2.dt + "T00:00:00")) * chartW;
+          const y2 = chartY + chartH - r2.actual * chartH;
           doc.line(x1, y1, x2, y2);
         }
-
-        // Plot points on actual curve
+        // Actual dots
         doc.setFillColor(16, 185, 129);
-        for (let i = 0; i <= actualPtsCount; i++) {
-          const d = new Date(startDate); d.setDate(d.getDate() + Math.round((i / actualPtsCount) * fracOfD(todayD) * totalDaysVal));
+        for (const row of actualRowsExport) {
+          const d = new Date(row.dt + "T00:00:00");
           const px = chartX + fracOfD(d) * chartW;
-          const py = chartY + chartH - (actualPtsForPdf(d) / 100) * chartH;
+          const py = chartY + chartH - row.actual * chartH;
           doc.circle(px, py, 0.7, "F");
         }
 
-        // Milestone completion markers
+        // Milestone completion markers (interpolate Y from RPC data)
+        const interpolatePdf = (target: Date, field: "planned" | "actual"): number => {
+          const tTime = target.getTime();
+          for (let i = 0; i < scurveRows.length - 1; i++) {
+            const t1 = new Date(scurveRows[i].dt + "T00:00:00").getTime();
+            const t2 = new Date(scurveRows[i + 1].dt + "T00:00:00").getTime();
+            if (tTime >= t1 && tTime <= t2) {
+              const frac = t2 === t1 ? 0 : (tTime - t1) / (t2 - t1);
+              return scurveRows[i][field] + frac * (scurveRows[i + 1][field] - scurveRows[i][field]);
+            }
+          }
+          if (tTime <= new Date(scurveRows[0].dt + "T00:00:00").getTime()) return scurveRows[0][field];
+          return scurveRows[scurveRows.length - 1][field];
+        };
+
         for (const msItem of milestones) {
           if (msItem.status === "completed" && msItem.actual_end) {
             const mDate = new Date(msItem.actual_end + "T00:00:00");
             const mx = chartX + fracOfD(mDate) * chartW;
-            const mPct = actualPtsForPdf(mDate);
-            const my = chartY + chartH - (mPct / 100) * chartH;
-            // Diamond marker
-            doc.setFillColor(139, 92, 246); // purple
+            const mPct = interpolatePdf(mDate, "actual");
+            const my = chartY + chartH - mPct * chartH;
+            doc.setFillColor(139, 92, 246);
             doc.setDrawColor(139, 92, 246);
             doc.setLineWidth(0.3);
             const ds = 1.5;
             doc.triangle(mx, my - ds, mx + ds, my, mx, my + ds, "F");
             doc.triangle(mx, my - ds, mx - ds, my, mx, my + ds, "F");
-            // Label
             doc.setFontSize(5);
             doc.setTextColor(139, 92, 246);
             const msLabel = `${String(msItem.name || "").substring(0, 16)} (${mDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })})`;
@@ -1580,7 +1467,7 @@ function ExportTab({
 
         y = chartY + chartH + 18;
 
-        // ── Progress Data Table (inside chartDrawn scope for access to plannedPtsForPdf/actualPtsForPdf) ──
+        // ── Progress Data Table from RPC data ──
         if (y > 160) { doc.addPage(); y = 15; }
         doc.setLineDashPattern([], 0);
         doc.setFontSize(12);
@@ -1601,36 +1488,34 @@ function ExportTab({
         doc.line(14, y, 270, y);
         y += 4;
 
-        // Build milestone completion lookup by date key
+        // Build milestone completion lookup
         const msCompletionsByDate: Record<string, string[]> = {};
         milestones.forEach((m) => {
           if (m.status === "completed" && m.actual_end) {
-            const dKey = m.actual_end; // YYYY-MM-DD
-            if (!msCompletionsByDate[dKey]) msCompletionsByDate[dKey] = [];
-            msCompletionsByDate[dKey].push(m.name || "Untitled");
+            if (!msCompletionsByDate[m.actual_end]) msCompletionsByDate[m.actual_end] = [];
+            msCompletionsByDate[m.actual_end].push(m.name || "Untitled");
           }
         });
 
-        const tableSteps = Math.ceil(totalDaysVal / exportStep);
-        const maxTableRows = scurveGranularity === "daily" ? 365 : 100;
         doc.setFontSize(7);
         doc.setTextColor(0);
-        for (let i = 0; i <= Math.min(tableSteps, maxTableRows); i++) {
+        for (let ri = 0; ri < scurveRows.length; ri++) {
           if (y > 190) { doc.addPage(); y = 15; }
-          const d = new Date(startDate); d.setDate(d.getDate() + i * exportStep);
-          if (d > endDate) break;
+          const row = scurveRows[ri];
+          const d = new Date(row.dt + "T00:00:00");
           const dateLabel = scurveGranularity === "monthly"
             ? d.toLocaleDateString("en-US", { month: "short", year: "numeric" })
             : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-          const plannedVal = plannedPtsForPdf(d).toFixed(1);
-          const actualVal = d <= todayD ? actualPtsForPdf(d).toFixed(1) : "—";
+          const plannedVal = (row.planned * 100).toFixed(1);
+          const actualVal = d <= todayD ? (row.actual * 100).toFixed(1) : "—";
 
-          // Check for milestone completions within this period
-          const periodEnd = new Date(d); periodEnd.setDate(periodEnd.getDate() + exportStep - 1);
+          // Check for milestone completions within this bucket period
+          const nextRow = ri < scurveRows.length - 1 ? scurveRows[ri + 1] : null;
+          const periodEnd = nextRow ? new Date(nextRow.dt + "T00:00:00") : d;
           const msLabels: string[] = [];
           for (const [dateKey, names] of Object.entries(msCompletionsByDate)) {
             const mDate = new Date(dateKey + "T00:00:00");
-            if (mDate >= d && mDate <= periodEnd) {
+            if (mDate >= d && mDate < periodEnd) {
               msLabels.push(...names.map((n) => `${n} (${mDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })})`));
             }
           }
@@ -1748,6 +1633,7 @@ function ExportTab({
 // ─────────────────────────────────────────────
 function ReportsPageContent({ projectId }: { projectId: number }) {
   const router = useRouter();
+  const { userToday } = useUserTimezone();
 
   const [project, setProject] = useState<Project | null>(null);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
@@ -1935,11 +1821,11 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
             </div>
 
             {/* KPI STRIP */}
-            <KPIStrip project={project} milestones={milestones} />
+            <KPIStrip project={project} milestones={milestones} userToday={userToday} />
 
             {/* TAB CONTENT */}
             {activeTab === "overview" && (
-              <OverviewTab project={project} milestones={milestones} />
+              <OverviewTab project={project} milestones={milestones} userToday={userToday} />
             )}
             {activeTab === "milestones" && (
               <MilestonesTab milestones={milestones} />
@@ -1947,7 +1833,7 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
             {activeTab === "tasks" && (
               <TasksTab milestones={milestones} tasks={tasks} />
             )}
-            {activeTab === "export" && <ExportTab project={project} milestones={milestones} tasks={tasks} />}
+            {activeTab === "export" && <ExportTab project={project} milestones={milestones} tasks={tasks} userToday={userToday} />}
           </div>
 
           {/* Activity Sidebar — same panel as project detail */}
