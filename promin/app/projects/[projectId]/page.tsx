@@ -25,6 +25,8 @@ type Project = {
   actual_end?: string | null;
   budgeted_cost?: number | null;
   actual_cost?: number | null;
+  completion_locked?: boolean | null;
+  completion_delta_days?: number | null;
 };
 
 function ProjectPageContent({ projectId }: { projectId: number }) {
@@ -438,6 +440,24 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                     </div>
                   </div>
                 </div>
+
+                {project.completion_locked && project.completion_delta_days != null && (
+                  <div className="mt-4 pt-4 border-t border-slate-200">
+                    {project.completion_delta_days < 0 ? (
+                      <div className="flex items-center gap-2 text-emerald-700 bg-emerald-50 rounded-lg px-4 py-2 text-sm font-medium">
+                        Completed {Math.abs(project.completion_delta_days)} day{Math.abs(project.completion_delta_days) !== 1 ? "s" : ""} early
+                      </div>
+                    ) : project.completion_delta_days > 0 ? (
+                      <div className="flex items-center gap-2 text-red-700 bg-red-50 rounded-lg px-4 py-2 text-sm font-medium">
+                        Completed {project.completion_delta_days} day{project.completion_delta_days !== 1 ? "s" : ""} late
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-blue-700 bg-blue-50 rounded-lg px-4 py-2 text-sm font-medium">
+                        Completed on time
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="mt-6">
                   {!isArchived && allMilestonesCompleted && !project.actual_end && (

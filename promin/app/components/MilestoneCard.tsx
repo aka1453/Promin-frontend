@@ -306,14 +306,24 @@ export default function MilestoneCard({
                     <div className="text-slate-900 mt-0.5">{milestone.actual_end || "—"}</div>
                   </div>
                 </div>
-                {hoverText && (
-                  <div className={`mt-2 text-xs font-medium ${isDelayed ? "text-red-600" : "text-emerald-600"}`}>
-                    {hoverText}
-                  </div>
-                )}
               </div>
             );
           })()}
+
+          <div className="grid grid-cols-2 gap-x-4 mb-4 text-xs">
+            <div>
+              <div className="text-slate-500 font-medium">Budgeted Cost</div>
+              <div className="text-slate-900 mt-0.5 font-semibold">
+                ${((milestone.budgeted_cost ?? 0)).toLocaleString()}
+              </div>
+            </div>
+            <div>
+              <div className="text-slate-500 font-medium">Actual Cost</div>
+              <div className="text-slate-900 mt-0.5 font-semibold">
+                ${((milestone.actual_cost ?? 0)).toLocaleString()}
+              </div>
+            </div>
+          </div>
 
           <div className="mb-4 space-y-3">
             <div>

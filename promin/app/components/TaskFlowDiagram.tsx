@@ -63,6 +63,7 @@ function CustomEdge({
 
   const duration = data?.duration || 0;
   const offset = data?.offset || 0;
+  const isImpacted = data?.isImpacted || false;
 
   return (
     <>
@@ -76,8 +77,8 @@ function CustomEdge({
           }}
           className="nodrag nopan"
         >
-          <div className="bg-white px-2 py-1 rounded shadow-md border border-gray-300 text-xs font-medium flex flex-col gap-0.5">
-            <div className="text-indigo-700">⏱️ {duration}d</div>
+          <div className={`bg-white px-2 py-1 rounded shadow-md border text-xs font-medium flex flex-col gap-0.5 ${isImpacted ? "border-red-400" : "border-gray-300"}`}>
+            <div className={isImpacted ? "text-red-700" : "text-indigo-700"}>⏱️ {duration}d</div>
             {offset > 0 && (
               <div className="text-amber-700">+{offset}d buffer</div>
             )}
@@ -314,9 +315,49 @@ export default function TaskFlowDiagram({ milestoneId }: Props) {
       return; // Don't clear edges if we're still loading
     }
 
+    // Build set of delay-impacted task IDs by walking dependency graph
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const delayedTaskIds = new Set<number>();
+    for (const task of tasks) {
+      if (task.status === "in_progress" && task.planned_end) {
+        const plannedEnd = new Date(task.planned_end);
+        plannedEnd.setHours(0, 0, 0, 0);
+        if (today > plannedEnd) {
+          delayedTaskIds.add(task.id);
+        }
+      }
+    }
+
+    // Build adjacency: source -> successors
+    const successors = new Map<number, number[]>();
+    for (const dep of dependencies) {
+      const list = successors.get(dep.depends_on_task_id) || [];
+      list.push(dep.task_id);
+      successors.set(dep.depends_on_task_id, list);
+    }
+
+    // BFS from delayed tasks to find all impacted tasks
+    const impactedTaskIds = new Set<number>(delayedTaskIds);
+    const queue = [...delayedTaskIds];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const succ of successors.get(current) || []) {
+        if (!impactedTaskIds.has(succ)) {
+          impactedTaskIds.add(succ);
+          queue.push(succ);
+        }
+      }
+    }
+
     const newEdges: Edge[] = dependencies.map((dep) => {
       // Find source task for duration info
       const sourceTask = tasks.find((t) => t.id === dep.depends_on_task_id);
+
+      // Edge is red if source task is in the delay-impacted set
+      const isImpacted = impactedTaskIds.has(dep.depends_on_task_id);
+      const edgeColor = isImpacted ? "#ef4444" : "#6366f1";
 
       return {
         id: `${dep.depends_on_task_id}-${dep.task_id}`,
@@ -326,14 +367,15 @@ export default function TaskFlowDiagram({ milestoneId }: Props) {
         targetHandle: "left",
         type: "custom",
         animated: false,
-        style: { stroke: "#6366f1", strokeWidth: 2 },
+        style: { stroke: edgeColor, strokeWidth: 2 },
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: "#6366f1",
+          color: edgeColor,
         },
         data: {
           duration: sourceTask?.duration_days || 0,
           offset: sourceTask?.offset_days || 0,
+          isImpacted,
         },
       };
     });
@@ -538,6 +580,10 @@ export default function TaskFlowDiagram({ milestoneId }: Props) {
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-red-500"></div>
               <span>Delayed</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-0.5 bg-red-500"></div>
+              <span>Delay Impact</span>
             </div>
           </div>
         </Panel>

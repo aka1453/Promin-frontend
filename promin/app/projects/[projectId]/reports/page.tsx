@@ -270,7 +270,7 @@ function ProgressLineChart({
     pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p[0]} ${p[1]}`).join(" ");
 
   // ── Milestone markers (diamonds on the Actual line at each milestone's completion date) ──
-  const milestoneMarkers: { x: number; y: number; label: string; completed: boolean }[] = [];
+  const milestoneMarkers: { x: number; y: number; label: string; completed: boolean; dateStr: string }[] = [];
   for (const ms of milestones) {
     // Use actual_end if completed, otherwise planned_end
     const markerDateStr = ms.status === "completed" && ms.actual_end
@@ -288,6 +288,7 @@ function ProgressLineChart({
       y: yOf(yPct),
       label: ms.name || "Milestone",
       completed: ms.status === "completed",
+      dateStr: markerDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
     });
   }
 
@@ -496,7 +497,7 @@ function ProgressLineChart({
                 height={20}
                 fill="transparent"
                 style={{ cursor: "pointer" }}
-                onMouseEnter={() => setTooltip({ x: m.x, y: m.y, date: "", planned: 0, actual: null, milestoneLabel: m.completed ? `Milestone completed: ${m.label}` : `Milestone (planned): ${m.label}` })}
+                onMouseEnter={() => setTooltip({ x: m.x, y: m.y, date: "", planned: 0, actual: null, milestoneLabel: m.completed ? `${m.label} — Completed: ${m.dateStr}` : `${m.label} — Planned: ${m.dateStr}` })}
                 onMouseLeave={() => setTooltip(null)}
               />
             </g>
@@ -1106,6 +1107,7 @@ function ExportTab({
   tasks: Task[];
 }) {
   const [exporting, setExporting] = useState<string | null>(null);
+  const [scurveGranularity, setScurveGranularity] = useState<PeriodKey>("monthly");
 
   const handleExportCSV = async () => {
     setExporting("csv");
@@ -1379,8 +1381,9 @@ function ExportTab({
       let y = 15;
 
       // Title
+      const granularityLabels: Record<PeriodKey, string> = { daily: "Daily", weekly: "Weekly", biweekly: "Bi-weekly", monthly: "Monthly" };
       doc.setFontSize(16);
-      doc.text(`${project.name || "Project"} — S-Curve Report`, 14, y);
+      doc.text(`${project.name || "Project"} — S-Curve Report (${granularityLabels[scurveGranularity]})`, 14, y);
       y += 6;
       doc.setFontSize(9);
       doc.setTextColor(100);
@@ -1420,14 +1423,22 @@ function ExportTab({
           doc.line(chartX, ly, chartX + chartW, ly);
         }
 
-        // X-axis labels (month + year for clarity)
-        const months = Math.ceil(totalDaysVal / 30);
-        for (let i = 0; i <= Math.min(months, 12); i++) {
+        // X-axis labels using selected granularity
+        const stepDaysExport: Record<PeriodKey, number> = { daily: 1, weekly: 7, biweekly: 14, monthly: 30 };
+        const exportStep = stepDaysExport[scurveGranularity];
+        const numSteps = Math.ceil(totalDaysVal / exportStep);
+        // Limit label density to avoid crowding
+        const maxLabels = 20;
+        const labelEvery = Math.max(1, Math.ceil(numSteps / maxLabels));
+        for (let i = 0; i <= numSteps; i++) {
           const d = new Date(startDate);
-          d.setDate(d.getDate() + i * 30);
+          d.setDate(d.getDate() + i * exportStep);
           const fx = fracOfD(d);
-          if (fx <= 1) {
-            const label = d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+          if (fx > 1) break;
+          if (i % labelEvery === 0) {
+            const label = scurveGranularity === "monthly"
+              ? d.toLocaleDateString("en-US", { month: "short", year: "2-digit" })
+              : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
             doc.text(label, chartX + fx * chartW, chartY + chartH + 4, { align: "center" });
           }
         }
@@ -1447,8 +1458,8 @@ function ExportTab({
           return twVal > 0 ? Math.max(0, Math.min(100, (pctVal / twVal) * 100)) : Math.max(0, Math.min(100, fracOfD(d) * 100));
         };
 
-        // Generate points for planned line
-        const numPts = 20;
+        // Generate points for planned line using selected granularity
+        const numPts = Math.min(60, numSteps);
         doc.setDrawColor(59, 130, 246); // blue
         doc.setLineDashPattern([2, 2], 0);
         doc.setLineWidth(0.5);
@@ -1577,17 +1588,6 @@ function ExportTab({
         doc.text("Progress Data", 14, y);
         y += 8;
 
-        // Build milestone completion lookup by month
-        const msCompletions: Record<string, string[]> = {};
-        milestones.forEach((m) => {
-          if (m.status === "completed" && m.actual_end) {
-            const d = new Date(m.actual_end + "T00:00:00");
-            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-            if (!msCompletions[key]) msCompletions[key] = [];
-            msCompletions[key].push(`${m.name || "Untitled"} (${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })})`);
-          }
-        });
-
         doc.setFontSize(7);
         doc.setTextColor(80);
         doc.setFillColor(248, 250, 252);
@@ -1601,23 +1601,44 @@ function ExportTab({
         doc.line(14, y, 270, y);
         y += 4;
 
-        const tableMonths = Math.ceil(totalDaysVal / 30);
+        // Build milestone completion lookup by date key
+        const msCompletionsByDate: Record<string, string[]> = {};
+        milestones.forEach((m) => {
+          if (m.status === "completed" && m.actual_end) {
+            const dKey = m.actual_end; // YYYY-MM-DD
+            if (!msCompletionsByDate[dKey]) msCompletionsByDate[dKey] = [];
+            msCompletionsByDate[dKey].push(m.name || "Untitled");
+          }
+        });
+
+        const tableSteps = Math.ceil(totalDaysVal / exportStep);
+        const maxTableRows = scurveGranularity === "daily" ? 365 : 100;
         doc.setFontSize(7);
         doc.setTextColor(0);
-        for (let i = 0; i <= Math.min(tableMonths, 18); i++) {
+        for (let i = 0; i <= Math.min(tableSteps, maxTableRows); i++) {
           if (y > 190) { doc.addPage(); y = 15; }
-          const d = new Date(startDate); d.setDate(d.getDate() + i * 30);
+          const d = new Date(startDate); d.setDate(d.getDate() + i * exportStep);
           if (d > endDate) break;
-          const dateLabel = d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+          const dateLabel = scurveGranularity === "monthly"
+            ? d.toLocaleDateString("en-US", { month: "short", year: "numeric" })
+            : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
           const plannedVal = plannedPtsForPdf(d).toFixed(1);
           const actualVal = d <= todayD ? actualPtsForPdf(d).toFixed(1) : "—";
-          const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-          const msLabel = (msCompletions[monthKey] || []).join(", ");
+
+          // Check for milestone completions within this period
+          const periodEnd = new Date(d); periodEnd.setDate(periodEnd.getDate() + exportStep - 1);
+          const msLabels: string[] = [];
+          for (const [dateKey, names] of Object.entries(msCompletionsByDate)) {
+            const mDate = new Date(dateKey + "T00:00:00");
+            if (mDate >= d && mDate <= periodEnd) {
+              msLabels.push(...names.map((n) => `${n} (${mDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })})`));
+            }
+          }
 
           doc.text(dateLabel, 16, y);
           doc.text(`${plannedVal}%`, 55, y);
           doc.text(actualVal === "—" ? "—" : `${actualVal}%`, 90, y);
-          doc.text(String(msLabel).substring(0, 55), 125, y);
+          doc.text(String(msLabels.join(", ")).substring(0, 55), 125, y);
           y += 5;
         }
       } else {
@@ -1672,6 +1693,7 @@ function ExportTab({
       iconColor: "text-purple-600",
       btnLabel: "Export S-Curve",
       handler: handleExportSCurve,
+      hasGranularity: true,
     },
   ];
 
@@ -1693,6 +1715,20 @@ function ExportTab({
             </div>
             <p className="text-sm font-semibold text-slate-800 mb-1">{exp.label}</p>
             <p className="text-xs text-slate-500 mb-4 leading-relaxed">{exp.desc}</p>
+            {(exp as any).hasGranularity && (
+              <div className="mb-3 w-full">
+                <select
+                  value={scurveGranularity}
+                  onChange={(e) => setScurveGranularity(e.target.value as PeriodKey)}
+                  className="w-full text-xs border border-slate-200 rounded-md px-2 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="biweekly">Bi-weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+            )}
             <button
               onClick={exp.handler}
               disabled={exporting !== null}
