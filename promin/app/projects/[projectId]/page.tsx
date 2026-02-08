@@ -10,7 +10,7 @@ import EditMilestoneModal from "../../components/EditMilestoneModal";
 import ProjectSettingsModal from "../../components/ProjectSettingsModal";
 import ActivityFeed from "../../components/ActivityFeed";
 import type { Milestone } from "../../types/milestone";
-import { ArrowLeft, Settings, Clock, BarChart2 } from "lucide-react";
+import { ArrowLeft, Settings, Clock, BarChart2, GanttChartSquare } from "lucide-react";
 
 type Project = {
   id: number;
@@ -291,6 +291,15 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                   </div>
                 );
               })()}
+
+              {/* Gantt Button */}
+              <button
+                onClick={() => router.push(`/projects/${projectId}/gantt`)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+              >
+                <GanttChartSquare size={18} />
+                Gantt
+              </button>
 
               {/* Reports Button */}
               <button
