@@ -123,6 +123,7 @@ export default function TaskFlowDiagram({ milestoneId }: Props) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isCalculating, setIsCalculating] = useState(false);
   const [calculatingMessage, setCalculatingMessage] = useState("");
+  const [cpmStatus, setCpmStatus] = useState<string | null>(null);
 
   // ADDED: Save tips/controls state to localStorage (Issue #5)
   useEffect(() => {
@@ -140,6 +141,16 @@ export default function TaskFlowDiagram({ milestoneId }: Props) {
   // Load tasks, dependencies, and deliverable counts
   const loadData = useCallback(async () => {
     setLoading(true);
+
+    // Ensure CPM is fresh before fetching tasks (dirty-flag approach)
+    const { data: cpmResult, error: cpmError } = await supabase.rpc(
+      "ensure_project_cpm_for_milestone",
+      { p_milestone_id: milestoneId }
+    );
+    if (cpmError) {
+      console.warn("CPM RPC failed (migration may not be applied):", cpmError.message);
+    }
+    setCpmStatus(cpmResult ?? null);
 
     const { data: tasksData, error: tasksError } = await queryTasksOrdered(milestoneId);
 
@@ -316,17 +327,11 @@ export default function TaskFlowDiagram({ milestoneId }: Props) {
     }
 
     // Build set of delay-impacted task IDs by walking dependency graph
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
+    // Uses DB-computed is_delayed (set by health engine triggers)
     const delayedTaskIds = new Set<number>();
     for (const task of tasks) {
-      if (task.status === "in_progress" && task.planned_end) {
-        const plannedEnd = new Date(task.planned_end);
-        plannedEnd.setHours(0, 0, 0, 0);
-        if (today > plannedEnd) {
-          delayedTaskIds.add(task.id);
-        }
+      if (task.is_delayed) {
+        delayedTaskIds.add(task.id);
       }
     }
 
@@ -520,6 +525,16 @@ export default function TaskFlowDiagram({ milestoneId }: Props) {
 
   return (
     <div className="w-full h-full relative">
+      {/* Cycle Detection Banner */}
+      {cpmStatus === "CYCLE_DETECTED" && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 bg-red-50 border border-red-300 rounded-lg px-4 py-2 shadow-md flex items-center gap-2 text-sm text-red-800 max-w-lg">
+          <svg className="w-5 h-5 flex-shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          </svg>
+          <span>Dependency cycle detected. Fix dependencies to compute critical path.</span>
+        </div>
+      )}
+
       {/* Calculating Overlay */}
       {isCalculating && (
         <div className="absolute inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center">
@@ -582,8 +597,22 @@ export default function TaskFlowDiagram({ milestoneId }: Props) {
               <span>Delayed</span>
             </div>
             <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-amber-500"></div>
+              <span>Behind</span>
+            </div>
+            <div className="flex items-center gap-2">
               <div className="w-6 h-0.5 bg-red-500"></div>
               <span>Delay Impact</span>
+            </div>
+            <div className="border-t border-gray-200 pt-2 mt-1">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-sm border-2 border-purple-600"></div>
+                <span>Critical Path</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-sm border-2 border-purple-300 border-dashed"></div>
+                <span>Near-Critical</span>
+              </div>
             </div>
           </div>
         </Panel>

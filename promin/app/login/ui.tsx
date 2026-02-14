@@ -1,54 +1,56 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabaseClient";
 
 type Mode = "signin" | "signup";
 
 export default function LoginUI() {
-  const router = useRouter();
   const [mode, setMode] = useState<Mode>("signin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const router = useRouter();
 
-    const handleSubmit = async (e: FormEvent) => {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
-    setLoading(true);
+    setPending(true);
+
+    const form = new FormData(e.currentTarget);
+    const email = form.get("email") as string;
+    const password = form.get("password") as string;
 
     try {
-      if (mode === "signup") {
+      if (mode === "signin") {
+        const { error: authError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (authError) {
+          setError(authError.message);
+          setPending(false);
+          return;
+        }
+      } else {
         const { error: signUpError } = await supabase.auth.signUp({
           email,
           password,
         });
-        if (signUpError) throw signUpError;
-
-        const { error: loginError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (loginError) throw loginError;
-      } else {
-        const { error: loginError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (loginError) throw loginError;
+        if (signUpError) {
+          setError(signUpError.message);
+          setPending(false);
+          return;
+        }
       }
 
-      // After successful login, go to main dashboard
       router.push("/");
-    } catch (err: any) {
-      setError(err.message || "Unexpected error. Try again.");
-    } finally {
-      setLoading(false);
+      router.refresh();
+    } catch {
+      setError("Network error. Please try again.");
+      setPending(false);
     }
-  };
-
+  }
 
   return (
     <div className="w-[420px] rounded-2xl bg-white shadow-xl p-8">
@@ -62,7 +64,8 @@ export default function LoginUI() {
 
       <div className="flex mb-6 rounded-lg bg-slate-100 p-1 text-xs">
         <button
-          onClick={() => setMode("signin")}
+          type="button"
+          onClick={() => { setMode("signin"); setError(null); }}
           className={`flex-1 py-2 rounded-md ${
             mode === "signin" ? "bg-white shadow text-slate-900" : "text-slate-500"
           }`}
@@ -71,7 +74,8 @@ export default function LoginUI() {
         </button>
 
         <button
-          onClick={() => setMode("signup")}
+          type="button"
+          onClick={() => { setMode("signup"); setError(null); }}
           className={`flex-1 py-2 rounded-md ${
             mode === "signup" ? "bg-white shadow text-slate-900" : "text-slate-500"
           }`}
@@ -91,9 +95,8 @@ export default function LoginUI() {
           <label className="text-xs text-slate-600">Email</label>
           <input
             type="email"
-            value={email}
+            name="email"
             placeholder="Email"
-            onChange={(e) => setEmail(e.target.value)}
             autoComplete="off"
             className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
@@ -103,9 +106,8 @@ export default function LoginUI() {
           <label className="text-xs text-slate-600">Password</label>
           <input
             type="password"
-            value={password}
+            name="password"
             placeholder="Password"
-            onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"
             className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
@@ -113,10 +115,10 @@ export default function LoginUI() {
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={pending}
           className="mt-2 w-full rounded-lg bg-blue-600 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
         >
-          {loading
+          {pending
             ? mode === "signin"
               ? "Signing in..."
               : "Creating account..."

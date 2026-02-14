@@ -27,10 +27,10 @@ export default function CommentItem({
   const [editBody, setEditBody] = useState(comment.body);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  // Get current user
+  // Get current user — use getSession() (local cache, no network call)
   useState(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setCurrentUserId(data.user?.id || null);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setCurrentUserId(session?.user?.id || null);
     });
   });
 

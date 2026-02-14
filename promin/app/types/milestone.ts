@@ -1,3 +1,5 @@
+import type { HealthStatus } from "./task";
+
 export type Milestone = {
   id: number;
   project_id: number;
@@ -20,4 +22,10 @@ export type Milestone = {
 
   weight: number | null;
   user_weight?: number | null;
+
+  // Health engine (DB-computed, read-only)
+  delayed_tasks_count?: number;
+  total_tasks_count?: number;
+  health_status?: HealthStatus;
+  schedule_variance_days?: number;
 };

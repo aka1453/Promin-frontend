@@ -61,7 +61,7 @@ Deliverables → Tasks → Milestones → Projects
 - ✅ Task dependencies & delay propagation
 - ✅ Project completion lock (completion_locked + delta days)
 - ✅ S-curve fully DB-authoritative (no frontend math)
-- ⏳ Gantt view (planning editable, progress read-only, export required)
+- ⏳ Gantt view (Phase 9A: read-only view implemented; editing and export pending)
 
 ### Reporting & Exports
 - ✅ Reports module foundation
@@ -159,5 +159,6 @@ Checking an item without completing it fully is forbidden.
 - 2026-02-07 — S-curve fully DB-authoritative marked ✅ — S-curve now sourced from DB via get_project_scurve RPC; UI and exports consume RPC output.
 - 2026-02-07 — S-curve exports sourced from DB marked ✅ — S-curve PDF export fetches from get_project_scurve RPC instead of frontend math.
 - 2026-02-07 — User timezone (MVP) marked ✅ — Per-user timezone added; reporting "today" semantics are timezone-aware.
+- 2026-02-08 — Gantt view Phase 9A (read-only) — Read-only Gantt chart added at /projects/[id]/gantt; shows planned bars, actual overlays, milestone summaries, today line, week/month zoom. No editing, no export, no DB changes.
 
 ---

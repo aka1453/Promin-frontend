@@ -34,10 +34,10 @@ export default function CommentComposer({
   const [currentUser, setCurrentUser] = useState<any>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Get current user
+  // Get current user — use getSession() (local cache, no network call)
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setCurrentUser(data.user);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setCurrentUser(session?.user ?? null);
     });
   }, []);
 

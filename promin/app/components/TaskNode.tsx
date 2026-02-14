@@ -37,19 +37,18 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
   // Get task duration
   const taskDuration = task.duration_days || 0;
 
-  // Use DB-authoritative status; only derive isDelayed for display
+  // Use DB-authoritative health fields (computed by triggers)
   const status = task.status || "unknown";
-  const isDelayed = (() => {
-    if (status !== "in_progress") return false;
-    const plannedEnd = task.planned_end ? new Date(task.planned_end) : null;
-    if (!plannedEnd) return false;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    plannedEnd.setHours(0, 0, 0, 0);
-    return today > plannedEnd;
-  })();
+  const actualProgress = task.progress ?? 0;
+  const plannedProgress = task.planned_progress ?? 0;
+  const isDelayed = task.is_delayed ?? false;
+  const isBehind = !isDelayed && task.status_health === "WARN";
 
-  // Get colors based on status
+  // CPM fields (DB-computed, read-only)
+  const isCritical = task.is_critical ?? false;
+  const isNearCritical = task.is_near_critical ?? false;
+
+  // Get colors based on status + schedule warning overrides
   const getStatusColors = () => {
     if (status === "completed") {
       return {
@@ -58,18 +57,25 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
         hoverBorder: "hover:border-green-600",
       };
     }
-    if (status === "in_progress" && !isDelayed) {
+    if (isDelayed) {
+      return {
+        bg: status === "in_progress" ? "bg-blue-50" : "bg-gray-50",
+        border: "border-red-500",
+        hoverBorder: "hover:border-red-600",
+      };
+    }
+    if (isBehind) {
+      return {
+        bg: status === "in_progress" ? "bg-blue-50" : "bg-gray-50",
+        border: "border-amber-500",
+        hoverBorder: "hover:border-amber-600",
+      };
+    }
+    if (status === "in_progress") {
       return {
         bg: "bg-blue-50",
         border: "border-blue-500",
         hoverBorder: "hover:border-blue-600",
-      };
-    }
-    if (status === "in_progress" && isDelayed) {
-      return {
-        bg: "bg-blue-50",
-        border: "border-red-500",
-        hoverBorder: "hover:border-red-600",
       };
     }
     // Not started
@@ -95,6 +101,13 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
     onToggleCollapse(task.id);
   };
 
+  // Critical path ring (subtle purple glow, stacks on top of status border)
+  const criticalRing = isCritical
+    ? "ring-2 ring-purple-500/40"
+    : isNearCritical
+      ? "ring-1 ring-purple-300/40 ring-offset-1"
+      : "";
+
   if (collapsed) {
     // Minimized view - title + duration badge
     return (
@@ -102,7 +115,7 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
         onClick={handleClick}
         className={`
           ${colors.bg} rounded-lg shadow-md border-2 transition-all cursor-pointer
-          ${colors.border} ${colors.hoverBorder}
+          ${colors.border} ${colors.hoverBorder} ${criticalRing}
           w-[240px] min-h-[60px] flex flex-col justify-center px-4 py-2 relative
         `}
         style={{ zIndex: 1 }}
@@ -117,8 +130,42 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
         />
 
         <div className="flex items-center justify-between gap-2">
-          <div className="flex-1 font-medium text-gray-900 text-sm truncate">
-            {task.title}
+          <div className="flex-1 min-w-0">
+            <div className="font-medium text-gray-900 text-sm truncate">
+              {task.title}
+            </div>
+            {isDelayed && (
+              <span
+                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800"
+                title="Delayed (past planned finish)"
+              >
+                Delayed
+              </span>
+            )}
+            {isBehind && (
+              <span
+                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800"
+                title={`Behind plan by ${Math.round(plannedProgress - actualProgress)}%`}
+              >
+                Behind by {Math.round(plannedProgress - actualProgress)}%
+              </span>
+            )}
+            {isCritical && (
+              <span
+                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-100 text-purple-800"
+                title="Critical path — zero float"
+              >
+                Critical
+              </span>
+            )}
+            {isNearCritical && (
+              <span
+                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-600 border border-purple-200 border-dashed"
+                title={`Near-critical — ${task.cpm_total_float_days ?? 0}d float`}
+              >
+                Float {task.cpm_total_float_days ?? 0}d
+              </span>
+            )}
           </div>
 
           <button
@@ -164,7 +211,7 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
       onClick={handleClick}
       className={`
         bg-white rounded-lg shadow-lg border-2 transition-all cursor-pointer
-        ${colors.border} ${colors.hoverBorder}
+        ${colors.border} ${colors.hoverBorder} ${criticalRing}
         w-[280px]
       `}
       style={{ zIndex: 1000 }}
@@ -178,11 +225,45 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
         style={{ left: -6, zIndex: 1001 }}
       />
 
-      {/* Header with title and collapse button */}
+      {/* Header with title, schedule badge, and collapse button */}
       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-        <h3 className="font-semibold text-gray-900 text-sm flex-1 pr-2">
-          {task.title}
-        </h3>
+        <div className="flex-1 pr-2">
+          <h3 className="font-semibold text-gray-900 text-sm">
+            {task.title}
+          </h3>
+          {isDelayed && (
+            <span
+              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800 mt-1"
+              title="Delayed (past planned finish)"
+            >
+              Delayed
+            </span>
+          )}
+          {isBehind && (
+            <span
+              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 mt-1"
+              title={`Behind plan by ${Math.round(plannedProgress - actualProgress)}%`}
+            >
+              Behind by {Math.round(plannedProgress - actualProgress)}%
+            </span>
+          )}
+          {isCritical && (
+            <span
+              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-100 text-purple-800 mt-1"
+              title="Critical path — zero float"
+            >
+              Critical
+            </span>
+          )}
+          {isNearCritical && (
+            <span
+              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-600 border border-purple-200 border-dashed mt-1"
+              title={`Near-critical — ${task.cpm_total_float_days ?? 0}d float`}
+            >
+              Float {task.cpm_total_float_days ?? 0}d
+            </span>
+          )}
+        </div>
         <button
           onClick={handleToggle}
           className="toggle-button text-gray-400 hover:text-gray-600 flex-shrink-0"

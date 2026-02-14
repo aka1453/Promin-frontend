@@ -1,10 +1,4 @@
-"use client";
-
-import { useState, FormEvent } from "react";
-import { useRouter } from "next/navigation";
-import dynamic from "next/dynamic";
-
-const LoginUI = dynamic(() => import("./ui"), { ssr: false });
+import LoginUI from "./ui";
 
 export default function LoginPage() {
   return (

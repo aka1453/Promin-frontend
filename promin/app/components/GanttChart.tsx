@@ -59,6 +59,43 @@ const COL_DUR_W = 52;
 const COL_DATE_W = 76;
 const INDENT: Record<number, number> = { 1: 4, 2: 28 };
 
+// Two-row header
+const HEADER_ROW1_H = 22;
+const HEADER_ROW2_H = 18;
+const HEADER_H = HEADER_ROW1_H + HEADER_ROW2_H;
+
+const DAY_LETTERS = "SMTWTFS";
+
+// ─────────────────────────────────────────────
+// COLOR SYSTEM — fixed ordered palette by milestoneIndex
+// ─────────────────────────────────────────────
+const COLOR_PALETTE = [
+  { planned: "#E6F0FF", actual: "#5B8DEF", border: "#9DBAF2", label: "#1F3A66" }, // Blue
+  { planned: "#FFF1EB", actual: "#F4A38C", border: "#F6C1B3", label: "#7A3E2E" }, // Peach
+  { planned: "#EAF7EF", actual: "#4CAF78", border: "#9FD8B4", label: "#1F5A3A" }, // Green
+  { planned: "#FFF9E6", actual: "#F2C94C", border: "#F4DB8C", label: "#6A5A1A" }, // Yellow
+  { planned: "#FFF2E6", actual: "#F2994A", border: "#F4C08A", label: "#6A3D14" }, // Orange
+  { planned: "#FDECEC", actual: "#EB5757", border: "#F19999", label: "#6A1A1A" }, // Red
+] as const;
+
+function colorFor(mi: number) {
+  if (mi < 0) return COLOR_PALETTE[0];
+  return COLOR_PALETTE[mi % COLOR_PALETTE.length];
+}
+
+function plannedColor(mi: number): string {
+  return colorFor(mi).planned;
+}
+function actualColor(mi: number): string {
+  return colorFor(mi).actual;
+}
+function borderColor(mi: number): string {
+  return colorFor(mi).border;
+}
+function labelColor(mi: number): string {
+  return colorFor(mi).label;
+}
+
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
@@ -107,12 +144,17 @@ function startOfWeek(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), diff);
 }
 
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
 // ─────────────────────────────────────────────
 // TOOLTIP
 // ─────────────────────────────────────────────
 type TipData = { x: number; y: number; row: GanttRow; userToday: Date };
 
 function GanttTooltip({ x, y, row, userToday }: TipData) {
+  const mi = row.milestoneIndex;
   const aeDisp =
     row.actualEnd || (row.actualStart && !row.actualEnd ? userToday : null);
   return (
@@ -121,9 +163,13 @@ function GanttTooltip({ x, y, row, userToday }: TipData) {
       style={{ left: x + 12, top: y - 8 }}
     >
       <div className="font-semibold mb-1 text-[12px]">
+        <span
+          className="inline-block w-2 h-2 rounded-full mr-1.5"
+          style={{ backgroundColor: actualColor(mi) }}
+        />
         {row.number} {row.label}
       </div>
-      <div className="text-blue-300">
+      <div style={{ color: colorFor(mi).border }}>
         Planned: {fmtFull(row.plannedStart)} – {fmtFull(row.plannedEnd)}
       </div>
       {row.actualStart && (
@@ -186,6 +232,11 @@ const LeftRow = React.memo(function LeftRow({
         ) : (
           <span className="w-5 flex-shrink-0" />
         )}
+        {/* Color dot */}
+        <span
+          className="inline-block w-2 h-2 rounded-full flex-shrink-0 mr-1.5"
+          style={{ backgroundColor: actualColor(row.milestoneIndex) }}
+        />
         <span
           className={`truncate text-xs ${
             bold ? "font-semibold text-slate-800" : "text-slate-600"
@@ -236,6 +287,7 @@ export default function GanttChart({
   const [zoom, setZoom] = useState<ZoomLevel>("month");
   const scrollRef = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [viewportW, setViewportW] = useState(0);
 
   // Tooltip
   const [tooltip, setTooltip] = useState<TipData | null>(null);
@@ -262,7 +314,21 @@ export default function GanttChart({
 
   const pxPerDay = zoom === "week" ? 36 : 8;
 
-  // Deliverables lookup – kept for Phase B tooltip enrichment
+  // ── Measure viewport width via ResizeObserver ──
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) {
+        setViewportW(e.contentRect.width);
+      }
+    });
+    ro.observe(el);
+    setViewportW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+
+  // Deliverables lookup – kept for tooltip enrichment
   const _delivsByTask = useMemo(() => {
     const m = new Map<number, GanttDeliverable[]>();
     for (const dl of deliverables) {
@@ -317,15 +383,20 @@ export default function GanttChart({
     return { rangeStart: start, rangeEnd: end, totalDays: total };
   }, [milestones, tasks, deliverables, userToday]);
 
-  const totalWidth = totalDays * pxPerDay;
+  // Timeline width: at minimum fill the viewport area
+  const dataWidth = totalDays * pxPerDay;
+  const timelineWidth = Math.max(dataWidth, viewportW - LEFT_PANEL_W);
 
-  // ── Grid lines (unchanged) ──
-  const gridLines = useMemo(() => {
+  // ── Period labels for header Row 1 ──
+  const periodLabels = useMemo(() => {
     const lines: { x: number; label: string; isMajor: boolean }[] = [];
+    const effectiveEndDays = Math.ceil(timelineWidth / pxPerDay);
+    const effectiveEnd = addDays(rangeStart, effectiveEndDays);
+
     if (zoom === "week") {
       let d = startOfWeek(rangeStart);
       if (d < rangeStart) d = addDays(d, 7);
-      while (d <= rangeEnd) {
+      while (d <= effectiveEnd) {
         lines.push({
           x: daysBetween(rangeStart, d) * pxPerDay,
           label: fmtHeader(d, zoom),
@@ -337,7 +408,7 @@ export default function GanttChart({
       let d = startOfMonth(rangeStart);
       if (d < rangeStart)
         d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-      while (d <= rangeEnd) {
+      while (d <= effectiveEnd) {
         lines.push({
           x: daysBetween(rangeStart, d) * pxPerDay,
           label: fmtHeader(d, zoom),
@@ -347,9 +418,36 @@ export default function GanttChart({
       }
     }
     return lines;
-  }, [rangeStart, rangeEnd, zoom, pxPerDay, totalDays]);
+  }, [rangeStart, zoom, pxPerDay, timelineWidth]);
+
+  // ── Day-of-week header cells ──
+  const dayHeaderCells = useMemo(() => {
+    const count = Math.ceil(timelineWidth / pxPerDay);
+    const startDow = rangeStart.getDay(); // 0 = Sunday
+    return Array.from({ length: count }, (_, i) => {
+      const dow = (startDow + i) % 7;
+      return { letter: DAY_LETTERS[dow], isSunday: dow === 0 };
+    });
+  }, [timelineWidth, pxPerDay, rangeStart]);
+
+  // ── CSS grid background (daily + weekly lines) ──
+  const gridBgStyle = useMemo((): React.CSSProperties => {
+    const sundayOffset = (7 - rangeStart.getDay()) % 7;
+    const weekPx = 7 * pxPerDay;
+    return {
+      backgroundImage: [
+        // Weekly boundary (darker, layered on top)
+        `repeating-linear-gradient(to right, rgba(100,116,139,0.35) 0px, rgba(100,116,139,0.35) 1px, transparent 1px, transparent ${weekPx}px)`,
+        // Daily grid (lighter)
+        `repeating-linear-gradient(to right, rgba(203,213,225,0.5) 0px, rgba(203,213,225,0.5) 1px, transparent 1px, transparent ${pxPerDay}px)`,
+      ].join(", "),
+      backgroundPosition: `${sundayOffset * pxPerDay}px 0, 0 0`,
+    };
+  }, [pxPerDay, rangeStart]);
 
   const todayX = daysBetween(rangeStart, userToday) * pxPerDay;
+
+  const dayFs = pxPerDay >= 20 ? 10 : 8;
 
   // ── Build hierarchical rows ──
   const allRows = useMemo(() => {
@@ -503,12 +601,12 @@ export default function GanttChart({
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5">
-            <span className="inline-block w-3 h-3 rounded-sm bg-blue-400" />
+            <span className="inline-block w-3 h-3 rounded-sm opacity-70" style={{ backgroundColor: COLOR_PALETTE[0].planned }} />
             <span className="text-xs text-slate-600">Planned</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="inline-block w-3 h-3 rounded-sm bg-emerald-500" />
-            <span className="text-xs text-slate-600">Actual</span>
+            <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: COLOR_PALETTE[0].actual }} />
+            <span className="text-xs text-slate-600">Progress</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="inline-block w-0.5 h-3 bg-red-500" />
@@ -521,7 +619,7 @@ export default function GanttChart({
       <div ref={scrollRef} className="flex-1 overflow-auto">
         <div
           className="flex"
-          style={{ minWidth: LEFT_PANEL_W + totalWidth }}
+          style={{ minWidth: LEFT_PANEL_W + timelineWidth }}
         >
           {/* ── LEFT PANEL (sticky-left) ── */}
           <div
@@ -533,10 +631,10 @@ export default function GanttChart({
               zIndex: 20,
             }}
           >
-            {/* Column headers (sticky-top inside sticky-left) */}
+            {/* Column headers — height matches two-row timeline header */}
             <div
-              className="flex items-center border-b border-slate-300 bg-slate-100 text-[10px] font-semibold text-slate-500 uppercase tracking-wider"
-              style={{ height: ROW_HEIGHT, position: "sticky", top: 0, zIndex: 5 }}
+              className="flex items-center border-b border-slate-400 bg-slate-100 text-[10px] font-semibold text-slate-500 uppercase tracking-wider"
+              style={{ height: HEADER_H, position: "sticky", top: 0, zIndex: 5 }}
             >
               <div className="flex-1 min-w-0 pl-8 pr-2">Task Name</div>
               <div
@@ -572,52 +670,78 @@ export default function GanttChart({
           </div>
 
           {/* ── RIGHT PANEL (timeline) ── */}
-          <div className="flex-shrink-0" style={{ width: totalWidth }}>
-            {/* Timeline header (sticky-top) */}
+          <div className="flex-shrink-0" style={{ width: timelineWidth }}>
+            {/* ── Two-row timeline header (sticky-top) ── */}
             <div
-              className="relative border-b border-slate-300 bg-slate-100"
-              style={{ height: ROW_HEIGHT, position: "sticky", top: 0, zIndex: 15 }}
+              className="relative border-b border-slate-400 bg-slate-100"
+              style={{ height: HEADER_H, position: "sticky", top: 0, zIndex: 15 }}
             >
-              {gridLines.map((gl, i) => (
-                <div
-                  key={i}
-                  className="absolute top-0 h-full flex items-end pb-1"
-                  style={{ left: gl.x }}
-                >
-                  <span
-                    className={`text-[10px] whitespace-nowrap ${
-                      gl.isMajor
-                        ? "font-semibold text-slate-700"
-                        : "text-slate-400"
-                    }`}
-                    style={{ transform: "translateX(-50%)" }}
-                  >
-                    {gl.label}
-                  </span>
-                </div>
-              ))}
-              {/* Today marker in header */}
+              {/* Row 1: period labels */}
               <div
-                className="absolute top-0 bottom-0 w-0.5 bg-red-500 opacity-70"
+                className="relative border-b border-slate-300"
+                style={{ height: HEADER_ROW1_H }}
+              >
+                {periodLabels.map((pl, i) => (
+                  <div
+                    key={i}
+                    className="absolute top-0 h-full flex items-end pb-0.5"
+                    style={{ left: pl.x }}
+                  >
+                    <span
+                      className={`text-[10px] whitespace-nowrap ${
+                        pl.isMajor
+                          ? "font-semibold text-slate-700"
+                          : "text-slate-400"
+                      }`}
+                      style={{ transform: "translateX(-50%)" }}
+                    >
+                      {pl.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Row 2: day-of-week letters with CSS grid background */}
+              <div
+                className="flex overflow-hidden"
+                style={{
+                  height: HEADER_ROW2_H,
+                  ...gridBgStyle,
+                }}
+              >
+                {dayHeaderCells.map((cell, i) => (
+                  <div
+                    key={i}
+                    className="flex-shrink-0 text-center select-none"
+                    style={{
+                      width: pxPerDay,
+                      fontSize: dayFs,
+                      lineHeight: `${HEADER_ROW2_H}px`,
+                      color: cell.isSunday
+                        ? "rgba(100,116,139,0.7)"
+                        : "rgba(148,163,184,0.8)",
+                    }}
+                  >
+                    {cell.letter}
+                  </div>
+                ))}
+              </div>
+
+              {/* Today marker spanning both header rows */}
+              <div
+                className="absolute top-0 bottom-0 w-0.5 bg-red-500 opacity-80 z-10"
                 style={{ left: todayX }}
               />
             </div>
 
-            {/* Timeline body */}
-            <div className="relative" style={{ height: totalHeight }}>
-              {/* Grid lines */}
-              {gridLines.map((gl, i) => (
-                <div
-                  key={i}
-                  className={`absolute top-0 bottom-0 ${
-                    gl.isMajor
-                      ? "border-l border-slate-300"
-                      : "border-l border-slate-100"
-                  }`}
-                  style={{ left: gl.x }}
-                />
-              ))}
-
+            {/* ── Timeline body ── */}
+            <div
+              className="relative"
+              style={{
+                height: totalHeight,
+                ...gridBgStyle,
+              }}
+            >
               {/* Today line */}
               <div
                 className="absolute top-0 bottom-0 z-20"
@@ -630,7 +754,7 @@ export default function GanttChart({
               {visibleRows.map((row, ri) => (
                 <div
                   key={`bg-${row.id}`}
-                  className={`absolute left-0 right-0 border-b border-slate-200 ${
+                  className={`absolute left-0 right-0 border-b border-slate-200/60 ${
                     row.level === 1
                       ? "bg-slate-50/50"
                       : ri % 2 === 1
@@ -644,16 +768,17 @@ export default function GanttChart({
               {/* ── Bars ── */}
               {visibleRows.map((row, ri) => {
                 const top = ri * ROW_HEIGHT;
+                const mi = row.milestoneIndex;
 
-                // ── Milestone bar ──
+                // ── Milestone bar (Level 1) ──
                 if (row.kind === "milestone") {
                   const ps = row.plannedStart;
                   const pe = row.plannedEnd;
                   if (!ps || !pe) return null;
-                  const as_ = row.actualStart;
-                  const rawAE =
-                    row.actualEnd ||
-                    (as_ && !row.actualEnd ? userToday : null);
+
+                  const pct = clamp(row.progress ?? 0, 0, 100) / 100;
+                  const fullW = bW(ps, pe);
+                  const actW = Math.max(0, fullW * pct);
 
                   return (
                     <div
@@ -662,55 +787,52 @@ export default function GanttChart({
                       style={{ top, height: ROW_HEIGHT, left: 0, right: 0 }}
                     >
                       <div
-                        className="absolute rounded-sm bg-blue-200 border border-blue-300"
+                        className="absolute rounded-sm"
                         style={{
                           left: bL(ps),
-                          width: bW(ps, pe),
+                          width: fullW,
                           top: 4,
                           height: ROW_HEIGHT - 8,
+                          backgroundColor: plannedColor(mi),
+                          border: `1px solid ${borderColor(mi)}`,
+                          boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
                         }}
                         onMouseEnter={(e) => onBarEnter(e, row)}
                         onMouseMove={onBarMove}
                         onMouseLeave={onBarLeave}
                       >
-                        <span className="absolute inset-0 flex items-center px-2 text-[10px] font-medium text-blue-800 truncate pointer-events-none">
+                        {actW > 0 && (
+                          <div
+                            className="absolute top-0 left-0 bottom-0 rounded-sm"
+                            style={{
+                              width: actW,
+                              backgroundColor: actualColor(mi),
+                              borderRadius: actW >= fullW - 1 ? undefined : "3px 0 0 3px",
+                            }}
+                          />
+                        )}
+                        <span
+                          className="absolute inset-0 flex items-center px-2 text-[10px] font-medium truncate pointer-events-none z-[1]"
+                          style={{ color: labelColor(mi) }}
+                        >
                           {row.label}
                         </span>
-                        {as_ &&
-                          rawAE &&
-                          (() => {
-                            const cs = as_ < ps ? ps : as_;
-                            const ce = rawAE > pe ? pe : rawAE;
-                            if (cs >= ce) return null;
-                            const pL = bL(ps);
-                            return (
-                              <div
-                                className="absolute rounded-sm bg-emerald-400/40 border border-emerald-400/50"
-                                style={{
-                                  left: bL(cs) - pL,
-                                  width: bW(cs, ce),
-                                  top: ROW_HEIGHT - 16,
-                                  height: 6,
-                                }}
-                              />
-                            );
-                          })()}
                       </div>
                     </div>
                   );
                 }
 
-                // ── Task bar ──
+                // ── Task bar (Level 2) — two-tone progress ──
                 const ps = row.plannedStart;
                 const pe = row.plannedEnd;
-                const as_ = row.actualStart;
-                const rawAE =
-                  row.actualEnd ||
-                  (as_ && !row.actualEnd ? userToday : null);
+                if (!ps || !pe) return null;
 
-                const BAR_H = 14;
+                const BAR_H = 16;
                 const BAR_TOP = Math.round((ROW_HEIGHT - BAR_H) / 2);
-                const ACT_H = Math.round(BAR_H * 0.6);
+
+                const pct = clamp(row.progress ?? 0, 0, 100) / 100;
+                const fullW = bW(ps, pe);
+                const actW = Math.max(0, fullW * pct);
 
                 return (
                   <div
@@ -718,63 +840,32 @@ export default function GanttChart({
                     className="absolute"
                     style={{ top, height: ROW_HEIGHT, left: 0, right: 0 }}
                   >
-                    {ps && pe && (
-                      <div
-                        className="absolute rounded-sm bg-blue-400"
-                        style={{
-                          left: bL(ps),
-                          width: bW(ps, pe),
-                          top: BAR_TOP,
-                          height: BAR_H,
-                        }}
-                        onMouseEnter={(e) => onBarEnter(e, row)}
-                        onMouseMove={onBarMove}
-                        onMouseLeave={onBarLeave}
-                      >
-                        {as_ &&
-                          rawAE &&
-                          (() => {
-                            const cs = as_ < ps ? ps : as_;
-                            const ce = rawAE > pe ? pe : rawAE;
-                            if (cs >= ce) return null;
-                            const pL = bL(ps);
-                            return (
-                              <div
-                                className={`absolute rounded-sm ${
-                                  row.status === "completed"
-                                    ? "bg-emerald-500"
-                                    : "bg-emerald-400"
-                                }`}
-                                style={{
-                                  left: bL(cs) - pL,
-                                  width: bW(cs, ce),
-                                  top: Math.round((BAR_H - ACT_H) / 2),
-                                  height: ACT_H,
-                                }}
-                              />
-                            );
-                          })()}
-                      </div>
-                    )}
-
-                    {!ps && !pe && as_ && rawAE && (
-                      <div
-                        className={`absolute rounded-sm ${
-                          row.status === "completed"
-                            ? "bg-emerald-500"
-                            : "bg-emerald-400"
-                        }`}
-                        style={{
-                          left: bL(as_),
-                          width: bW(as_, rawAE),
-                          top: BAR_TOP,
-                          height: ACT_H,
-                        }}
-                        onMouseEnter={(e) => onBarEnter(e, row)}
-                        onMouseMove={onBarMove}
-                        onMouseLeave={onBarLeave}
-                      />
-                    )}
+                    <div
+                      className="absolute rounded"
+                      style={{
+                        left: bL(ps),
+                        width: fullW,
+                        top: BAR_TOP,
+                        height: BAR_H,
+                        backgroundColor: plannedColor(mi),
+                        border: `1px solid ${borderColor(mi)}40`,
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
+                      }}
+                      onMouseEnter={(e) => onBarEnter(e, row)}
+                      onMouseMove={onBarMove}
+                      onMouseLeave={onBarLeave}
+                    >
+                      {actW > 0 && (
+                        <div
+                          className="absolute top-0 left-0 bottom-0 rounded"
+                          style={{
+                            width: actW,
+                            backgroundColor: actualColor(mi),
+                            borderRadius: actW >= fullW - 1 ? undefined : "5px 0 0 5px",
+                          }}
+                        />
+                      )}
+                    </div>
                   </div>
                 );
               })}

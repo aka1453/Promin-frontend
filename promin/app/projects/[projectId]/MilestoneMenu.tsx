@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 
 interface Milestone {
@@ -10,7 +11,8 @@ interface Milestone {
   status: string;
 }
 
-export default function MilestoneMenu({ milestone }: { milestone: Milestone }) {
+export default function MilestoneMenu({ milestone, onMutated }: { milestone: Milestone; onMutated?: () => void }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [title, setTitle] = useState(milestone.title);
@@ -39,7 +41,7 @@ export default function MilestoneMenu({ milestone }: { milestone: Milestone }) {
     if (error) {
       alert("Failed to delete milestone: " + error.message);
     } else {
-      window.location.reload();
+      if (onMutated) onMutated(); else router.refresh();
     }
   }
 
@@ -66,7 +68,7 @@ export default function MilestoneMenu({ milestone }: { milestone: Milestone }) {
     } else {
       setEditOpen(false);
       setOpen(false);
-      window.location.reload();
+      if (onMutated) onMutated(); else router.refresh();
     }
   }
 

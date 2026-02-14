@@ -31,16 +31,23 @@ export function UserTimezoneProvider({
   const [timezone, setTimezoneState] = useState("UTC");
 
   useEffect(() => {
+    let cancelled = false;
+
     async function load() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) {
+        await supabase.auth.signOut({ scope: "local" });
+        return;
+      }
+      if (cancelled) return;
+      const user = session?.user ?? null;
       if (!user) return;
       const { data } = await supabase
         .from("profiles")
         .select("timezone")
         .eq("id", user.id)
         .single();
+      if (cancelled) return;
       if (data?.timezone) setTimezoneState(data.timezone);
     }
     load();
@@ -52,13 +59,15 @@ export function UserTimezoneProvider({
       else setTimezoneState("UTC");
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const setTimezone = useCallback(async (tz: string) => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { data: { session } } = await supabase.auth.getSession();
+    const user = session?.user ?? null;
     if (!user) return;
     await supabase.from("profiles").update({ timezone: tz }).eq("id", user.id);
     setTimezoneState(tz);

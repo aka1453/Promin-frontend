@@ -74,20 +74,20 @@ export default function HomePage() {
       return;
     }
 
-    const { data: auth } = await supabase.auth.getUser();
-    if (!auth.user) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return;
 
     const { data } = await supabase
       .from("project_members")
       .select("role")
       .eq("project_id", selectedProjectId)
-      .eq("user_id", auth.user.id)
+      .eq("user_id", session.user.id)
       .maybeSingle();
 
     if (!data) {
       const project = projects.find((p: Project) => p.id === selectedProjectId);
       setProjectRole(
-        project?.owner_id === auth.user.id ? "owner" : null
+        project?.owner_id === session.user.id ? "owner" : null
       );
       return;
     }

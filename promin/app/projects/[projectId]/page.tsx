@@ -10,7 +10,8 @@ import EditMilestoneModal from "../../components/EditMilestoneModal";
 import ProjectSettingsModal from "../../components/ProjectSettingsModal";
 import ActivityFeed from "../../components/ActivityFeed";
 import type { Milestone } from "../../types/milestone";
-import { ArrowLeft, Settings, Clock, BarChart2, GanttChartSquare } from "lucide-react";
+import CreateBaselineDialog from "../../components/CreateBaselineDialog";
+import { ArrowLeft, Settings, Clock, BarChart2, GanttChartSquare, Bookmark } from "lucide-react";
 
 type Project = {
   id: number;
@@ -42,6 +43,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
 
   const [editingMilestoneId, setEditingMilestoneId] = useState<number | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [baselineDialogOpen, setBaselineDialogOpen] = useState(false);
 
   // Activity sidebar state
   const [showActivitySidebar, setShowActivitySidebar] = useState(false);
@@ -247,7 +249,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <button
-                onClick={() => (window.location.href = "/")}
+                onClick={() => router.push("/")}
                 className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800 transition-colors"
               >
                 <ArrowLeft size={18} />
@@ -309,6 +311,17 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                 <BarChart2 size={18} />
                 Reports
               </button>
+
+              {/* Create Baseline Button (owner/editor only) */}
+              {!isArchived && canEdit && (
+                <button
+                  onClick={() => setBaselineDialogOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                >
+                  <Bookmark size={18} />
+                  Baseline
+                </button>
+              )}
 
               {/* Activity Toggle Button */}
               <button
@@ -552,6 +565,17 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
           project={project}
           projectRole={canEdit ? 'owner' : 'viewer'}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+
+      {baselineDialogOpen && (
+        <CreateBaselineDialog
+          projectId={projectId}
+          onClose={() => setBaselineDialogOpen(false)}
+          onSuccess={() => {
+            setBaselineDialogOpen(false);
+            silentRefresh();
+          }}
         />
       )}
     </div>

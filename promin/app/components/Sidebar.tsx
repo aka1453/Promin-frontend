@@ -5,7 +5,7 @@ import { supabase } from "../lib/supabaseClient";
 import { useEffect, useState } from "react";
 import AddProjectButton from "./AddProjectButton";
 import NotificationCenter from "./NotificationCenter";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   DndContext,
   closestCenter,
@@ -92,18 +92,18 @@ function SortableProjectItem({
 }
 
 export default function Sidebar() {
-  const router = useRouter();
   const { projects, reloadProjects } = useProjects();
   const { timezone, setTimezone } = useUserTimezone();
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const router = useRouter();
 
   // Optimistic order for sidebar (prevents snap-back while DB saves)
   const [optimisticOrder, setOptimisticOrder] = useState<number[] | null>(null);
 
-  // Get current user for display
+  // Get current user for display — use getSession() (local cache, no network call)
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setCurrentUser(data.user);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setCurrentUser(session?.user ?? null);
     });
   }, []);
 
@@ -138,8 +138,9 @@ export default function Sidebar() {
   );
 
   async function handleLogout() {
-    await supabase.auth.signOut();
+    await fetch("/api/auth/signout", { method: "POST" });
     router.push("/login");
+    router.refresh();
   }
 
   const pathname = usePathname();
@@ -335,6 +336,7 @@ export default function Sidebar() {
 
         {/* LOG OUT BUTTON */}
         <button
+          type="button"
           onClick={handleLogout}
           className="w-full px-4 py-3 rounded-lg text-gray-700 font-medium text-base hover:bg-gray-100 transition"
         >

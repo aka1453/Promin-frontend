@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabaseClient";
 import { ProjectRoleProvider } from "../../../context/ProjectRoleContext";
@@ -40,55 +40,66 @@ function GanttPageContent({ projectId }: { projectId: number }) {
   const [deliverables, setDeliverables] = useState<GanttDeliverable[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-
-    // Project
-    const { data: proj } = await supabase
-      .from("projects")
-      .select("id, name")
-      .eq("id", projectId)
-      .single();
-    if (proj) setProject(proj as Project);
-
-    // Milestones
-    const { data: msData } = await supabase
-      .from("milestones")
-      .select("*")
-      .eq("project_id", projectId)
-      .order("id");
-    if (msData) setMilestones(msData as Milestone[]);
-
-    // Tasks for all milestones in this project
-    if (msData && msData.length > 0) {
-      const msIds = msData.map((m: Record<string, unknown>) => m.id);
-      const { data: taskData } = await supabase
-        .from("tasks")
-        .select("*")
-        .in("milestone_id", msIds)
-        .order("id");
-      if (taskData) {
-        setTasks(taskData as Task[]);
-
-        // Deliverables for all tasks
-        const taskIds = (taskData as Task[]).map((t) => t.id);
-        if (taskIds.length > 0) {
-          const { data: delData } = await supabase
-            .from("deliverables")
-            .select("id, task_id, title, is_done, planned_start, planned_end")
-            .in("task_id", taskIds)
-            .order("id");
-          if (delData) setDeliverables(delData as GanttDeliverable[]);
-        }
-      }
-    }
-
-    setLoading(false);
-  }, [projectId]);
+  // Guard against setState after unmount
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      // Project
+      const { data: proj } = await supabase
+        .from("projects")
+        .select("id, name")
+        .eq("id", projectId)
+        .single();
+      if (cancelled) return;
+      if (proj) setProject(proj as Project);
+
+      // Milestones
+      const { data: msData } = await supabase
+        .from("milestones")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("id");
+      if (cancelled) return;
+      if (msData) setMilestones(msData as Milestone[]);
+
+      // Tasks for all milestones in this project
+      if (msData && msData.length > 0) {
+        const msIds = msData.map((m: Record<string, unknown>) => m.id);
+        const { data: taskData } = await supabase
+          .from("tasks")
+          .select("*")
+          .in("milestone_id", msIds)
+          .order("id");
+        if (cancelled) return;
+        if (taskData) {
+          setTasks(taskData as Task[]);
+
+          // Deliverables for all tasks
+          const taskIds = (taskData as Task[]).map((t) => t.id);
+          if (taskIds.length > 0) {
+            const { data: delData } = await supabase
+              .from("deliverables")
+              .select("id, task_id, title, is_done, planned_start, planned_end")
+              .in("task_id", taskIds)
+              .order("id");
+            if (cancelled) return;
+            if (delData) setDeliverables(delData as GanttDeliverable[]);
+          }
+        }
+      }
+
+      if (!cancelled) setLoading(false);
+    }
+
     load();
-  }, [load]);
+    return () => { cancelled = true; };
+  }, [projectId]);
 
   if (loading || !project) {
     return (

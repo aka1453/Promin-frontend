@@ -47,7 +47,8 @@ export default function MilestonePage({
     setProject(p || null);
 
     // Get user role
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { session } } = await supabase.auth.getSession();
+    const user = session?.user ?? null;
     if (user) {
       const { data: memberData } = await supabase
         .from("project_members")

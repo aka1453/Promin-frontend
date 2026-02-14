@@ -36,6 +36,15 @@ export interface TaskWithDependencies {
   // Deliverable counts
   deliverables_total?: number;
   deliverables_done?: number;
+  // Health engine (DB-computed, read-only)
+  is_delayed?: boolean;
+  delay_days?: number;
+  delay_reason_code?: string | null;
+  status_health?: string;
+  // CPM fields (DB-computed, read-only)
+  is_critical?: boolean;
+  is_near_critical?: boolean;
+  cpm_total_float_days?: number | null;
 }
 
 export interface CreateDependencyInput {

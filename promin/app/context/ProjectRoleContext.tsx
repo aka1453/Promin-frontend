@@ -33,12 +33,16 @@ export function ProjectRoleProvider({
   useEffect(() => {
     if (!projectId) return;
 
+    let cancelled = false;
+
     async function resolveRole() {
       setLoading(true);
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      // Use getSession() (local cache) instead of getUser() (network call)
+      // to avoid a burst of concurrent /auth/v1/user requests on navigation.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled) return;
+      const user = session?.user ?? null;
 
       if (!user) {
         setRole("viewer");
@@ -46,37 +50,28 @@ export function ProjectRoleProvider({
         return;
       }
 
-      // 1️⃣ Owner check (fast path)
-const { data: project, error: projectErr } = await supabase
-  .from("projects")
-  .select("id, owner_id")
-  .eq("id", projectId)
-  .single();
+      // 1. Owner check (fast path)
+      const { data: project } = await supabase
+        .from("projects")
+        .select("id, owner_id")
+        .eq("id", projectId)
+        .single();
+      if (cancelled) return;
 
-console.log("[ProjectRole] projectId:", projectId);
-console.log("[ProjectRole] auth user:", user.id);
-console.log("[ProjectRole] project row:", project);
-console.log("[ProjectRole] project error:", projectErr);
+      if (project?.owner_id === user.id) {
+        setRole("owner");
+        setLoading(false);
+        return;
+      }
 
-if (project?.owner_id === user.id) {
-  console.log("[ProjectRole] role resolved: OWNER");
-  setRole("owner");
-  setLoading(false);
-  return;
-}
-
-
-      // 2️⃣ Membership check
-      const { data: membership, error: memberErr } = await supabase
-  .from("project_members")
-  .select("role")
-  .eq("project_id", projectId)
-  .eq("user_id", user.id)
-  .maybeSingle();
-
-console.log("[ProjectRole] membership row:", membership);
-console.log("[ProjectRole] membership error:", memberErr);
-
+      // 2. Membership check
+      const { data: membership } = await supabase
+        .from("project_members")
+        .select("role")
+        .eq("project_id", projectId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (cancelled) return;
 
       if (membership?.role === "editor") {
         setRole("editor");
@@ -88,6 +83,7 @@ console.log("[ProjectRole] membership error:", memberErr);
     }
 
     resolveRole();
+    return () => { cancelled = true; };
   }, [projectId]);
 
   const value: ProjectRoleContextValue = {

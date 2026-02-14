@@ -72,11 +72,11 @@ export async function calculateTaskDurationFromDeliverables(
 /**
  * Calculate planned dates for a task based on its predecessors and deliverables
  * 
- * CORRECTED FORMULA for dependent tasks:
- * planned_start = predecessor.planned_end + predecessor.duration_days + THIS_TASK.offset_days
- * planned_end = planned_start + this_task_duration
- * 
- * Key change: Uses the SUCCESSOR's offset, not the predecessor's offset
+ * Formula for dependent tasks:
+ * planned_start(T) = max(planned_end of all predecessors) + offset_days(T)
+ * planned_end(T)   = planned_start(T) + duration_days(T)
+ *
+ * planned_end already includes duration, so we must NOT add duration again.
  */
 export async function calculateTaskDates(taskId: number): Promise<{
   planned_start: string;
@@ -128,11 +128,11 @@ export async function calculateTaskDates(taskId: number): Promise<{
   }
 
   // CASE 2: Has predecessors - dependent task
-  // Get predecessor tasks with their end dates and durations (NOT their offsets)
+  // Get predecessor tasks with their end dates
   const predecessorIds = dependencies.map((d) => d.depends_on_task_id);
   const { data: predecessors, error: predsError } = await supabase
     .from("tasks")
-    .select("id, planned_end, duration_days")
+    .select("id, planned_end")
     .in("id", predecessorIds);
 
   if (predsError || !predecessors) {
@@ -140,30 +140,22 @@ export async function calculateTaskDates(taskId: number): Promise<{
     return null;
   }
 
-  // Find the latest predecessor completion date
-  // CORRECTED FORMULA: predecessor.planned_end + predecessor.duration_days (no predecessor offset)
-  let latestCompletionDate: Date | null = null;
+  // Find the latest predecessor planned_end.
+  // planned_end already incorporates duration, so we use it directly.
+  let latestPredEnd: Date | null = null;
 
   for (const pred of predecessors) {
     if (pred.planned_end) {
-      // Start with predecessor's planned_end
-      const predCompletionDate = new Date(pred.planned_end);
-      
-      // Add predecessor's duration
-      const predDuration = pred.duration_days || 0;
-      predCompletionDate.setDate(predCompletionDate.getDate() + predDuration);
-      
-      // DO NOT add predecessor's offset - that's wrong!
-      // The offset belongs to THIS task, not the predecessor
+      const predEnd = new Date(pred.planned_end);
 
-      if (!latestCompletionDate || predCompletionDate > latestCompletionDate) {
-        latestCompletionDate = predCompletionDate;
+      if (!latestPredEnd || predEnd > latestPredEnd) {
+        latestPredEnd = predEnd;
       }
     }
   }
 
   // If we couldn't find any predecessor end dates, fall back to today
-  if (!latestCompletionDate) {
+  if (!latestPredEnd) {
     const startDate = new Date();
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + taskDuration);
@@ -174,12 +166,9 @@ export async function calculateTaskDates(taskId: number): Promise<{
     };
   }
 
-  // CORRECTED: Add THIS task's offset to determine when it starts
-  const plannedStart = new Date(latestCompletionDate);
-  plannedStart.setDate(plannedStart.getDate() + 1); // Day after predecessor completes
-  
-  // Add THIS task's offset (buffer before this task starts)
+  // planned_start(T) = max(pred.planned_end) + offset_days(T)
   const thisTaskOffset = task.offset_days || 0;
+  const plannedStart = new Date(latestPredEnd);
   plannedStart.setDate(plannedStart.getDate() + thisTaskOffset);
 
   // Calculate end date based on this task's duration (from deliverables)

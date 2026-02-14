@@ -1,105 +1,163 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
+import type { RealtimeChannel } from "@supabase/supabase-js";
+
+function isInvalidRefreshTokenError(err: { message?: string } | null): boolean {
+  if (!err?.message) return false;
+  return (
+    err.message.includes("Invalid Refresh Token") ||
+    err.message.includes("Refresh Token Not Found")
+  );
+}
+
+function redirectToLogin() {
+  if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+    window.location.href = "/login";
+  }
+}
+
 const ProjectsContext = createContext<any>(null);
 
 export function ProjectsProvider({ children }: { children: React.ReactNode }) {
   const [projects, setProjects] = useState<any[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const mountedRef = useRef(true);
+  const channelRef = useRef<RealtimeChannel | null>(null);
 
-  async function reloadProjects() {
-  const { data: authData, error: authErr } = await supabase.auth.getUser();
-  console.log("[ProjectsContext] auth user:", authData?.user?.id, "authErr:", authErr);
+  const reloadProjects = useCallback(async () => {
+    try {
+      const { data: { session }, error: authErr } = await supabase.auth.getSession();
 
-  const { data, error } = await supabase
-    .from("projects")
-    .select("*")
-    .order("position", { ascending: true });
-
-  console.log("[ProjectsContext] select projects error:", error, "count:", data?.length);
-
-  // DO NOT filter deleted here — sidebar needs them
-
-  if (!error && data) {
-    setProjects(data);
-    console.log(
-      "[ProjectsContext] raw projects from DB:",
-      data.map(p => ({
-        id: p.id,
-        status: p.status,
-        deleted_at: p.deleted_at,
-      }))
-    );
-
-    console.log(
-      "[ProjectsContext] loaded projects:",
-      data.map(p => ({
-        id: p.id,
-        deleted_at: p.deleted_at,
-        status: p.status,
-      }))
-    );
-  }
-
-  setLoaded(true);
-}
-
-useEffect(() => {
-  reloadProjects();
-
-  const {
-    data: { subscription },
-  } = supabase.auth.onAuthStateChange((_event, session) => {
-    console.log("[ProjectsContext] auth state changed:", _event);
-
-    // Clear stale data immediately
-    setProjects([]);
-
-    if (session) {
-      // Logged in → load fresh data for this user
-      reloadProjects();
-    } else {
-      // Logged out → nothing should be visible
-      setLoaded(true);
-    }
-  });
-
-  // Realtime: re-fetch all projects whenever any project row is updated.
-  // This covers planned_start/planned_end/actual_progress rolling up from
-  // milestone and task changes via DB triggers.
-  const projectsChannel = supabase
-    .channel("projects-context")
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "projects",
-      },
-      () => {
-        reloadProjects();
+      if (authErr) {
+        if (isInvalidRefreshTokenError(authErr)) {
+          await supabase.auth.signOut({ scope: "local" });
+          if (mountedRef.current) {
+            setProjects([]);
+            setLoaded(true);
+          }
+          redirectToLogin();
+        } else {
+          // Transient error — don't destroy the session
+          if (mountedRef.current) {
+            setLoaded(true);
+          }
+        }
+        return;
       }
-    )
-    .subscribe();
 
-  return () => {
-    subscription.unsubscribe();
-    supabase.removeChannel(projectsChannel);
-  };
-}, []);
+      if (!session?.user) {
+        if (mountedRef.current) {
+          setProjects([]);
+          setLoaded(true);
+        }
+        return;
+      }
 
-useEffect(() => {
-  function handleHardDelete() {
-    reloadProjects();
-  }
+      const { data, error } = await supabase
+        .from("projects")
+        .select("*")
+        .order("position", { ascending: true });
 
-  window.addEventListener("projects-deleted", handleHardDelete);
+      if (!mountedRef.current) return;
 
-  return () => {
-    window.removeEventListener("projects-deleted", handleHardDelete);
-  };
-}, []);
+      if (!error && data) {
+        setProjects(data);
+      }
+
+      setLoaded(true);
+    } catch {
+      if (mountedRef.current) {
+        setLoaded(true);
+      }
+    }
+  }, []);
+
+  /** Subscribe to realtime only when we have a valid session. */
+  const subscribeRealtime = useCallback(() => {
+    // Never open a realtime channel on /login — there is no session and the
+    // resulting auth requests cause CORS preflight failures.
+    if (typeof window !== "undefined" && window.location.pathname.startsWith("/login")) return;
+
+    // Tear down any existing channel first
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+
+    const ch = supabase
+      .channel("projects-context")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "projects" },
+        () => { reloadProjects(); }
+      )
+      .subscribe();
+
+    channelRef.current = ch;
+  }, [reloadProjects]);
+
+  const unsubscribeRealtime = useCallback(() => {
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    // Initial load — also start realtime if session exists
+    (async () => {
+      await reloadProjects();
+      const { data: { session }, error: sessErr } = await supabase.auth.getSession();
+      if (sessErr && isInvalidRefreshTokenError(sessErr)) {
+        await supabase.auth.signOut({ scope: "local" });
+        if (mountedRef.current) {
+          setProjects([]);
+          setLoaded(true);
+        }
+        redirectToLogin();
+        return;
+      }
+      if (session && mountedRef.current) {
+        subscribeRealtime();
+      }
+    })();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setProjects([]);
+
+      if (session) {
+        reloadProjects();
+        subscribeRealtime();
+      } else {
+        unsubscribeRealtime();
+        setLoaded(true);
+      }
+    });
+
+    return () => {
+      mountedRef.current = false;
+      subscription.unsubscribe();
+      unsubscribeRealtime();
+    };
+  }, [reloadProjects, subscribeRealtime, unsubscribeRealtime]);
+
+  useEffect(() => {
+    function handleHardDelete() {
+      reloadProjects();
+    }
+
+    window.addEventListener("projects-deleted", handleHardDelete);
+
+    return () => {
+      window.removeEventListener("projects-deleted", handleHardDelete);
+    };
+  }, [reloadProjects]);
 
   return (
     <ProjectsContext.Provider value={{ projects, setProjects, reloadProjects }}>

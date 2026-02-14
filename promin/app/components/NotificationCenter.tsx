@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabaseClient";
 import { formatDistanceToNow } from "date-fns";
 
@@ -19,6 +20,7 @@ type Notification = {
 };
 
 export default function NotificationCenter() {
+  const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
@@ -27,9 +29,13 @@ export default function NotificationCenter() {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) {
-        setCurrentUserId(data.user.id);
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        supabase.auth.signOut({ scope: "local" });
+        return;
+      }
+      if (session?.user) {
+        setCurrentUserId(session.user.id);
         loadNotifications();
       }
     });
@@ -190,8 +196,7 @@ export default function NotificationCenter() {
         url = `/projects/${notification.project_id}`;
       }
       
-      // Navigate using Next.js router
-      window.location.href = url;
+      router.push(url);
     }
     
     setIsOpen(false);
