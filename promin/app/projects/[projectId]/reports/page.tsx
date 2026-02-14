@@ -93,7 +93,7 @@ function ProgressLineChart({
   userToday: Date;
 }) {
   const [period, setPeriod] = useState<PeriodKey>("monthly");
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; date: string; planned: number; actual: number | null; milestoneLabel?: string } | null>(null);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; date: string; planned: number; actual: number | null; baseline: number | null; milestoneLabel?: string } | null>(null);
   const [scurveData, setScurveData] = useState<ScurveRow[]>([]);
   const [chartLoading, setChartLoading] = useState(true);
 
@@ -104,7 +104,7 @@ function ProgressLineChart({
       const { data: rows } = await supabase.rpc("get_project_scurve", {
         p_project_id: projectId,
         p_granularity: period,
-        p_include_baseline: false,
+        p_include_baseline: true,
       });
       if (!cancelled) {
         setScurveData(
@@ -170,6 +170,17 @@ function ProgressLineChart({
     const d = new Date(row.dt + "T00:00:00");
     return [xOf(fracOf(d)), yOf(row.actual * 100)];
   });
+
+  // Baseline: only if data exists
+  const hasBaseline = scurveData.some((row) => row.baseline != null);
+  const baselinePoints: [number, number][] = hasBaseline
+    ? scurveData
+        .filter((row) => row.baseline != null)
+        .map((row) => {
+          const d = new Date(row.dt + "T00:00:00");
+          return [xOf(fracOf(d)), yOf(row.baseline! * 100)];
+        })
+    : [];
 
   const toPath = (pts: [number, number][]) =>
     pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p[0]} ${p[1]}`).join(" ");
@@ -255,6 +266,7 @@ function ProgressLineChart({
       date: d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
       planned: row.planned * 100,
       actual: isInPast ? row.actual * 100 : null,
+      baseline: row.baseline != null ? row.baseline * 100 : null,
       svgX: xOf(fracOf(d)),
       svgY: yOf(row.planned * 100),
     };
@@ -293,6 +305,9 @@ function ProgressLineChart({
           ) : (
             <>
               <div className="font-semibold text-slate-700 mb-1">{tooltip.date}</div>
+              {tooltip.baseline !== null && (
+                <div className="text-gray-500">Baseline: {tooltip.baseline.toFixed(1)}%</div>
+              )}
               <div className="text-blue-600">Planned: {tooltip.planned.toFixed(1)}%</div>
               {tooltip.actual !== null && (
                 <div className="text-emerald-600">Actual: {tooltip.actual.toFixed(1)}%</div>
@@ -339,6 +354,20 @@ function ProgressLineChart({
           >
             {lbl.label}
           </text>
+        ))}
+
+        {/* Baseline line — dotted gray (behind other lines) */}
+        {baselinePoints.length >= 2 && (
+          <path
+            d={toPath(baselinePoints)}
+            fill="none"
+            stroke="#9ca3af"
+            strokeWidth={1.5}
+            strokeDasharray="3 3"
+          />
+        )}
+        {baselinePoints.map((p, i) => (
+          <circle key={`bl-${i}`} cx={p[0]} cy={p[1]} r={2} fill="#9ca3af" opacity={0.6} />
         ))}
 
         {/* Planned area fill (subtle) */}
@@ -408,7 +437,7 @@ function ProgressLineChart({
                 height={20}
                 fill="transparent"
                 style={{ cursor: "pointer" }}
-                onMouseEnter={() => setTooltip({ x: m.x, y: m.y, date: "", planned: 0, actual: null, milestoneLabel: m.completed ? `${m.label} — Completed: ${m.dateStr}` : `${m.label} — Planned: ${m.dateStr}` })}
+                onMouseEnter={() => setTooltip({ x: m.x, y: m.y, date: "", planned: 0, actual: null, baseline: null, milestoneLabel: m.completed ? `${m.label} — Completed: ${m.dateStr}` : `${m.label} — Planned: ${m.dateStr}` })}
                 onMouseLeave={() => setTooltip(null)}
               />
             </g>
@@ -449,7 +478,7 @@ function ProgressLineChart({
             width={16}
             height={chartH}
             fill="transparent"
-            onMouseEnter={() => setTooltip({ x: td.svgX, y: td.svgY, date: td.date, planned: td.planned, actual: td.actual })}
+            onMouseEnter={() => setTooltip({ x: td.svgX, y: td.svgY, date: td.date, planned: td.planned, actual: td.actual, baseline: td.baseline })}
             onMouseLeave={() => setTooltip(null)}
             style={{ cursor: "crosshair" }}
           />
@@ -459,6 +488,12 @@ function ProgressLineChart({
 
       {/* Legend */}
       <div className="flex justify-center gap-6 mt-2">
+        {hasBaseline && (
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-0.5" style={{ backgroundImage: "repeating-linear-gradient(to right, #9ca3af 0, #9ca3af 3px, transparent 3px, transparent 6px)" }} />
+            <span className="text-xs text-slate-600">Baseline</span>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <div className="w-5 h-0.5 bg-blue-500" style={{ backgroundImage: "repeating-linear-gradient(to right, #3b82f6 0, #3b82f6 4px, transparent 4px, transparent 8px)" }} />
           <span className="text-xs text-slate-600">Planned</span>
@@ -1297,7 +1332,7 @@ function ExportTab({
       const { data: rawRows } = await supabase.rpc("get_project_scurve", {
         p_project_id: project.id,
         p_granularity: scurveGranularity,
-        p_include_baseline: false,
+        p_include_baseline: true,
       });
       const scurveRows: ScurveRow[] = (rawRows ?? []).map((r: Record<string, unknown>) => ({
         dt: String(r.dt),
@@ -1407,6 +1442,33 @@ function ExportTab({
           doc.circle(px, py, 0.7, "F");
         }
 
+        // Baseline line (dotted gray) — only if baseline data exists
+        const hasBaselineData = scurveRows.some((r) => r.baseline != null);
+        if (hasBaselineData) {
+          const blRows = scurveRows.filter((r) => r.baseline != null);
+          doc.setDrawColor(156, 163, 175); // gray-400
+          doc.setLineDashPattern([1.5, 1.5], 0);
+          doc.setLineWidth(0.4);
+          for (let i = 0; i < blRows.length - 1; i++) {
+            const r1 = blRows[i];
+            const r2 = blRows[i + 1];
+            const x1 = chartX + fracOfD(new Date(r1.dt + "T00:00:00")) * chartW;
+            const y1 = chartY + chartH - r1.baseline! * chartH;
+            const x2 = chartX + fracOfD(new Date(r2.dt + "T00:00:00")) * chartW;
+            const y2 = chartY + chartH - r2.baseline! * chartH;
+            doc.line(x1, y1, x2, y2);
+          }
+          // Baseline dots
+          doc.setLineDashPattern([], 0);
+          doc.setFillColor(156, 163, 175);
+          for (const row of blRows) {
+            const d = new Date(row.dt + "T00:00:00");
+            const px = chartX + fracOfD(d) * chartW;
+            const py = chartY + chartH - row.baseline! * chartH;
+            doc.circle(px, py, 0.5, "F");
+          }
+        }
+
         // Milestone completion markers (interpolate Y from RPC data)
         const interpolatePdf = (target: Date, field: "planned" | "actual"): number => {
           const tTime = target.getTime();
@@ -1458,12 +1520,19 @@ function ExportTab({
         doc.setTextColor(0);
         doc.setFontSize(7);
         const legY = chartY + chartH + 10;
+        let legX = chartX;
+        if (hasBaselineData) {
+          doc.setDrawColor(156, 163, 175); doc.setLineDashPattern([1.5, 1.5], 0);
+          doc.line(legX, legY, legX + 10, legY);
+          doc.text("Baseline", legX + 12, legY + 1);
+          legX += 40;
+        }
         doc.setDrawColor(59, 130, 246); doc.setLineDashPattern([2, 2], 0);
-        doc.line(chartX, legY, chartX + 10, legY);
-        doc.text("Planned", chartX + 12, legY + 1);
+        doc.line(legX, legY, legX + 10, legY);
+        doc.text("Planned", legX + 12, legY + 1);
         doc.setDrawColor(16, 185, 129); doc.setLineDashPattern([], 0);
-        doc.line(chartX + 40, legY, chartX + 50, legY);
-        doc.text("Actual", chartX + 52, legY + 1);
+        doc.line(legX + 40, legY, legX + 50, legY);
+        doc.text("Actual", legX + 52, legY + 1);
 
         y = chartY + chartH + 18;
 
@@ -1480,9 +1549,10 @@ function ExportTab({
         doc.setFillColor(248, 250, 252);
         doc.rect(14, y - 3, 256, 6, "F");
         doc.text("Date", 16, y);
-        doc.text("Planned %", 55, y);
-        doc.text("Actual %", 90, y);
-        doc.text("Milestone Completed", 125, y);
+        if (hasBaselineData) doc.text("Baseline %", 50, y);
+        doc.text("Planned %", hasBaselineData ? 80 : 55, y);
+        doc.text("Actual %", hasBaselineData ? 110 : 90, y);
+        doc.text("Milestone Completed", hasBaselineData ? 140 : 125, y);
         y += 2;
         doc.setDrawColor(200);
         doc.line(14, y, 270, y);
@@ -1520,10 +1590,12 @@ function ExportTab({
             }
           }
 
+          const baselineVal = row.baseline != null ? (row.baseline * 100).toFixed(1) : "N/A";
           doc.text(dateLabel, 16, y);
-          doc.text(`${plannedVal}%`, 55, y);
-          doc.text(actualVal === "—" ? "—" : `${actualVal}%`, 90, y);
-          doc.text(String(msLabels.join(", ")).substring(0, 55), 125, y);
+          if (hasBaselineData) doc.text(baselineVal === "N/A" ? "N/A" : `${baselineVal}%`, 50, y);
+          doc.text(`${plannedVal}%`, hasBaselineData ? 80 : 55, y);
+          doc.text(actualVal === "—" ? "—" : `${actualVal}%`, hasBaselineData ? 110 : 90, y);
+          doc.text(String(msLabels.join(", ")).substring(0, 55), hasBaselineData ? 140 : 125, y);
           y += 5;
         }
       } else {
