@@ -24,3 +24,4 @@ dist/
 # Supabase temp files
 supabase/.temp/
 *.zip
+supabase/.branches/
