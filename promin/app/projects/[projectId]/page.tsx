@@ -12,6 +12,7 @@ import ActivityFeed from "../../components/ActivityFeed";
 import type { Milestone } from "../../types/milestone";
 import CreateBaselineDialog from "../../components/CreateBaselineDialog";
 import { ArrowLeft, Settings, Clock, BarChart2, GanttChartSquare, Bookmark } from "lucide-react";
+import { useUserTimezone } from "../../context/UserTimezoneContext";
 
 type Project = {
   id: number;
@@ -33,6 +34,7 @@ type Project = {
 function ProjectPageContent({ projectId }: { projectId: number }) {
   const { canEdit, canDelete } = useProjectRole();
   const router = useRouter();
+  const { timezone } = useUserTimezone();
 
   const [project, setProject] = useState<Project | null>(null);
   const isArchived = project?.status === "archived";
@@ -47,6 +49,11 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
 
   // Activity sidebar state
   const [showActivitySidebar, setShowActivitySidebar] = useState(false);
+
+  // Canonical progress from RPC (0-100 scale)
+  const [canonicalProgress, setCanonicalProgress] = useState<{
+    planned: number | null; actual: number | null; risk_state: string | null;
+  }>({ planned: null, actual: null, risk_state: null });
 
   // Track whether we've done the first load — realtime refreshes skip the spinner
   const initialLoadDone = useRef(false);
@@ -71,6 +78,26 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
     return { project: projectData as Project, milestones: (msData || []) as Milestone[] };
   }, [projectId]);
 
+  // Fetch canonical progress from RPC
+  const fetchCanonicalProgress = useCallback(async () => {
+    const userToday = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
+    const { data: progRows, error: progErr } = await supabase.rpc("get_project_progress_asof", {
+      p_project_id: projectId,
+      p_asof: userToday,
+      p_include_baseline: false,
+    });
+    if (!progErr && progRows && progRows.length > 0) {
+      const r = progRows[0] as { planned: number; actual: number; risk_state: string | null };
+      setCanonicalProgress({
+        planned: Number(r.planned ?? 0) * 100,
+        actual: Number(r.actual ?? 0) * 100,
+        risk_state: r.risk_state ?? null,
+      });
+    } else {
+      setCanonicalProgress({ planned: null, actual: null, risk_state: null });
+    }
+  }, [projectId, timezone]);
+
   // Full load with spinner — used on mount and explicit user actions
   const load = useCallback(async () => {
     setLoading(true);
@@ -86,9 +113,10 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
 
     setProject(p);
     setMilestones(ms);
+    await fetchCanonicalProgress();
     setLoading(false);
     initialLoadDone.current = true;
-  }, [fetchData]);
+  }, [fetchData, fetchCanonicalProgress]);
 
   // Silent refresh — no spinner. Used by realtime callbacks.
   const silentRefresh = useCallback(async () => {
@@ -97,7 +125,8 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
       setProject(p);
       setMilestones(ms);
     }
-  }, [fetchData]);
+    await fetchCanonicalProgress();
+  }, [fetchData, fetchCanonicalProgress]);
 
   // Initial mount
   useEffect(() => {
@@ -369,13 +398,13 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-medium text-slate-600">Planned Progress</span>
                       <span className="text-sm font-semibold text-blue-600">
-                        {project.planned_progress ?? 0}%
+                        {canonicalProgress.planned != null ? `${canonicalProgress.planned.toFixed(1)}%` : "—"}
                       </span>
                     </div>
                     <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
                       <div
                         className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-blue-500 to-blue-400"
-                        style={{ width: `${project.planned_progress ?? 0}%` }}
+                        style={{ width: `${canonicalProgress.planned ?? 0}%` }}
                       />
                     </div>
                   </div>
@@ -384,13 +413,13 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-medium text-slate-600">Actual Progress</span>
                       <span className="text-sm font-semibold text-emerald-600">
-                        {project.actual_progress ?? 0}%
+                        {canonicalProgress.actual != null ? `${canonicalProgress.actual.toFixed(1)}%` : "—"}
                       </span>
                     </div>
                     <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
                       <div
                         className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-emerald-500 to-emerald-400"
-                        style={{ width: `${project.actual_progress ?? 0}%` }}
+                        style={{ width: `${canonicalProgress.actual ?? 0}%` }}
                       />
                     </div>
                   </div>

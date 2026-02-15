@@ -190,6 +190,15 @@ Chat is an **accelerator of understanding**, not a planner.
   - Baseline S-curve uses frozen effective_weight — immune to current weight changes
   - UI chart renders baseline (dotted gray) + planned + actual; legend + tooltip updated
   - S-curve PDF export includes baseline line + baseline column in data table
+- ✅ Canonical progress model — Complete
+  - DB RPCs: `get_project_progress_asof`, `get_project_scurve` (consistency fix), `get_project_progress_hierarchy`
+  - Batch RPC: `get_projects_progress_asof(bigint[], date)` — single call for home/projects list
+  - Step-function semantics: planned = 1 if asof >= planned_end, actual = 1 if is_done
+  - Hierarchical weight normalization: `(mw/Σmw)·(tw/Σtw)·(sw/Σsw)`
+  - Worst-case risk rollup: ON_TRACK / AT_RISK / DELAYED
+  - Frontend enforcement (home page, project detail, reports): canonical RPC values only
+  - ProjectOverviewCard: no fallback to DB progress columns
+  - Remaining: milestone detail, TaskCard, TaskNode, MilestoneCard, GanttChart still use DB columns
 - ⬜ Cost & EVM primitives
 - ⬜ Resource planning
 

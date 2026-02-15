@@ -10,6 +10,10 @@ type Props = {
   onClick?: () => void;
   onOpenSettings?: () => void;
   hideSettings?: boolean;
+  /** Canonical planned progress (0-100 scale) from batch RPC. */
+  canonicalPlanned: number | null;
+  /** Canonical actual progress (0-100 scale) from batch RPC. */
+  canonicalActual: number | null;
 };
 
 
@@ -45,13 +49,15 @@ export default function ProjectOverviewCard({
   onClick,
   onOpenSettings,
   hideSettings,
+  canonicalPlanned,
+  canonicalActual,
 }: Props) {
   const router = useRouter();
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const planned = Number(project.planned_progress ?? 0);
-  const actual = Number(project.actual_progress ?? 0);
+  const planned = canonicalPlanned ?? 0;
+  const actual = canonicalActual ?? 0;
   const isCompleted = project.status === "completed";
   const pmName = project?.project_manager?.full_name;
   const pmId = project?.project_manager?.id;

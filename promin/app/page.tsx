@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "./lib/supabaseClient";
 import ProjectOverviewCard from "./components/ProjectOverviewCard";
@@ -13,14 +13,18 @@ type Project = {
   name?: string | null;
   status?: string | null;
   position?: number | null;
-  planned_progress?: number | null;
-  actual_progress?: number | null;
   created_at?: string;
   deleted_at?: string | null;
   project_manager?: {
     id: number;
     full_name: string;
   } | null;
+};
+
+type CanonicalProgress = {
+  planned: number;
+  actual: number;
+  risk_state: string;
 };
 
 type SortMode =
@@ -50,7 +54,6 @@ function sortProjectsDeterministically(projects: Project[]) {
 export default function HomePage() {
   const router = useRouter();
   const { projects } = useProjects();
-
   const [sortMode, setSortMode] = useState<SortMode>(() => {
     if (typeof window === "undefined") return "position";
     return (localStorage.getItem("projects_sort_mode") as SortMode) ?? "position";
@@ -61,10 +64,47 @@ export default function HomePage() {
   const [projectRole, setProjectRole] =
     useState<"owner" | "editor" | "viewer" | null>(null);
 
+  // Canonical progress from batch RPC (0-100 scale)
+  const [progressMap, setProgressMap] = useState<Record<number, CanonicalProgress>>({});
+
   // Persist sort mode
   useEffect(() => {
     localStorage.setItem("projects_sort_mode", sortMode);
   }, [sortMode]);
+
+  // Fetch canonical progress for all visible projects via batch RPC
+  const activeProjectIds = useMemo(() => {
+    return projects
+      .filter((p: Project) => p.deleted_at == null && p.status !== "archived")
+      .map((p: Project) => p.id);
+  }, [projects]);
+
+  const fetchBatchProgress = useCallback(async () => {
+    if (activeProjectIds.length === 0) {
+      setProgressMap({});
+      return;
+    }
+    const dubaiToday = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dubai" });
+    const { data, error } = await supabase.rpc("get_projects_progress_asof", {
+      p_project_ids: activeProjectIds,
+      p_asof: dubaiToday,
+    });
+    if (!error && data) {
+      const map: Record<number, CanonicalProgress> = {};
+      for (const row of data as { project_id: number; planned: number; actual: number; risk_state: string }[]) {
+        map[row.project_id] = {
+          planned: Number(row.planned ?? 0) * 100,
+          actual: Number(row.actual ?? 0) * 100,
+          risk_state: row.risk_state ?? "ON_TRACK",
+        };
+      }
+      setProgressMap(map);
+    }
+  }, [activeProjectIds]);
+
+  useEffect(() => {
+    fetchBatchProgress();
+  }, [fetchBatchProgress]);
 
   // Load role when settings modal opens
   useEffect(() => {
@@ -110,6 +150,9 @@ export default function HomePage() {
         ? sortProjectsDeterministically(list)
         : [...list];
 
+    // Helper to get canonical progress for sorting
+    const getProgress = (p: Project) => progressMap[p.id];
+
     switch (sortMode) {
       case "name_asc":
         return sorted.sort((a, b) =>
@@ -121,30 +164,34 @@ export default function HomePage() {
         );
       case "progress_asc":
         return sorted.sort(
-          (a, b) => (a.actual_progress ?? 0) - (b.actual_progress ?? 0)
+          (a, b) => (getProgress(a)?.actual ?? 0) - (getProgress(b)?.actual ?? 0)
         );
       case "progress_desc":
         return sorted.sort(
-          (a, b) => (b.actual_progress ?? 0) - (a.actual_progress ?? 0)
+          (a, b) => (getProgress(b)?.actual ?? 0) - (getProgress(a)?.actual ?? 0)
         );
       case "delta_asc":
         return sorted.sort(
-          (a, b) =>
-            ((a.actual_progress ?? 0) - (a.planned_progress ?? 0)) -
-            ((b.actual_progress ?? 0) - (b.planned_progress ?? 0))
-
+          (a, b) => {
+            const pa = getProgress(a);
+            const pb = getProgress(b);
+            return ((pa?.actual ?? 0) - (pa?.planned ?? 0)) -
+                   ((pb?.actual ?? 0) - (pb?.planned ?? 0));
+          }
         );
       case "delta_desc":
         return sorted.sort(
-          (a, b) =>
-            ((b.actual_progress ?? 0) - (b.planned_progress ?? 0)) -
-            ((a.actual_progress ?? 0) - (a.planned_progress ?? 0))
-
+          (a, b) => {
+            const pa = getProgress(a);
+            const pb = getProgress(b);
+            return ((pb?.actual ?? 0) - (pb?.planned ?? 0)) -
+                   ((pa?.actual ?? 0) - (pa?.planned ?? 0));
+          }
         );
       default:
         return sorted;
     }
-  }, [projects, sortMode]);
+  }, [projects, sortMode, progressMap]);
 
   return (
     <>
@@ -182,20 +229,25 @@ export default function HomePage() {
               layout
               className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"
             >
-              {visibleProjects.map((project) => (
-                <motion.div key={project.id} layout>
-                  <ProjectOverviewCard
-                    project={project}
-                    onClick={() =>
-                      router.push(`/projects/${project.id}`)
-                    }
-                    onOpenSettings={() => {
+              {visibleProjects.map((project) => {
+                const canon = progressMap[project.id];
+                return (
+                  <motion.div key={project.id} layout>
+                    <ProjectOverviewCard
+                      project={project}
+                      canonicalPlanned={canon?.planned ?? null}
+                      canonicalActual={canon?.actual ?? null}
+                      onClick={() =>
+                        router.push(`/projects/${project.id}`)
+                      }
+                      onOpenSettings={() => {
   setSelectedProjectId(project.id);
   setSettingsOpen(true);
 }}
-                  />
-                </motion.div>
-              ))}
+                    />
+                  </motion.div>
+                );
+              })}
             </motion.div>
           )}
         </div>

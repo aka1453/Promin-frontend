@@ -112,6 +112,8 @@ loadTrash();            // re-fetch Trash from DB
   <ProjectOverviewCard
   project={project}
   hideSettings
+  canonicalPlanned={null}
+  canonicalActual={null}
 />
 
   {/* Restore */}

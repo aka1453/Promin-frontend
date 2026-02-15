@@ -601,7 +601,7 @@ function MilestoneDonut({
 // ─────────────────────────────────────────────
 // SVG CHART: STACKED BAR (Cost Breakdown)
 // ─────────────────────────────────────────────
-function CostBreakdown({ project }: { project: Project }) {
+function CostBreakdown({ project, canonicalActual }: { project: Project; canonicalActual: number | null }) {
   const budget = project.budgeted_cost ?? 0;
   const spent = project.actual_cost ?? 0;
   if (budget <= 0) {
@@ -612,7 +612,7 @@ function CostBreakdown({ project }: { project: Project }) {
 
   const spentPct = clamp((spent / budget) * 100, 0, 100);
   // Forecast: assume remaining work will cost proportionally to progress
-  const actualProgress = project.actual_progress ?? 0;
+  const actualProgress = canonicalActual ?? 0;
   const forecastTotal = actualProgress > 0 ? (spent / actualProgress) * 100 : spent;
   const forecastRemaining = clamp(forecastTotal - spent, 0, budget - spent);
   const forecastPct = clamp((forecastRemaining / budget) * 100, 0, 100 - spentPct);
@@ -653,14 +653,17 @@ function KPIStrip({
   project,
   milestones,
   userToday,
+  canonicalProgress,
 }: {
   project: Project;
   milestones: Milestone[];
   userToday: Date;
+  canonicalProgress: { planned: number | null; actual: number | null; baseline: number | null; risk_state: string | null };
 }) {
-  const actual = project.actual_progress ?? 0;
-  const planned = project.planned_progress ?? 0;
-  const delta = actual - planned;
+  // Use canonical S-curve values (0-100 scale) for consistency with chart
+  const actual = canonicalProgress.actual;
+  const planned = canonicalProgress.planned;
+  const delta = actual != null && planned != null ? actual - planned : null;
 
   const completedMs = milestones.filter((m) => m.status === "completed").length;
   const totalMs = milestones.length;
@@ -671,7 +674,7 @@ function KPIStrip({
   const plannedEnd = project.planned_end ? new Date(project.planned_end + "T00:00:00") : null;
   const daysRemaining = plannedEnd ? daysBetween(today, plannedEnd) : null;
   const isOverdue = plannedEnd && today > plannedEnd && project.status !== "completed";
-  const isBehind = delta < -3 && !isOverdue;
+  const isBehind = delta != null && delta < -3 && !isOverdue;
 
   // Budget
   const budget = project.budgeted_cost ?? 0;
@@ -687,13 +690,15 @@ function KPIStrip({
         </div>
         <div className="flex flex-col min-w-0">
           <span className="text-xs text-slate-500">Overall Progress</span>
-          <span className="text-xl font-bold text-slate-800">{actual.toFixed(1)}%</span>
+          <span className="text-xl font-bold text-slate-800">{actual != null ? `${actual.toFixed(1)}%` : "—"}</span>
           <span
             className={`text-xs ${
-              delta > 0 ? "text-emerald-600" : delta < 0 ? "text-amber-600" : "text-slate-500"
+              delta != null && delta > 0 ? "text-emerald-600" : delta != null && delta < 0 ? "text-amber-600" : "text-slate-500"
             }`}
           >
-            {delta > 0
+            {delta == null
+              ? "—"
+              : delta > 0
               ? `▲ ${delta.toFixed(1)}% vs plan`
               : delta < 0
               ? `▼ ${Math.abs(delta).toFixed(1)}% vs plan`
@@ -766,10 +771,12 @@ function OverviewTab({
   project,
   milestones,
   userToday,
+  canonicalActual,
 }: {
   project: Project;
   milestones: Milestone[];
   userToday: Date;
+  canonicalActual: number | null;
 }) {
   return (
     <div className="grid grid-cols-3 gap-6">
@@ -788,7 +795,7 @@ function OverviewTab({
 
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
           <h3 className="text-base font-semibold text-slate-700 mb-4">Cost Breakdown</h3>
-          <CostBreakdown project={project} />
+          <CostBreakdown project={project} canonicalActual={canonicalActual} />
         </div>
       </div>
     </div>
@@ -798,7 +805,7 @@ function OverviewTab({
 // ─────────────────────────────────────────────
 // TAB: MILESTONES
 // ─────────────────────────────────────────────
-function MilestonesTab({ milestones }: { milestones: Milestone[] }) {
+function MilestonesTab({ milestones, progressMap }: { milestones: Milestone[]; progressMap: Record<number, { planned: number; actual: number; risk_state: string }> }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -815,8 +822,9 @@ function MilestonesTab({ milestones }: { milestones: Milestone[] }) {
         {milestones.map((m) => {
           const isCompleted = m.status === "completed";
           const isInProgress = m.status === "in_progress";
-          const plannedPct = m.planned_progress ?? 0;
-          const actualPct = m.actual_progress ?? 0;
+          const canon = progressMap[m.id];
+          const plannedPct = canon?.planned ?? 0;
+          const actualPct = canon?.actual ?? 0;
           const weightPct = m.weight != null ? Math.round(m.weight * 100) : 0;
 
           let dotColor = "bg-slate-300";
@@ -895,9 +903,11 @@ function MilestonesTab({ milestones }: { milestones: Milestone[] }) {
 function TasksTab({
   milestones,
   tasks,
+  progressMap,
 }: {
   milestones: Milestone[];
   tasks: Task[];
+  progressMap: Record<number, { planned: number; actual: number; risk_state: string }>;
 }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "in_progress" | "completed">("all");
@@ -993,7 +1003,8 @@ function TasksTab({
           </thead>
           <tbody>
             {filtered.map((t) => {
-              const prog = t.progress ?? 0;
+              const canon = progressMap[t.id];
+              const prog = canon?.actual ?? 0;
               return (
                 <tr key={t.id} className="border-b border-slate-50">
                   <td className="px-4 py-3 text-sm font-medium text-slate-800">
@@ -1052,11 +1063,17 @@ function ExportTab({
   milestones,
   tasks,
   userToday,
+  canonicalProgress,
+  msProgressMap,
+  taskProgressMap,
 }: {
   project: Project;
   milestones: Milestone[];
   tasks: Task[];
   userToday: Date;
+  canonicalProgress: { planned: number | null; actual: number | null; baseline: number | null; risk_state: string | null };
+  msProgressMap: Record<number, { planned: number; actual: number; risk_state: string }>;
+  taskProgressMap: Record<number, { planned: number; actual: number; risk_state: string }>;
 }) {
   const [exporting, setExporting] = useState<string | null>(null);
   const [scurveGranularity, setScurveGranularity] = useState<PeriodKey>("monthly");
@@ -1068,16 +1085,19 @@ function ExportTab({
       const msNames: Record<number, string> = {};
       milestones.forEach((m) => { msNames[m.id] = m.name || "Untitled"; });
 
-      const rows = tasks.map((t) => [
-        t.title,
-        msNames[t.milestone_id] || "",
-        t.status,
-        t.planned_start || "",
-        t.planned_end || "",
-        t.actual_start || "",
-        t.actual_end || "",
-        String(t.progress ?? 0),
-      ]);
+      const rows = tasks.map((t) => {
+        const canon = taskProgressMap[t.id];
+        return [
+          t.title,
+          msNames[t.milestone_id] || "",
+          t.status,
+          t.planned_start || "",
+          t.planned_end || "",
+          t.actual_start || "",
+          t.actual_end || "",
+          (canon?.actual ?? 0).toFixed(1),
+        ];
+      });
 
       const csvContent = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -1206,9 +1226,9 @@ function ExportTab({
       const cardGap = 4;
       const cardStartX = 14;
 
-      const actual = project.actual_progress ?? 0;
-      const planned = project.planned_progress ?? 0;
-      const delta = actual - planned;
+      const actual = canonicalProgress.actual;
+      const planned = canonicalProgress.planned;
+      const delta = actual != null && planned != null ? actual - planned : null;
       const completedMs = milestones.filter((m) => m.status === "completed").length;
       const totalMs = milestones.length;
       const budget = project.budgeted_cost ?? 0;
@@ -1219,7 +1239,7 @@ function ExportTab({
       const daysRem = plannedEnd ? Math.max(0, Math.round((plannedEnd.getTime() - todayForPdf.getTime()) / (1000 * 60 * 60 * 24))) : null;
 
       const kpis = [
-        { label: "Overall Progress", value: `${actual.toFixed(1)}%`, sub: delta > 0 ? `+${delta.toFixed(1)}% vs plan` : delta < 0 ? `${delta.toFixed(1)}% vs plan` : "On track" },
+        { label: "Overall Progress", value: actual != null ? `${actual.toFixed(1)}%` : "—", sub: delta == null ? "—" : delta > 0 ? `+${delta.toFixed(1)}% vs plan` : delta < 0 ? `${delta.toFixed(1)}% vs plan` : "On track" },
         { label: "Milestones", value: `${completedMs} / ${totalMs}`, sub: `${totalMs - completedMs} remaining` },
         { label: "Days Remaining", value: daysRem !== null ? String(daysRem) : "—", sub: daysRem !== null && daysRem <= 0 ? "Overdue" : "On schedule" },
         { label: "Budget Used", value: `${budgetPct}%`, sub: `$${spent.toLocaleString()} of $${budget.toLocaleString()}` },
@@ -1272,8 +1292,9 @@ function ExportTab({
         if (y > 270) { doc.addPage(); y = 20; drawMsHeader(); doc.setTextColor(30, 41, 59); doc.setFontSize(8); }
         doc.text(String(m.name || "Untitled").substring(0, 28), 16, y);
         doc.text(m.status || "pending", 75, y);
-        doc.text(`${(m.planned_progress ?? 0).toFixed(0)}%`, 100, y);
-        doc.text(`${(m.actual_progress ?? 0).toFixed(0)}%`, 118, y);
+        const msProg = msProgressMap[m.id];
+        doc.text(`${(msProg?.planned ?? 0).toFixed(0)}%`, 100, y);
+        doc.text(`${(msProg?.actual ?? 0).toFixed(0)}%`, 118, y);
         doc.text(m.planned_start || "—", 140, y);
         doc.text(m.planned_end || "—", 162, y);
         doc.text(`${((m.weight ?? 0) * 100).toFixed(0)}%`, 182, y);
@@ -1313,7 +1334,8 @@ function ExportTab({
         doc.text(String(t.title).substring(0, 30), 16, y);
         doc.text(String(msNames[t.milestone_id] || "—").substring(0, 18), 80, y);
         doc.text(t.status || "pending", 120, y);
-        doc.text(`${(t.progress ?? 0).toFixed(0)}%`, 145, y);
+        const tProg = taskProgressMap[t.id];
+        doc.text(`${(tProg?.actual ?? 0).toFixed(0)}%`, 145, y);
         doc.text(t.planned_start || "—", 165, y);
         doc.text(t.planned_end || "—", 182, y);
         y += 5;
@@ -1713,6 +1735,16 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [showActivitySidebar, setShowActivitySidebar] = useState(false);
+  const [canonicalProgress, setCanonicalProgress] = useState<{
+    planned: number | null;
+    actual: number | null;
+    baseline: number | null;
+    risk_state: string | null;
+  }>({ planned: null, actual: null, baseline: null, risk_state: null });
+
+  // Per-entity canonical progress from get_project_progress_hierarchy
+  const [msProgressMap, setMsProgressMap] = useState<Record<number, { planned: number; actual: number; risk_state: string }>>({});
+  const [taskProgressMap, setTaskProgressMap] = useState<Record<number, { planned: number; actual: number; risk_state: string }>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1724,6 +1756,43 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
       .eq("id", projectId)
       .single();
     if (proj) setProject(proj as Project);
+
+    // Canonical progress from S-curve logic (0-1 scale), timezone-aware
+    // Compute Dubai "today" explicitly — DB CURRENT_DATE may be behind
+    const dubaiToday = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dubai" }); // YYYY-MM-DD
+    const { data: progRows, error: progError } = await supabase.rpc("get_project_progress_asof", {
+      p_project_id: projectId,
+      p_asof: dubaiToday,
+      p_include_baseline: true,
+    });
+    if (!progError && progRows && progRows.length > 0) {
+      const r = progRows[0] as { planned: number; actual: number; baseline: number | null; risk_state: string | null };
+      setCanonicalProgress({
+        planned: Number(r.planned ?? 0) * 100,
+        actual: Number(r.actual ?? 0) * 100,
+        baseline: r.baseline != null ? Number(r.baseline) * 100 : null,
+        risk_state: r.risk_state ?? null,
+      });
+    } else {
+      setCanonicalProgress({ planned: null, actual: null, baseline: null, risk_state: null });
+    }
+
+    // Canonical per-entity progress (milestones + tasks) from hierarchy RPC
+    const { data: hierRows } = await supabase.rpc("get_project_progress_hierarchy", {
+      p_project_id: projectId,
+      p_asof: dubaiToday,
+    });
+    const newMsMap: Record<number, { planned: number; actual: number; risk_state: string }> = {};
+    const newTaskMap: Record<number, { planned: number; actual: number; risk_state: string }> = {};
+    if (hierRows) {
+      for (const row of hierRows as { entity_type: string; entity_id: number; planned: number; actual: number; risk_state: string }[]) {
+        const entry = { planned: Number(row.planned ?? 0) * 100, actual: Number(row.actual ?? 0) * 100, risk_state: row.risk_state ?? "ON_TRACK" };
+        if (row.entity_type === "milestone") newMsMap[row.entity_id] = entry;
+        else if (row.entity_type === "task") newTaskMap[row.entity_id] = entry;
+      }
+    }
+    setMsProgressMap(newMsMap);
+    setTaskProgressMap(newTaskMap);
 
     // Milestones
     const { data: msData } = await supabase
@@ -1893,19 +1962,19 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
             </div>
 
             {/* KPI STRIP */}
-            <KPIStrip project={project} milestones={milestones} userToday={userToday} />
+            <KPIStrip project={project} milestones={milestones} userToday={userToday} canonicalProgress={canonicalProgress} />
 
             {/* TAB CONTENT */}
             {activeTab === "overview" && (
-              <OverviewTab project={project} milestones={milestones} userToday={userToday} />
+              <OverviewTab project={project} milestones={milestones} userToday={userToday} canonicalActual={canonicalProgress.actual} />
             )}
             {activeTab === "milestones" && (
-              <MilestonesTab milestones={milestones} />
+              <MilestonesTab milestones={milestones} progressMap={msProgressMap} />
             )}
             {activeTab === "tasks" && (
-              <TasksTab milestones={milestones} tasks={tasks} />
+              <TasksTab milestones={milestones} tasks={tasks} progressMap={taskProgressMap} />
             )}
-            {activeTab === "export" && <ExportTab project={project} milestones={milestones} tasks={tasks} userToday={userToday} />}
+            {activeTab === "export" && <ExportTab project={project} milestones={milestones} tasks={tasks} userToday={userToday} canonicalProgress={canonicalProgress} msProgressMap={msProgressMap} taskProgressMap={taskProgressMap} />}
           </div>
 
           {/* Activity Sidebar — same panel as project detail */}
