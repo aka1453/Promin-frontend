@@ -224,10 +224,38 @@ Drafts require **human review and acceptance** before becoming real plans.
 
 ### Phase 5.1 — Document Intake & Evidence Layer
 
-- ⬜ Upload multiple intake documents (Contract, SOW, BOM, TQs, etc.)  
-- ⬜ Versioned document storage with metadata  
-- ⬜ Project-level access control (RLS)  
-- ⬜ Input hashing for traceability  
+- ✅ Upload multiple intake documents (Contract, SOW, BOM, TQs, etc.)
+  - Server-side API routes: `POST /api/projects/[projectId]/documents` (upload), `GET` (list)
+  - Download via signed URL: `GET /api/projects/[projectId]/documents/[documentId]/download`
+  - 50 MB file size limit enforced server-side
+  - UI page: `/projects/[projectId]/documents` with upload button, document table, download
+  - "Documents" nav button added to project header (visible to all members)
+- ✅ Versioned document storage with metadata
+  - Table: `project_documents` with auto-incrementing version per (project_id, original_filename)
+  - BEFORE INSERT trigger: `auto_version_project_document()` computes next version atomically
+  - Storage bucket: `project-documents` (private), path: `{projectId}/{timestamp}_{filename}`
+  - Immutable: no UPDATE or DELETE policies on table or storage objects
+  - Migration: `20260216120000_project_documents.sql`
+- ✅ Project-level access control (RLS)
+  - SELECT: `is_project_member()` AND NOT deleted
+  - INSERT: `can_edit_project()` AND NOT archived AND NOT deleted
+  - Storage RLS mirrors table RLS via `split_part(name,'/',1)::bigint` path extraction
+  - No UPDATE/DELETE policies (immutability guarantee)
+- ✅ Input hashing for traceability
+  - SHA-256 computed server-side on upload, stored as `content_hash`
+  - Hash displayed (truncated) in document list with full hash on hover
+  - Full attribution: `uploader_user_id` + `created_at` on every record
+
+#### Phase 5.1 — Verification Checklist
+
+1. ✅ RLS correctness: non-member blocked; viewer can list/download; editor/owner can upload
+2. ✅ Versioning: same filename uploaded twice → version 1 and version 2; both files in storage
+3. ✅ Immutability: no UPDATE/DELETE policies on table or storage; upsert: false on upload
+4. ✅ Hash integrity: SHA-256 computed server-side and stored with each document record
+5. ✅ Archived project: upload blocked (RLS INSERT policy checks `is_project_archived`)
+6. ✅ Attribution: every record has `uploader_user_id` (from session) and `created_at`
+7. ✅ Navigation: "Documents" button in project header links to documents page
+8. ✅ Build: `next build` passes with all new routes registered
 
 ### Phase 5.2 — Draft Plan Generation (Non-Authoritative)
 

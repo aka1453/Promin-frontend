@@ -11,16 +11,17 @@ import ProjectSettingsModal from "../../components/ProjectSettingsModal";
 import ActivityFeed from "../../components/ActivityFeed";
 import type { Milestone } from "../../types/milestone";
 import CreateBaselineDialog from "../../components/CreateBaselineDialog";
-import { ArrowLeft, Settings, Clock, BarChart2, GanttChartSquare, Bookmark } from "lucide-react";
+import { ArrowLeft, Settings, Clock, BarChart2, GanttChartSquare, Bookmark, FileText } from "lucide-react";
 import { useUserTimezone } from "../../context/UserTimezoneContext";
+import type { EntityProgress, HierarchyRow } from "../../types/progress";
+import { toEntityProgress } from "../../types/progress";
+import ExplainButton from "../../components/explain/ExplainButton";
 
 type Project = {
   id: number;
   name: string | null;
   description: string | null;
   status?: "pending" | "in_progress" | "completed" | "archived" | string | null;
-  planned_progress?: number | null;
-  actual_progress?: number | null;
   planned_start?: string | null;
   planned_end?: string | null;
   actual_start?: string | null;
@@ -50,10 +51,13 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
   // Activity sidebar state
   const [showActivitySidebar, setShowActivitySidebar] = useState(false);
 
-  // Canonical progress from RPC (0-100 scale)
+  // Canonical progress from hierarchy RPC (0-100 scale)
   const [canonicalProgress, setCanonicalProgress] = useState<{
     planned: number | null; actual: number | null; risk_state: string | null;
   }>({ planned: null, actual: null, risk_state: null });
+
+  // Per-milestone canonical progress from hierarchy RPC, keyed by string entity ID
+  const [msProgressMap, setMsProgressMap] = useState<Record<string, EntityProgress>>({});
 
   // Track whether we've done the first load — realtime refreshes skip the spinner
   const initialLoadDone = useRef(false);
@@ -78,23 +82,32 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
     return { project: projectData as Project, milestones: (msData || []) as Milestone[] };
   }, [projectId]);
 
-  // Fetch canonical progress from RPC
+  // Fetch canonical progress from hierarchy RPC (project + milestones in one call)
   const fetchCanonicalProgress = useCallback(async () => {
     const userToday = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
-    const { data: progRows, error: progErr } = await supabase.rpc("get_project_progress_asof", {
+    const { data: hierRows, error: hierErr } = await supabase.rpc("get_project_progress_hierarchy", {
       p_project_id: projectId,
       p_asof: userToday,
-      p_include_baseline: false,
     });
-    if (!progErr && progRows && progRows.length > 0) {
-      const r = progRows[0] as { planned: number; actual: number; risk_state: string | null };
-      setCanonicalProgress({
-        planned: Number(r.planned ?? 0) * 100,
-        actual: Number(r.actual ?? 0) * 100,
-        risk_state: r.risk_state ?? null,
-      });
+    if (!hierErr && hierRows) {
+      const rows = hierRows as HierarchyRow[];
+      const projRow = rows.find(r => r.entity_type === "project");
+      if (projRow) {
+        const p = toEntityProgress(projRow);
+        setCanonicalProgress({ planned: p.planned, actual: p.actual, risk_state: p.risk_state });
+      } else {
+        setCanonicalProgress({ planned: null, actual: null, risk_state: null });
+      }
+      const newMsMap: Record<string, EntityProgress> = {};
+      for (const row of rows) {
+        if (row.entity_type === "milestone") {
+          newMsMap[String(row.entity_id)] = toEntityProgress(row);
+        }
+      }
+      setMsProgressMap(newMsMap);
     } else {
       setCanonicalProgress({ planned: null, actual: null, risk_state: null });
+      setMsProgressMap({});
     }
   }, [projectId, timezone]);
 
@@ -133,7 +146,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
     load();
   }, [load]);
 
-  // Realtime on projects table — fires when rollup chain updates actual_progress
+  // Realtime on projects table — fires when DB-computed fields change
   useEffect(() => {
     const ch = supabase
       .channel("proj-detail-projects-" + projectId)
@@ -154,7 +167,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
     return () => { supabase.removeChannel(ch); };
   }, [projectId, silentRefresh]);
 
-  // Realtime on milestones table — fires when milestone rollup updates actual_progress
+  // Realtime on milestones table — fires when milestone data changes
   useEffect(() => {
     const ch = supabase
       .channel("proj-detail-milestones-" + projectId)
@@ -341,6 +354,15 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                 Reports
               </button>
 
+              {/* Documents Button */}
+              <button
+                onClick={() => router.push(`/projects/${projectId}/documents`)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+              >
+                <FileText size={18} />
+                Documents
+              </button>
+
               {/* Create Baseline Button (owner/editor only) */}
               {!isArchived && canEdit && (
                 <button
@@ -391,7 +413,10 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
 
             {project && (
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8">
-                <h2 className="text-lg font-semibold text-slate-700 mb-5">Project Overview</h2>
+                <div className="flex items-center justify-between mb-5">
+                  <h2 className="text-lg font-semibold text-slate-700">Project Overview</h2>
+                  <ExplainButton entityType="project" entityId={projectId} />
+                </div>
 
                 <div className="space-y-4 mb-6">
                   <div>
@@ -545,6 +570,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                 canEdit={canEdit}
                 canDelete={canDelete}
                 onMilestoneUpdated={load}
+                msProgressMap={msProgressMap}
               />
             </div>
           </div>
