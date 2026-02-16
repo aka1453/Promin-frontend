@@ -257,7 +257,7 @@ Drafts require **human review and acceptance** before becoming real plans.
 7. ✅ Navigation: "Documents" button in project header links to documents page
 8. ✅ Build: `next build` passes with all new routes registered
 
-### Phase 5.2 — Draft Plan Generation (Non-Authoritative)
+### Phase 5.2 — Draft Plan Generation (Non-Authoritative) — COMPLETE and FROZEN
 
 - ✅ AI-generated draft project structure:
   - Milestones (with weights, dates, source references)
@@ -296,7 +296,7 @@ Drafts require **human review and acceptance** before becoming real plans.
   - "Drafts" nav button added to project header
 - ✅ Build verified: `next build` passes with all routes registered
 
-### Phase 5.3 — Review, Edit & Acceptance Flow
+### Phase 5.3 — Review, Edit & Acceptance Flow — COMPLETE (minimal draft acceptance flow only)
 
 - ✅ Validation before acceptance (weights, deps, cycles)
   - `validate_plan_draft()` RPC: checks conflicts, assumptions, hierarchy completeness, weight sanity, dependency cycles (Kahn's topological sort)
@@ -307,8 +307,13 @@ Drafts require **human review and acceptance** before becoming real plans.
 - ✅ Full audit trail of draft acceptance
   - `plan_drafts.decided_at`, `decided_by`, `extraction_ids`, `ai_model` fields
   - Draft records preserved after acceptance (immutable audit log)
-- ⬜ Side-by-side draft vs editable structure (deferred)
-- ⬜ User modifies draft freely (deferred — inline editing)
+
+### Phase 5.3E — Full Draft Editing UX — NOT STARTED
+
+- ⬜ Side-by-side draft vs editable structure
+- ⬜ User modifies draft freely (inline editing)
+
+> **No further changes to Phase 5.2 or Phase 5.3 without explicit reopening.**
 
 ---
 
