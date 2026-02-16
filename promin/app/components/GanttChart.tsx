@@ -27,9 +27,9 @@ type GanttDeliverable = {
 type GanttRow = {
   id: string;
   label: string;
-  level: 1 | 2;
+  level: 0 | 1 | 2;
   number: string;
-  kind: "milestone" | "task";
+  kind: "project" | "milestone" | "task";
   parentId: string | null;
   plannedStart: Date | null;
   plannedEnd: Date | null;
@@ -37,6 +37,7 @@ type GanttRow = {
   actualEnd: Date | null;
   status: string | null;
   progress: number | null;
+  plannedProgress: number | null;
   durationDays: number | null;
   childIds: string[];
   milestoneIndex: number;
@@ -48,6 +49,10 @@ type GanttProps = {
   tasks: Task[];
   deliverables?: GanttDeliverable[];
   userToday: Date;
+  projectName?: string;
+  projectProgress?: { planned: number; actual: number } | null;
+  msProgressMap?: Record<string, { planned: number; actual: number }>;
+  taskProgressMap?: Record<string, { planned: number; actual: number }>;
 };
 
 // ─────────────────────────────────────────────
@@ -57,7 +62,15 @@ const ROW_HEIGHT = 32;
 const LEFT_PANEL_W = 400;
 const COL_DUR_W = 52;
 const COL_DATE_W = 76;
-const INDENT: Record<number, number> = { 1: 4, 2: 28 };
+const INDENT: Record<number, number> = { 0: 4, 1: 16, 2: 40 };
+
+// Project-level bar color (dark slate — distinct from milestone palette)
+const PROJECT_COLOR = {
+  planned: "#E2E8F0",  // slate-200
+  actual: "#475569",   // slate-600
+  border: "#94A3B8",   // slate-400
+  label: "#1E293B",    // slate-800
+};
 
 // Two-row header
 const HEADER_ROW1_H = 22;
@@ -165,11 +178,11 @@ function GanttTooltip({ x, y, row, userToday }: TipData) {
       <div className="font-semibold mb-1 text-[12px]">
         <span
           className="inline-block w-2 h-2 rounded-full mr-1.5"
-          style={{ backgroundColor: actualColor(mi) }}
+          style={{ backgroundColor: row.kind === "project" ? PROJECT_COLOR.actual : actualColor(mi) }}
         />
-        {row.number} {row.label}
+        {row.number}{row.number ? " " : ""}{row.label}
       </div>
-      <div style={{ color: colorFor(mi).border }}>
+      <div style={{ color: row.kind === "project" ? PROJECT_COLOR.border : colorFor(mi).border }}>
         Planned: {fmtFull(row.plannedStart)} – {fmtFull(row.plannedEnd)}
       </div>
       {row.actualStart && (
@@ -178,7 +191,8 @@ function GanttTooltip({ x, y, row, userToday }: TipData) {
           {row.actualStart && !row.actualEnd ? " (in progress)" : ""}
         </div>
       )}
-      {row.progress != null && <div>Progress: {row.progress}%</div>}
+      {row.plannedProgress != null && <div>Planned Progress: {row.plannedProgress}%</div>}
+      {row.progress != null && <div>Actual Progress: {row.progress}%</div>}
       {row.durationDays != null && <div>Duration: {row.durationDays}d</div>}
     </div>
   );
@@ -200,9 +214,9 @@ const LeftRow = React.memo(function LeftRow({
 }) {
   const indent = INDENT[row.level] ?? 4;
   const hasKids = row.childIds.length > 0;
-  const bold = row.level === 1;
+  const bold = row.level <= 1;
   const bg =
-    row.level === 1 ? "bg-slate-100" : isEven ? "bg-white" : "bg-slate-50/50";
+    row.level === 0 ? "bg-slate-200" : row.level === 1 ? "bg-slate-100" : isEven ? "bg-white" : "bg-slate-50/50";
 
   return (
     <div
@@ -235,7 +249,7 @@ const LeftRow = React.memo(function LeftRow({
         {/* Color dot */}
         <span
           className="inline-block w-2 h-2 rounded-full flex-shrink-0 mr-1.5"
-          style={{ backgroundColor: actualColor(row.milestoneIndex) }}
+          style={{ backgroundColor: row.kind === "project" ? PROJECT_COLOR.actual : actualColor(row.milestoneIndex) }}
         />
         <span
           className={`truncate text-xs ${
@@ -283,6 +297,10 @@ export default function GanttChart({
   tasks,
   deliverables = [],
   userToday,
+  projectName,
+  projectProgress = null,
+  msProgressMap = {},
+  taskProgressMap = {},
 }: GanttProps) {
   const [zoom, setZoom] = useState<ZoomLevel>("month");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -458,6 +476,34 @@ export default function GanttChart({
       arr.push(t);
       tasksByMs.set(t.milestone_id, arr);
     }
+
+    // Project summary row — date range derived from milestones
+    const msChildIds = milestones.map((ms) => `ms-${ms.id}`);
+    const allMsStarts = milestones.map((ms) => parseDate(ms.planned_start)).filter(Boolean) as Date[];
+    const allMsEnds = milestones.map((ms) => parseDate(ms.planned_end)).filter(Boolean) as Date[];
+    const projStart = allMsStarts.length > 0 ? new Date(Math.min(...allMsStarts.map((d) => d.getTime()))) : null;
+    const projEnd = allMsEnds.length > 0 ? new Date(Math.max(...allMsEnds.map((d) => d.getTime()))) : null;
+    if (projectName) {
+      result.push({
+        id: "project",
+        label: projectName,
+        level: 0,
+        number: "",
+        kind: "project",
+        parentId: null,
+        plannedStart: projStart,
+        plannedEnd: projEnd,
+        actualStart: null,
+        actualEnd: null,
+        status: null,
+        progress: projectProgress ? Math.round(projectProgress.actual) : null,
+        plannedProgress: projectProgress ? Math.round(projectProgress.planned) : null,
+        durationDays: projStart && projEnd ? daysBetween(projStart, projEnd) : null,
+        childIds: msChildIds,
+        milestoneIndex: -2,
+      });
+    }
+
     milestones.forEach((ms, mi) => {
       const msId = `ms-${ms.id}`;
       const msNum = `${mi + 1}`;
@@ -465,20 +511,21 @@ export default function GanttChart({
       const childIds = msTasks.map((t) => `task-${t.id}`);
       const ps = parseDate(ms.planned_start);
       const pe = parseDate(ms.planned_end);
+      const msCanon = msProgressMap[String(ms.id)];
       result.push({
         id: msId,
         label: ms.name || "Untitled Milestone",
         level: 1,
         number: msNum,
         kind: "milestone",
-        parentId: null,
+        parentId: projectName ? "project" : null,
         plannedStart: ps,
         plannedEnd: pe,
         actualStart: parseDate(ms.actual_start),
         actualEnd: parseDate(ms.actual_end),
         status: ms.status,
-        progress:
-          ms.actual_progress != null ? Math.round(ms.actual_progress) : null,
+        progress: msCanon ? Math.round(msCanon.actual) : null,
+        plannedProgress: msCanon ? Math.round(msCanon.planned) : null,
         durationDays: ps && pe ? daysBetween(ps, pe) : null,
         childIds,
         milestoneIndex: mi,
@@ -486,6 +533,7 @@ export default function GanttChart({
       msTasks.forEach((t, ti) => {
         const tps = parseDate(t.planned_start);
         const tpe = parseDate(t.planned_end);
+        const tCanon = taskProgressMap[String(t.id)];
         result.push({
           id: `task-${t.id}`,
           label: t.title,
@@ -498,7 +546,8 @@ export default function GanttChart({
           actualStart: parseDate(t.actual_start),
           actualEnd: parseDate(t.actual_end),
           status: t.status,
-          progress: t.progress != null ? Math.round(t.progress) : null,
+          progress: tCanon ? Math.round(tCanon.actual) : null,
+          plannedProgress: tCanon ? Math.round(tCanon.planned) : null,
           durationDays:
             t.duration_days ??
             (tps && tpe ? daysBetween(tps, tpe) : null),
@@ -515,6 +564,7 @@ export default function GanttChart({
       .forEach((t, i) => {
         const tps = parseDate(t.planned_start);
         const tpe = parseDate(t.planned_end);
+        const tCanon = taskProgressMap[String(t.id)];
         result.push({
           id: `task-${t.id}`,
           label: t.title,
@@ -527,7 +577,8 @@ export default function GanttChart({
           actualStart: parseDate(t.actual_start),
           actualEnd: parseDate(t.actual_end),
           status: t.status,
-          progress: t.progress != null ? Math.round(t.progress) : null,
+          progress: tCanon ? Math.round(tCanon.actual) : null,
+          plannedProgress: tCanon ? Math.round(tCanon.planned) : null,
           durationDays:
             t.duration_days ??
             (tps && tpe ? daysBetween(tps, tpe) : null),
@@ -537,11 +588,20 @@ export default function GanttChart({
         });
       });
     return result;
-  }, [milestones, tasks]);
+  }, [milestones, tasks, projectName, projectProgress, msProgressMap, taskProgressMap]);
 
   // ── Visible rows (collapse-filtered) ──
+  // A row is hidden if any ancestor is collapsed
   const visibleRows = useMemo(
-    () => allRows.filter((r) => !r.parentId || !collapsed.has(r.parentId)),
+    () => allRows.filter((r) => {
+      if (!r.parentId) return true;
+      // Direct parent collapsed?
+      if (collapsed.has(r.parentId)) return false;
+      // Grandparent collapsed? (task whose milestone parent has a collapsed project parent)
+      const parent = allRows.find((p) => p.id === r.parentId);
+      if (parent?.parentId && collapsed.has(parent.parentId)) return false;
+      return true;
+    }),
     [allRows, collapsed]
   );
 
@@ -755,7 +815,9 @@ export default function GanttChart({
                 <div
                   key={`bg-${row.id}`}
                   className={`absolute left-0 right-0 border-b border-slate-200/60 ${
-                    row.level === 1
+                    row.level === 0
+                      ? "bg-slate-100/70"
+                      : row.level === 1
                       ? "bg-slate-50/50"
                       : ri % 2 === 1
                       ? "bg-slate-50/30"
@@ -769,6 +831,58 @@ export default function GanttChart({
               {visibleRows.map((row, ri) => {
                 const top = ri * ROW_HEIGHT;
                 const mi = row.milestoneIndex;
+
+                // ── Project bar (Level 0) ──
+                if (row.kind === "project") {
+                  const ps = row.plannedStart;
+                  const pe = row.plannedEnd;
+                  if (!ps || !pe) return null;
+
+                  const pct = clamp(row.progress ?? 0, 0, 100) / 100;
+                  const fullW = bW(ps, pe);
+                  const actW = Math.max(0, fullW * pct);
+
+                  return (
+                    <div
+                      key={row.id}
+                      className="absolute"
+                      style={{ top, height: ROW_HEIGHT, left: 0, right: 0 }}
+                    >
+                      <div
+                        className="absolute rounded-sm"
+                        style={{
+                          left: bL(ps),
+                          width: fullW,
+                          top: 4,
+                          height: ROW_HEIGHT - 8,
+                          backgroundColor: PROJECT_COLOR.planned,
+                          border: `1px solid ${PROJECT_COLOR.border}`,
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
+                        }}
+                        onMouseEnter={(e) => onBarEnter(e, row)}
+                        onMouseMove={onBarMove}
+                        onMouseLeave={onBarLeave}
+                      >
+                        {actW > 0 && (
+                          <div
+                            className="absolute top-0 left-0 bottom-0 rounded-sm"
+                            style={{
+                              width: actW,
+                              backgroundColor: PROJECT_COLOR.actual,
+                              borderRadius: actW >= fullW - 1 ? undefined : "3px 0 0 3px",
+                            }}
+                          />
+                        )}
+                        <span
+                          className="absolute inset-0 flex items-center px-2 text-[10px] font-bold truncate pointer-events-none z-[1]"
+                          style={{ color: pct > 0.4 ? "#F8FAFC" : PROJECT_COLOR.label }}
+                        >
+                          {row.label}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }
 
                 // ── Milestone bar (Level 1) ──
                 if (row.kind === "milestone") {

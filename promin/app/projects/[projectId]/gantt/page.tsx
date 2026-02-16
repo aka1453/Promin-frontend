@@ -9,6 +9,8 @@ import { ArrowLeft } from "lucide-react";
 import GanttChart from "../../../components/GanttChart";
 import type { Milestone } from "../../../types/milestone";
 import type { Task } from "../../../types/task";
+import type { HierarchyRow } from "../../../types/progress";
+import { toEntityProgress } from "../../../types/progress";
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -32,13 +34,18 @@ type GanttDeliverable = {
 // ─────────────────────────────────────────────
 function GanttPageContent({ projectId }: { projectId: number }) {
   const router = useRouter();
-  const { userToday } = useUserTimezone();
+  const { timezone, userToday } = useUserTimezone();
 
   const [project, setProject] = useState<Project | null>(null);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [deliverables, setDeliverables] = useState<GanttDeliverable[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Canonical progress from hierarchy RPC (0-100 scale), keyed by string entity ID
+  const [projectProgress, setProjectProgress] = useState<{ planned: number; actual: number } | null>(null);
+  const [msProgressMap, setMsProgressMap] = useState<Record<string, { planned: number; actual: number }>>({});
+  const [taskProgressMap, setTaskProgressMap] = useState<Record<string, { planned: number; actual: number }>>({});
 
   // Guard against setState after unmount
   const mountedRef = useRef(true);
@@ -58,6 +65,28 @@ function GanttPageContent({ projectId }: { projectId: number }) {
         .single();
       if (cancelled) return;
       if (proj) setProject(proj as Project);
+
+      // Canonical progress from hierarchy RPC
+      const tzToday = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
+      const { data: hierRows } = await supabase.rpc("get_project_progress_hierarchy", {
+        p_project_id: projectId,
+        p_asof: tzToday,
+      });
+      if (cancelled) return;
+      const newMsMap: Record<string, { planned: number; actual: number }> = {};
+      const newTaskMap: Record<string, { planned: number; actual: number }> = {};
+      let newProjectProgress: { planned: number; actual: number } | null = null;
+      if (hierRows) {
+        for (const row of hierRows as HierarchyRow[]) {
+          const entry = toEntityProgress(row);
+          if (row.entity_type === "project") newProjectProgress = entry;
+          else if (row.entity_type === "milestone") newMsMap[String(row.entity_id)] = entry;
+          else if (row.entity_type === "task") newTaskMap[String(row.entity_id)] = entry;
+        }
+      }
+      setProjectProgress(newProjectProgress);
+      setMsProgressMap(newMsMap);
+      setTaskProgressMap(newTaskMap);
 
       // Milestones
       const { data: msData } = await supabase
@@ -99,7 +128,7 @@ function GanttPageContent({ projectId }: { projectId: number }) {
 
     load();
     return () => { cancelled = true; };
-  }, [projectId]);
+  }, [projectId, timezone]);
 
   if (loading || !project) {
     return (
@@ -138,6 +167,10 @@ function GanttPageContent({ projectId }: { projectId: number }) {
           tasks={tasks}
           deliverables={deliverables}
           userToday={userToday}
+          projectName={project.name || "Untitled Project"}
+          projectProgress={projectProgress}
+          msProgressMap={msProgressMap}
+          taskProgressMap={taskProgressMap}
         />
       </div>
     </div>

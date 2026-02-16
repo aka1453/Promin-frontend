@@ -58,4 +58,7 @@ export interface TaskNodeData {
   onToggleCollapse: (taskId: number) => void;
   onClick: (task: TaskWithDependencies) => void;
   onDelete: (taskId: number) => void;
+  onTaskUpdated?: () => void;
+  canonicalPlanned?: number | null;
+  canonicalActual?: number | null;
 }

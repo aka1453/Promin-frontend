@@ -10,6 +10,7 @@ type Props = {
   isReadOnly?: boolean;
   onMilestoneChanged?: () => void;
   onMilestoneUpdated?: () => void;
+  taskProgressMap?: Record<string, { planned: number; actual: number; risk_state: string }>;
 };
 
 type ViewMode = "kanban" | "diagram";
@@ -20,6 +21,7 @@ export default function TaskViewWrapper({
   isReadOnly = false,
   onMilestoneChanged,
   onMilestoneUpdated,
+  taskProgressMap,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
 
@@ -82,12 +84,13 @@ export default function TaskViewWrapper({
           isReadOnly={isReadOnly}
           onMilestoneChanged={onMilestoneChanged}
           onMilestoneUpdated={onMilestoneUpdated}
+          taskProgressMap={taskProgressMap}
         />
       )}
 
       {viewMode === "diagram" && (
         <div className="w-full h-[600px] border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-          <TaskFlowDiagram milestoneId={milestoneId} />
+          <TaskFlowDiagram milestoneId={milestoneId} taskProgressMap={taskProgressMap} />
         </div>
       )}
     </div>

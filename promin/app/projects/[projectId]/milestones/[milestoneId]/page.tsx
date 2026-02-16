@@ -3,7 +3,10 @@
 import { useEffect, useState, use, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../../lib/supabaseClient";
+import { useUserTimezone } from "../../../../context/UserTimezoneContext";
 import TaskViewWrapper from "../../../../components/TaskViewWrapper";
+import type { EntityProgress, HierarchyRow } from "../../../../types/progress";
+import { toEntityProgress } from "../../../../types/progress";
 
 export default function MilestonePage({
   params,
@@ -12,6 +15,7 @@ export default function MilestonePage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
+  const { timezone } = useUserTimezone();
   const projectId = parseInt(resolvedParams.projectId);
   const milestoneId = parseInt(resolvedParams.milestoneId);
 
@@ -19,6 +23,10 @@ export default function MilestonePage({
   const [project, setProject] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
+
+  // Canonical progress from hierarchy RPC (0-100 scale)
+  const [msProgress, setMsProgress] = useState<{ planned: number | null; actual: number | null }>({ planned: null, actual: null });
+  const [taskProgressMap, setTaskProgressMap] = useState<Record<string, EntityProgress>>({});
 
   const initialLoadDone = useRef(false);
 
@@ -37,6 +45,35 @@ export default function MilestonePage({
 
     return { milestone: milestoneData, project: projectData };
   }, [milestoneId, projectId]);
+
+  // Fetch canonical progress from hierarchy RPC
+  const fetchCanonicalProgress = useCallback(async () => {
+    const userToday = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
+    const { data: hierRows, error } = await supabase.rpc("get_project_progress_hierarchy", {
+      p_project_id: projectId,
+      p_asof: userToday,
+    });
+    if (!error && hierRows) {
+      const rows = hierRows as HierarchyRow[];
+      const msRow = rows.find(r => r.entity_type === "milestone" && String(r.entity_id) === String(milestoneId));
+      if (msRow) {
+        const p = toEntityProgress(msRow);
+        setMsProgress({ planned: p.planned, actual: p.actual });
+      } else {
+        setMsProgress({ planned: null, actual: null });
+      }
+      const newTaskMap: Record<string, EntityProgress> = {};
+      for (const row of rows) {
+        if (row.entity_type === "task") {
+          newTaskMap[String(row.entity_id)] = toEntityProgress(row);
+        }
+      }
+      setTaskProgressMap(newTaskMap);
+    } else {
+      setMsProgress({ planned: null, actual: null });
+      setTaskProgressMap({});
+    }
+  }, [projectId, milestoneId, timezone]);
 
   // Full load with spinner — mount and explicit actions
   const loadData = useCallback(async () => {
@@ -62,22 +99,24 @@ export default function MilestonePage({
       }
     }
 
+    await fetchCanonicalProgress();
     setLoading(false);
     initialLoadDone.current = true;
-  }, [fetchData, projectId]);
+  }, [fetchData, projectId, fetchCanonicalProgress]);
 
   // Silent refresh — no spinner. Used by realtime.
   const silentRefresh = useCallback(async () => {
     const { milestone: m, project: p } = await fetchData();
     if (m) setMilestone(m);
     if (p) setProject(p);
-  }, [fetchData]);
+    await fetchCanonicalProgress();
+  }, [fetchData, fetchCanonicalProgress]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Realtime on milestones — actual_progress rollup from task completions
+  // Realtime on milestones — triggers canonical progress refresh
   useEffect(() => {
     const ch = supabase
       .channel("ms-detail-milestone-" + milestoneId)
@@ -98,7 +137,7 @@ export default function MilestonePage({
     return () => { supabase.removeChannel(ch); };
   }, [milestoneId, silentRefresh]);
 
-  // Realtime on projects — actual_progress rollup from milestone changes
+  // Realtime on projects — triggers refresh when project data changes
   useEffect(() => {
     const ch = supabase
       .channel("ms-detail-project-" + projectId)
@@ -130,6 +169,26 @@ export default function MilestonePage({
           schema: "public",
           table: "tasks",
           filter: `milestone_id=eq.${milestoneId}`,
+        },
+        () => {
+          if (initialLoadDone.current) silentRefresh();
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(ch); };
+  }, [milestoneId, silentRefresh]);
+
+  // Realtime on subtasks — deliverable completion triggers progress change
+  useEffect(() => {
+    const ch = supabase
+      .channel("ms-detail-subtasks-" + milestoneId)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "subtasks",
         },
         () => {
           if (initialLoadDone.current) silentRefresh();
@@ -172,7 +231,7 @@ export default function MilestonePage({
     return new Date(dateStr).toISOString().split("T")[0];
   };
 
-  // Status badge reads actual_end (set by user action), not actual_progress
+  // Status badge reads actual_end (set by user action), not progress
   const getStatusBadge = () => {
     if (milestone.actual_end) {
       return (
@@ -194,6 +253,9 @@ export default function MilestonePage({
       </span>
     );
   };
+
+  const plannedVal = msProgress.planned ?? 0;
+  const actualVal = msProgress.actual ?? 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -300,19 +362,19 @@ export default function MilestonePage({
             })()}
           </div>
 
-          {/* Progress bars */}
+          {/* Progress bars — canonical from hierarchy RPC */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
             <div>
               <div className="flex justify-between text-sm mb-2">
                 <span className="text-gray-600">Planned %</span>
                 <span className="font-semibold text-gray-900">
-                  {milestone.planned_progress?.toFixed(2) || 0}%
+                  {msProgress.planned != null ? `${plannedVal.toFixed(2)}%` : "—"}
                 </span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3">
                 <div
                   className="bg-blue-500 h-3 rounded-full transition-all"
-                  style={{ width: `${milestone.planned_progress || 0}%` }}
+                  style={{ width: `${plannedVal}%` }}
                 />
               </div>
             </div>
@@ -320,13 +382,13 @@ export default function MilestonePage({
               <div className="flex justify-between text-sm mb-2">
                 <span className="text-gray-600">Actual %</span>
                 <span className="font-semibold text-gray-900">
-                  {milestone.actual_progress?.toFixed(2) || 0}%
+                  {msProgress.actual != null ? `${actualVal.toFixed(2)}%` : "—"}
                 </span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3">
                 <div
                   className="bg-green-500 h-3 rounded-full transition-all"
-                  style={{ width: `${milestone.actual_progress || 0}%` }}
+                  style={{ width: `${actualVal}%` }}
                 />
               </div>
             </div>
@@ -345,6 +407,7 @@ export default function MilestonePage({
             isReadOnly={isReadOnly}
             onMilestoneChanged={loadData}
             onMilestoneUpdated={handleMilestoneUpdated}
+            taskProgressMap={taskProgressMap}
           />
         </div>
       </div>

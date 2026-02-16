@@ -7,6 +7,9 @@ import ProjectOverviewCard from "./components/ProjectOverviewCard";
 import ProjectSettingsModal from "./components/ProjectSettingsModal";
 import { motion } from "framer-motion";
 import { useProjects } from "./context/ProjectsContext";
+import { useUserTimezone } from "./context/UserTimezoneContext";
+import type { EntityProgress, BatchProgressRow } from "./types/progress";
+import { toEntityProgress } from "./types/progress";
 
 type Project = {
   id: number;
@@ -19,12 +22,6 @@ type Project = {
     id: number;
     full_name: string;
   } | null;
-};
-
-type CanonicalProgress = {
-  planned: number;
-  actual: number;
-  risk_state: string;
 };
 
 type SortMode =
@@ -54,6 +51,7 @@ function sortProjectsDeterministically(projects: Project[]) {
 export default function HomePage() {
   const router = useRouter();
   const { projects } = useProjects();
+  const { timezone } = useUserTimezone();
   const [sortMode, setSortMode] = useState<SortMode>(() => {
     if (typeof window === "undefined") return "position";
     return (localStorage.getItem("projects_sort_mode") as SortMode) ?? "position";
@@ -64,8 +62,8 @@ export default function HomePage() {
   const [projectRole, setProjectRole] =
     useState<"owner" | "editor" | "viewer" | null>(null);
 
-  // Canonical progress from batch RPC (0-100 scale)
-  const [progressMap, setProgressMap] = useState<Record<number, CanonicalProgress>>({});
+  // Canonical progress from batch RPC (0-100 scale), keyed by string project ID
+  const [progressMap, setProgressMap] = useState<Record<string, EntityProgress>>({});
 
   // Persist sort mode
   useEffect(() => {
@@ -84,23 +82,19 @@ export default function HomePage() {
       setProgressMap({});
       return;
     }
-    const dubaiToday = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dubai" });
+    const userToday = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
     const { data, error } = await supabase.rpc("get_projects_progress_asof", {
       p_project_ids: activeProjectIds,
-      p_asof: dubaiToday,
+      p_asof: userToday,
     });
     if (!error && data) {
-      const map: Record<number, CanonicalProgress> = {};
-      for (const row of data as { project_id: number; planned: number; actual: number; risk_state: string }[]) {
-        map[row.project_id] = {
-          planned: Number(row.planned ?? 0) * 100,
-          actual: Number(row.actual ?? 0) * 100,
-          risk_state: row.risk_state ?? "ON_TRACK",
-        };
+      const map: Record<string, EntityProgress> = {};
+      for (const row of data as BatchProgressRow[]) {
+        map[String(row.project_id)] = toEntityProgress(row);
       }
       setProgressMap(map);
     }
-  }, [activeProjectIds]);
+  }, [activeProjectIds, timezone]);
 
   useEffect(() => {
     fetchBatchProgress();
@@ -151,7 +145,7 @@ export default function HomePage() {
         : [...list];
 
     // Helper to get canonical progress for sorting
-    const getProgress = (p: Project) => progressMap[p.id];
+    const getProgress = (p: Project) => progressMap[String(p.id)];
 
     switch (sortMode) {
       case "name_asc":
@@ -230,7 +224,7 @@ export default function HomePage() {
               className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"
             >
               {visibleProjects.map((project) => {
-                const canon = progressMap[project.id];
+                const canon = progressMap[String(project.id)];
                 return (
                   <motion.div key={project.id} layout>
                     <ProjectOverviewCard

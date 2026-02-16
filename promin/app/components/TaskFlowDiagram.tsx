@@ -95,9 +95,10 @@ const edgeTypes = {
 
 type Props = {
   milestoneId: number;
+  taskProgressMap?: Record<string, { planned: number; actual: number; risk_state: string }>;
 };
 
-export default function TaskFlowDiagram({ milestoneId }: Props) {
+export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props) {
   const [tasks, setTasks] = useState<TaskWithDependencies[]>([]);
   const [dependencies, setDependencies] = useState<TaskDependency[]>([]);
   const [loading, setLoading] = useState(true);
@@ -309,11 +310,14 @@ export default function TaskFlowDiagram({ milestoneId }: Props) {
         onToggleCollapse: handleToggleCollapse,
         onClick: handleTaskClick,
         onDelete: handleTaskDelete,
+        onTaskUpdated: loadData,
+        canonicalPlanned: taskProgressMap?.[String(task.id)]?.planned ?? null,
+        canonicalActual: taskProgressMap?.[String(task.id)]?.actual ?? null,
       },
     }));
 
     setNodes(newNodes);
-  }, [tasks, handleToggleCollapse, handleTaskClick, handleTaskDelete, setNodes]);
+  }, [tasks, handleToggleCollapse, handleTaskClick, handleTaskDelete, setNodes, taskProgressMap]);
 
   // Convert dependencies to ReactFlow edges with duration labels
   useEffect(() => {

@@ -14,6 +14,7 @@ type Props = {
   isReadOnly?: boolean;
   onMilestoneChanged?: () => void;
   onMilestoneUpdated?: () => void;
+  taskProgressMap?: Record<string, { planned: number; actual: number; risk_state: string }>;
 };
 
 export default function TaskFlowBoard({
@@ -22,6 +23,7 @@ export default function TaskFlowBoard({
   isReadOnly = false,
   onMilestoneChanged,
   onMilestoneUpdated,
+  taskProgressMap,
 }: Props) {
   const { pushToast } = useToast();
 
@@ -106,6 +108,8 @@ export default function TaskFlowBoard({
                 task={task}
                 onClick={handleTaskClick}
                 onTaskUpdated={handleTaskUpdated}
+                canonicalPlanned={taskProgressMap?.[String(task.id)]?.planned ?? null}
+                canonicalActual={taskProgressMap?.[String(task.id)]?.actual ?? null}
               />
             ))}
             {pendingTasks.length === 0 && (
@@ -128,6 +132,8 @@ export default function TaskFlowBoard({
                 task={task}
                 onClick={handleTaskClick}
                 onTaskUpdated={handleTaskUpdated}
+                canonicalPlanned={taskProgressMap?.[String(task.id)]?.planned ?? null}
+                canonicalActual={taskProgressMap?.[String(task.id)]?.actual ?? null}
               />
             ))}
             {inProgressTasks.length === 0 && (
@@ -150,6 +156,8 @@ export default function TaskFlowBoard({
                 task={task}
                 onClick={handleTaskClick}
                 onTaskUpdated={handleTaskUpdated}
+                canonicalPlanned={taskProgressMap?.[String(task.id)]?.planned ?? null}
+                canonicalActual={taskProgressMap?.[String(task.id)]?.actual ?? null}
               />
             ))}
             {completedTasks.length === 0 && (

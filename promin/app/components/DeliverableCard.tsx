@@ -74,6 +74,7 @@ export default function DeliverableCard({
 
     const updatePayload: any = {
       is_done: checked,
+      completed_at: checked ? new Date().toISOString() : null,
     };
 
     setLocalDeliverable({

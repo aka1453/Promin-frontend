@@ -27,8 +27,6 @@ type Project = {
   id: number;
   name: string | null;
   status?: string | null;
-  planned_progress?: number | null;
-  actual_progress?: number | null;
   planned_start?: string | null;
   planned_end?: string | null;
   actual_start?: string | null;
@@ -185,20 +183,21 @@ function ProgressLineChart({
   const toPath = (pts: [number, number][]) =>
     pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p[0]} ${p[1]}`).join(" ");
 
-  // ── Helper: interpolate RPC data at a given date ──
+  // ── Helper: step-interpolate RPC data at a given date ──
+  // Uses the last bucket_date <= d (step function — no linear smoothing)
   const interpolateAt = (d: Date, field: "planned" | "actual"): number => {
     if (scurveData.length === 0) return 0;
     const dTime = d.getTime();
-    for (let i = 0; i < scurveData.length - 1; i++) {
-      const t1 = new Date(scurveData[i].dt + "T00:00:00").getTime();
-      const t2 = new Date(scurveData[i + 1].dt + "T00:00:00").getTime();
-      if (dTime >= t1 && dTime <= t2) {
-        const frac = t2 === t1 ? 0 : (dTime - t1) / (t2 - t1);
-        return (scurveData[i][field] + frac * (scurveData[i + 1][field] - scurveData[i][field])) * 100;
+    // Find the last bucket on or before d
+    let best = scurveData[0];
+    for (const row of scurveData) {
+      if (new Date(row.dt + "T00:00:00").getTime() <= dTime) {
+        best = row;
+      } else {
+        break; // data is sorted ascending
       }
     }
-    if (dTime <= new Date(scurveData[0].dt + "T00:00:00").getTime()) return scurveData[0][field] * 100;
-    return scurveData[scurveData.length - 1][field] * 100;
+    return best[field] * 100;
   };
 
   // ── Milestone markers (diamonds on the curve at each milestone's date) ──
@@ -805,7 +804,7 @@ function OverviewTab({
 // ─────────────────────────────────────────────
 // TAB: MILESTONES
 // ─────────────────────────────────────────────
-function MilestonesTab({ milestones, progressMap }: { milestones: Milestone[]; progressMap: Record<number, { planned: number; actual: number; risk_state: string }> }) {
+function MilestonesTab({ milestones, progressMap }: { milestones: Milestone[]; progressMap: Record<string, { planned: number; actual: number; risk_state: string }> }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -822,7 +821,7 @@ function MilestonesTab({ milestones, progressMap }: { milestones: Milestone[]; p
         {milestones.map((m) => {
           const isCompleted = m.status === "completed";
           const isInProgress = m.status === "in_progress";
-          const canon = progressMap[m.id];
+          const canon = progressMap[String(m.id)];
           const plannedPct = canon?.planned ?? 0;
           const actualPct = canon?.actual ?? 0;
           const weightPct = m.weight != null ? Math.round(m.weight * 100) : 0;
@@ -907,7 +906,7 @@ function TasksTab({
 }: {
   milestones: Milestone[];
   tasks: Task[];
-  progressMap: Record<number, { planned: number; actual: number; risk_state: string }>;
+  progressMap: Record<string, { planned: number; actual: number; risk_state: string }>;
 }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "in_progress" | "completed">("all");
@@ -1003,7 +1002,7 @@ function TasksTab({
           </thead>
           <tbody>
             {filtered.map((t) => {
-              const canon = progressMap[t.id];
+              const canon = progressMap[String(t.id)];
               const prog = canon?.actual ?? 0;
               return (
                 <tr key={t.id} className="border-b border-slate-50">
@@ -1072,8 +1071,8 @@ function ExportTab({
   tasks: Task[];
   userToday: Date;
   canonicalProgress: { planned: number | null; actual: number | null; baseline: number | null; risk_state: string | null };
-  msProgressMap: Record<number, { planned: number; actual: number; risk_state: string }>;
-  taskProgressMap: Record<number, { planned: number; actual: number; risk_state: string }>;
+  msProgressMap: Record<string, { planned: number; actual: number; risk_state: string }>;
+  taskProgressMap: Record<string, { planned: number; actual: number; risk_state: string }>;
 }) {
   const [exporting, setExporting] = useState<string | null>(null);
   const [scurveGranularity, setScurveGranularity] = useState<PeriodKey>("monthly");
@@ -1086,7 +1085,7 @@ function ExportTab({
       milestones.forEach((m) => { msNames[m.id] = m.name || "Untitled"; });
 
       const rows = tasks.map((t) => {
-        const canon = taskProgressMap[t.id];
+        const canon = taskProgressMap[String(t.id)];
         return [
           t.title,
           msNames[t.milestone_id] || "",
@@ -1292,7 +1291,7 @@ function ExportTab({
         if (y > 270) { doc.addPage(); y = 20; drawMsHeader(); doc.setTextColor(30, 41, 59); doc.setFontSize(8); }
         doc.text(String(m.name || "Untitled").substring(0, 28), 16, y);
         doc.text(m.status || "pending", 75, y);
-        const msProg = msProgressMap[m.id];
+        const msProg = msProgressMap[String(m.id)];
         doc.text(`${(msProg?.planned ?? 0).toFixed(0)}%`, 100, y);
         doc.text(`${(msProg?.actual ?? 0).toFixed(0)}%`, 118, y);
         doc.text(m.planned_start || "—", 140, y);
@@ -1334,7 +1333,7 @@ function ExportTab({
         doc.text(String(t.title).substring(0, 30), 16, y);
         doc.text(String(msNames[t.milestone_id] || "—").substring(0, 18), 80, y);
         doc.text(t.status || "pending", 120, y);
-        const tProg = taskProgressMap[t.id];
+        const tProg = taskProgressMap[String(t.id)];
         doc.text(`${(tProg?.actual ?? 0).toFixed(0)}%`, 145, y);
         doc.text(t.planned_start || "—", 165, y);
         doc.text(t.planned_end || "—", 182, y);
@@ -1491,19 +1490,19 @@ function ExportTab({
           }
         }
 
-        // Milestone completion markers (interpolate Y from RPC data)
+        // Milestone completion markers (step-interpolate Y from RPC data — no linear smoothing)
         const interpolatePdf = (target: Date, field: "planned" | "actual"): number => {
+          if (scurveRows.length === 0) return 0;
           const tTime = target.getTime();
-          for (let i = 0; i < scurveRows.length - 1; i++) {
-            const t1 = new Date(scurveRows[i].dt + "T00:00:00").getTime();
-            const t2 = new Date(scurveRows[i + 1].dt + "T00:00:00").getTime();
-            if (tTime >= t1 && tTime <= t2) {
-              const frac = t2 === t1 ? 0 : (tTime - t1) / (t2 - t1);
-              return scurveRows[i][field] + frac * (scurveRows[i + 1][field] - scurveRows[i][field]);
+          let best = scurveRows[0];
+          for (const row of scurveRows) {
+            if (new Date(row.dt + "T00:00:00").getTime() <= tTime) {
+              best = row;
+            } else {
+              break;
             }
           }
-          if (tTime <= new Date(scurveRows[0].dt + "T00:00:00").getTime()) return scurveRows[0][field];
-          return scurveRows[scurveRows.length - 1][field];
+          return best[field];
         };
 
         for (const msItem of milestones) {
@@ -1727,7 +1726,7 @@ function ExportTab({
 // ─────────────────────────────────────────────
 function ReportsPageContent({ projectId }: { projectId: number }) {
   const router = useRouter();
-  const { userToday } = useUserTimezone();
+  const { timezone, userToday } = useUserTimezone();
 
   const [project, setProject] = useState<Project | null>(null);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
@@ -1742,9 +1741,9 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
     risk_state: string | null;
   }>({ planned: null, actual: null, baseline: null, risk_state: null });
 
-  // Per-entity canonical progress from get_project_progress_hierarchy
-  const [msProgressMap, setMsProgressMap] = useState<Record<number, { planned: number; actual: number; risk_state: string }>>({});
-  const [taskProgressMap, setTaskProgressMap] = useState<Record<number, { planned: number; actual: number; risk_state: string }>>({});
+  // Per-entity canonical progress from get_project_progress_hierarchy, keyed by string entity ID
+  const [msProgressMap, setMsProgressMap] = useState<Record<string, { planned: number; actual: number; risk_state: string }>>({});
+  const [taskProgressMap, setTaskProgressMap] = useState<Record<string, { planned: number; actual: number; risk_state: string }>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1757,12 +1756,11 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
       .single();
     if (proj) setProject(proj as Project);
 
-    // Canonical progress from S-curve logic (0-1 scale), timezone-aware
-    // Compute Dubai "today" explicitly — DB CURRENT_DATE may be behind
-    const dubaiToday = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dubai" }); // YYYY-MM-DD
+    // Canonical progress from RPC (0-1 scale), timezone-aware
+    const tzToday = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
     const { data: progRows, error: progError } = await supabase.rpc("get_project_progress_asof", {
       p_project_id: projectId,
-      p_asof: dubaiToday,
+      p_asof: tzToday,
       p_include_baseline: true,
     });
     if (!progError && progRows && progRows.length > 0) {
@@ -1780,15 +1778,15 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
     // Canonical per-entity progress (milestones + tasks) from hierarchy RPC
     const { data: hierRows } = await supabase.rpc("get_project_progress_hierarchy", {
       p_project_id: projectId,
-      p_asof: dubaiToday,
+      p_asof: tzToday,
     });
-    const newMsMap: Record<number, { planned: number; actual: number; risk_state: string }> = {};
-    const newTaskMap: Record<number, { planned: number; actual: number; risk_state: string }> = {};
+    const newMsMap: Record<string, { planned: number; actual: number; risk_state: string }> = {};
+    const newTaskMap: Record<string, { planned: number; actual: number; risk_state: string }> = {};
     if (hierRows) {
-      for (const row of hierRows as { entity_type: string; entity_id: number; planned: number; actual: number; risk_state: string }[]) {
+      for (const row of hierRows as { entity_type: string; entity_id: string; planned: number; actual: number; risk_state: string }[]) {
         const entry = { planned: Number(row.planned ?? 0) * 100, actual: Number(row.actual ?? 0) * 100, risk_state: row.risk_state ?? "ON_TRACK" };
-        if (row.entity_type === "milestone") newMsMap[row.entity_id] = entry;
-        else if (row.entity_type === "task") newTaskMap[row.entity_id] = entry;
+        if (row.entity_type === "milestone") newMsMap[String(row.entity_id)] = entry;
+        else if (row.entity_type === "task") newTaskMap[String(row.entity_id)] = entry;
       }
     }
     setMsProgressMap(newMsMap);

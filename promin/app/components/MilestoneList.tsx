@@ -10,6 +10,7 @@ type Props = {
   canEdit: boolean;
   canDelete: boolean;
   onMilestoneUpdated?: () => void | Promise<void>;
+  msProgressMap?: Record<string, { planned: number; actual: number; risk_state: string }>;
 };
 
 export default function MilestoneList({
@@ -18,6 +19,7 @@ export default function MilestoneList({
   canEdit,
   canDelete,
   onMilestoneUpdated,
+  msProgressMap,
 }: Props) {
   const totalWeight = milestones.reduce((sum, m) => sum + (m.weight ?? 0), 0);
 
@@ -31,6 +33,8 @@ export default function MilestoneList({
           canEdit={canEdit}
           canDelete={canDelete}
           onUpdated={onMilestoneUpdated}
+          canonicalPlanned={msProgressMap?.[String(m.id)]?.planned ?? null}
+          canonicalActual={msProgressMap?.[String(m.id)]?.actual ?? null}
         />
       ))}
     </div>
