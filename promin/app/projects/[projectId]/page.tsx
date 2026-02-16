@@ -11,7 +11,7 @@ import ProjectSettingsModal from "../../components/ProjectSettingsModal";
 import ActivityFeed from "../../components/ActivityFeed";
 import type { Milestone } from "../../types/milestone";
 import CreateBaselineDialog from "../../components/CreateBaselineDialog";
-import { ArrowLeft, Settings, Clock, BarChart2, GanttChartSquare, Bookmark, FileText } from "lucide-react";
+import { ArrowLeft, Settings, Clock, BarChart2, GanttChartSquare, Bookmark, FileText, Sparkles } from "lucide-react";
 import { useUserTimezone } from "../../context/UserTimezoneContext";
 import type { EntityProgress, HierarchyRow } from "../../types/progress";
 import { toEntityProgress } from "../../types/progress";
@@ -361,6 +361,15 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
               >
                 <FileText size={18} />
                 Documents
+              </button>
+
+              {/* Drafts Button */}
+              <button
+                onClick={() => router.push(`/projects/${projectId}/drafts`)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+              >
+                <Sparkles size={18} />
+                Drafts
               </button>
 
               {/* Create Baseline Button (owner/editor only) */}

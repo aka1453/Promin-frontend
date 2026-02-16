@@ -259,22 +259,56 @@ Drafts require **human review and acceptance** before becoming real plans.
 
 ### Phase 5.2 — Draft Plan Generation (Non-Authoritative)
 
-- ⬜ AI-generated draft project structure:
-  - Project name suggestion
-  - Milestones (with weights)
-  - Tasks (with weights)
-  - Deliverables (with weights)
+- ✅ AI-generated draft project structure:
+  - Milestones (with weights, dates, source references)
+  - Tasks (with weights, durations, priorities, dependencies)
+  - Deliverables (with weights, priorities)
   - Dependencies & sequencing assumptions
-- ⬜ Draft stored as **proposal JSON**, not applied to live plan  
-- ⬜ Explicit assumptions captured (durations, weights, logic)  
+  - Server-side text extraction: pdf-parse (PDF), mammoth (DOCX), plaintext
+  - Extracted text snapshots: immutable, hashed, versioned, linked to source documents
+  - `document_extractions` table with confidence tracking
+  - Feature-flagged via `DRAFT_AI_ENABLED` env var (default: OFF)
+  - Configurable AI model via `DRAFT_AI_MODEL` env var (default: gpt-4o)
+  - Evidence precedence enforced in AI system prompt
+- ✅ Draft stored as **proposal JSON**, not applied to live plan
+  - 8 draft tables: `plan_drafts`, `draft_milestones`, `draft_tasks`, `draft_deliverables`, `draft_task_dependencies`, `draft_conflicts`, `draft_assumptions`, `document_extractions`
+  - Draft tables fully isolated from live tables (no cross-FK)
+  - RLS: member can view, editor can insert/modify
+  - Migration: `20260216140000_draft_plan_generation.sql`
+- ✅ Explicit assumptions captured (durations, weights, logic)
+  - `draft_assumptions` table with confidence level (low/medium/high)
+  - Must be acknowledged before acceptance
+- ✅ Conflicts from contradictory documents
+  - `draft_conflicts` table with severity (blocking/warning)
+  - Blocking conflicts must be resolved before acceptance
+- ✅ API routes:
+  - `GET /api/projects/[projectId]/drafts` — list drafts
+  - `POST /api/projects/[projectId]/drafts/generate` — generate draft from documents
+  - `GET /api/projects/[projectId]/drafts/[draftId]` — full draft detail with tree + validation
+  - `POST .../accept` — atomic acceptance via `accept_plan_draft()` RPC
+  - `POST .../reject` — rejection via `reject_plan_draft()` RPC
+  - `POST .../conflicts/[id]/resolve` — resolve conflict
+  - `POST .../assumptions/[id]/acknowledge` — acknowledge assumption
+- ✅ UI:
+  - Drafts list page: `/projects/[projectId]/drafts`
+  - Draft review page: `/projects/[projectId]/drafts/[draftId]`
+  - GenerateDraftModal: document selection + user instructions
+  - "Drafts" nav button added to project header
+- ✅ Build verified: `next build` passes with all routes registered
 
 ### Phase 5.3 — Review, Edit & Acceptance Flow
 
-- ⬜ Side-by-side draft vs editable structure  
-- ⬜ User modifies draft freely  
-- ⬜ Validation before acceptance (weights, deps, cycles)  
-- ⬜ Explicit “Accept Draft” action converts proposal → real plan  
-- ⬜ Full audit trail of draft acceptance  
+- ✅ Validation before acceptance (weights, deps, cycles)
+  - `validate_plan_draft()` RPC: checks conflicts, assumptions, hierarchy completeness, weight sanity, dependency cycles (Kahn's topological sort)
+- ✅ Explicit "Accept Draft" action converts proposal → real plan
+  - `accept_plan_draft()` SECURITY DEFINER RPC: atomic transaction creates milestones → tasks → subtasks → task_dependencies
+  - Maps draft IDs → real IDs using jsonb maps for FK wiring
+  - Weight normalization triggers fire automatically on each INSERT
+- ✅ Full audit trail of draft acceptance
+  - `plan_drafts.decided_at`, `decided_by`, `extraction_ids`, `ai_model` fields
+  - Draft records preserved after acceptance (immutable audit log)
+- ⬜ Side-by-side draft vs editable structure (deferred)
+- ⬜ User modifies draft freely (deferred — inline editing)
 
 ---
 
