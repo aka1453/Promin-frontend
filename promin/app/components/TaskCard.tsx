@@ -4,18 +4,22 @@
 import React, { useEffect, useState } from "react";
 import { MoreVertical, ChevronDown, ChevronUp } from "lucide-react";
 import { formatPercent } from "../utils/format";
+import { getTaskScheduleState, getScheduleBorderClass } from "../utils/schedule";
 import { startTask, completeTask } from "../lib/lifecycle";
 import TaskCardMenu from "./TaskCardMenu";
 import { supabase } from "../lib/supabaseClient";
 import EditTaskModal from "./EditTaskModal";
+import ExplainButton from "./explain/ExplainButton";
 
 type Props = {
   task: any;
   onClick?: (task: any) => void;
   onTaskUpdated?: () => void;
+  canonicalPlanned?: number | null;
+  canonicalActual?: number | null;
 };
 
-export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
+export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanned, canonicalActual }: Props) {
   const [allDeliverablesComplete, setAllDeliverablesComplete] = useState(false);
   const [deliverablesCount, setDeliverablesCount] = useState(0);
   const [completedCount, setCompletedCount] = useState(0);
@@ -173,8 +177,8 @@ export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
         .toUpperCase()
     : "—";
 
-  const planned = Number(task.planned_progress ?? 0);
-  const actual = Number(task.actual_progress ?? task.progress ?? 0);
+  const planned = canonicalPlanned ?? 0;
+  const actual = canonicalActual ?? 0;
 
   const plannedStart = task.planned_start || "—";
   const plannedEnd = task.planned_end || "—";
@@ -182,6 +186,10 @@ export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
   const actualEnd = task.actual_end || "—";
 
   const weight = Number(task.weight ?? 0);
+
+  // Behind-schedule detection using shared helper (matches TaskNode styling)
+  const scheduleState = getTaskScheduleState(task);
+  const scheduleBorder = getScheduleBorderClass(scheduleState);
 
   return (
     <>
@@ -193,18 +201,41 @@ export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
         />
       )}
 
-      <div 
-        className="bg-white shadow rounded-xl p-4 w-[260px] min-w-[260px] hover:shadow-md transition-all relative"
+      <div
+        className={`bg-white shadow rounded-xl p-4 w-[260px] min-w-[260px] hover:shadow-md transition-all relative ${
+          scheduleBorder ? `border-2 ${scheduleBorder}` : ""
+        }`}
         onClick={() => !menuOpen && onClick?.(task)}
       >
-        {/* HEADER ROW - FIXED FOR ISSUE #4 */}
+        {/* HEADER ROW */}
         <div className="flex items-start justify-between mb-3">
-          <h3 className="font-semibold text-sm text-slate-800 flex-1 pr-2 line-clamp-2">
-            {task.title}
-          </h3>
+          <div className="flex-1 pr-2">
+            <h3 className="font-semibold text-sm text-slate-800 line-clamp-2">
+              {task.title}
+            </h3>
+            {scheduleState === "DELAYED" && (
+              <span
+                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800 mt-1"
+                title="Delayed (past planned finish)"
+              >
+                Delayed
+              </span>
+            )}
+            {scheduleState === "BEHIND" && (
+              <span
+                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 mt-1"
+                title="Behind schedule"
+              >
+                Behind
+              </span>
+            )}
+          </div>
           
           {/* BUTTONS */}
           <div className="flex items-center gap-1 flex-shrink-0">
+            {/* Explain button */}
+            <ExplainButton entityType="task" entityId={task.id} compact />
+
             {/* Collapse button */}
             <button
               onClick={toggleCollapse}
@@ -217,7 +248,7 @@ export default function TaskCard({ task, onClick, onTaskUpdated }: Props) {
                 <ChevronUp size={16} className="text-slate-400" />
               )}
             </button>
-            
+
             {/* 3-dot menu button */}
             <button
               onClick={handleMenuClick}

@@ -115,14 +115,105 @@ These are **mandatory prerequisites** for any AI-driven drafting, explainability
 
 ## Phase 4 — Explainability & Assisted Intelligence (Read-Only AI)
 
-AI is **read-only by default**.  
+AI is **read-only by default**.
 Any write action must be **explicit, auditable, and user-approved**.
 
-- ⬜ Read-only AI explainability  
-  - Why is this late / critical / risky?
-- ⬜ Insight surfacing  
+> **Phase 4 invariants:** All explainability is strictly read-only (no DB writes).
+> AI narration is feature-flagged (`EXPLAIN_AI_ENABLED`, default OFF) — ProMin works with $0 AI spend.
+
+### Phase 4.1 — Deterministic Explainability (DB-Side, Read-Only)
+
+- ✅ `explain_entity(text, bigint, date)` RPC — Complete
+  - Returns structured JSON with reason codes + evidence for why an entity is DELAYED / AT_RISK / critical
+  - Reason codes (v1): `CRITICAL_TASK_LATE`, `BASELINE_SLIP`, `PLANNED_AHEAD_OF_ACTUAL`, `TASK_LATE`, `FLOAT_EXHAUSTED`
+  - Deterministic ranking: HIGH severity schedule blockers first → baseline slip → progress mismatch → non-critical late → float exhausted
+  - Top 5 reasons max, each with severity (HIGH/MEDIUM/LOW) and structured evidence
+  - Read-only, SECURITY INVOKER, reuses canonical progress/CPM/baseline RPCs
+  - Migration: `20260216100000_explain_entity_rpc.sql`
+  - Fixed: `FLOAT_EXHAUSTED` strict filter — OR-precedence bug caused unfiltered tasks (any float) to appear when entity_type=project; now only float_days=0 tasks are included
+  - Fixed: `entity_id` type mismatch — hierarchy RPC returns text IDs, added `::text` cast in filter
+  - Refined: status derived from reason codes, not raw risk_state — DELAYED requires `CRITICAL_TASK_LATE` or `BASELINE_SLIP`; `TASK_LATE`/`PLANNED_AHEAD_OF_ACTUAL` → `AT_RISK`; no reasons = `ON_TRACK`
+  - Status semantics: ahead-of-plan (actual >= planned) no longer headlines as AT_RISK due solely to low-severity advisories like FLOAT_EXHAUSTED; such reasons still appear in the reasons list for transparency
+  - Added hard DELAY rule (`PLANNED_COMPLETE_BUT_NOT_DONE`): when planned progress reaches 100% but work is not done, status is forced to DELAYED with HIGH severity; ranked first, overrides softer signals
+
+### Phase 4.2 — Explainability API Route (Server-Side, Read-Only)
+
+- ✅ `/api/explain` GET endpoint — Complete
+  - Query params: `type` (project|milestone|task), `id` (bigint), `asof` (YYYY-MM-DD, optional)
+  - Calls `explain_entity` RPC with user auth context (no service role)
+  - Returns `{ ok, data, summary, narrative }` with deterministic templated summary + optional AI narrative
+  - Auth-gated (401 if unauthenticated), input validation (400), RLS enforced via user session
+  - Cache-Control: private, max-age=30
+  - Route: `app/api/explain/route.ts`
+
+### Phase 4.3 — Explainability UI Consumers (Explain Button + Drawer)
+
+- ✅ Shared `ExplainDrawer` component — Complete
+  - Right-side drawer with status badge, summary, ranked reasons, collapsible evidence JSON
+  - Fetches from `/api/explain` on open; loading, error (with retry), and empty states handled
+  - Components: `app/components/explain/ExplainDrawer.tsx`, `ExplainButton.tsx`
+  - Types: `app/types/explain.ts`
+- ✅ Entry-point buttons wired into 3 surfaces — Complete
+  - Project overview card header (full "Explain" button)
+  - Milestone card (compact icon next to status badge)
+  - Task card header (compact icon next to collapse/menu buttons)
+- ✅ Read-only: no writes, no mutations, renders server payload only
+- ✅ Explain drawer: human-friendly key details for each reason code + raw JSON behind collapsed "Advanced (raw JSON)" toggle
+
+### Phase 4.4 — Optional AI Narration (Feature-Flagged, Read-Only)
+
+- ✅ AI narrative generation — Complete
+  - Feature flag: `EXPLAIN_AI_ENABLED` env var (default OFF, $0 AI spend)
+  - Model: configurable via `EXPLAIN_AI_MODEL` env var (default `gpt-4o-mini`)
+  - Strict grounding: LLM restates only facts from reason payload, no invented data
+  - Minimal payload sent: top 3 reasons, max 8 evidence keys each; skipped when no reasons
+  - Fail-safe: returns `narrative=""` if disabled, missing API key, or any error
+  - API response: `{ ok, data, summary, narrative }` — narrative always present
+  - UI: blue "AI Summary" box in ExplainDrawer (only rendered when narrative non-empty)
+  - Utility: `app/lib/explainNarrate.ts`
+  - Dependency added: `openai` SDK
+
+### Phase 4 — Hardening & Verification
+
+- ✅ End-to-end verification — Complete
+  - Manual verification checklist: `docs/verification/phase4_explainability.md`
+  - Covers: input validation, response shape, UI states, RLS, AI flag, performance
+  - Hardening fixes applied: retry button on error, improved empty-state message, HTTP status check, AI skipped on empty reasons
+
+### Phase 4 — UI Parity Fixes
+
+- ✅ Workflow node action menu (edit + explain) — Complete
+  - TaskNode now has ⋮ menu with "Edit task" (opens EditTaskModal) and "Explain status" (opens ExplainDrawer)
+  - Menu renders in both collapsed and expanded node views; clicks do not trigger node navigation
+- ✅ Kanban task card collapse/expand — Complete
+  - Chevron toggle in card header; collapsed view shows title + progress summary
+  - State persisted to localStorage per card
+- ✅ Consistent behind-schedule styling — Complete
+  - Shared helper `getTaskScheduleState()` in `utils/schedule.ts` uses DB-computed `is_delayed` and `status_health`
+  - Kanban TaskCard now shows red border + "Delayed" badge (or amber + "Behind") matching Workflow TaskNode
+  - No new DB/RPC calls; pure UI consumption of existing fields
+
+### Phase 4 — Freeze Notes (Locked)
+
+Phase 4 is **complete and frozen** as of 2026-02-16.
+
+- All explainability features are **strictly read-only** — no DB writes from explain stack
+- AI narration is **feature-flagged** (`EXPLAIN_AI_ENABLED`, default OFF) — ProMin operates with $0 AI spend by default
+- Status semantics are **deterministic and locked**:
+  - `DELAYED` requires `CRITICAL_TASK_LATE`, `BASELINE_SLIP`, or `PLANNED_COMPLETE_BUT_NOT_DONE`
+  - `AT_RISK` requires `TASK_LATE` or `PLANNED_AHEAD_OF_ACTUAL`
+  - `ON_TRACK` = no qualifying reasons
+- UI parity between Kanban and Workflow views uses shared `getTaskScheduleState()` predicate
+- Verification docs: `docs/verification/phase4_explainability.md`, `docs/verification/phase4_ui_parity.md`
+- Migration: `20260216100000_explain_entity_rpc.sql`
+
+> Do not reopen Phase 4 items unless explicitly requested. Future insight surfacing belongs in Phase 4.5+.
+
+### Phase 4.5+ — Remaining (Pending)
+
+- ⬜ Insight surfacing
   - Bottlenecks, leverage points, risk drivers
-- ⬜ Natural-language explanations grounded in deterministic data  
+- ⬜ Natural-language explanations grounded in deterministic data
 
 ---
 
@@ -196,9 +287,26 @@ Chat is an **accelerator of understanding**, not a planner.
   - Step-function semantics: planned = 1 if asof >= planned_end, actual = 1 if is_done
   - Hierarchical weight normalization: `(mw/Σmw)·(tw/Σtw)·(sw/Σsw)`
   - Worst-case risk rollup: ON_TRACK / AT_RISK / DELAYED
-  - Frontend enforcement (home page, project detail, reports): canonical RPC values only
-  - ProjectOverviewCard: no fallback to DB progress columns
-  - Remaining: milestone detail, TaskCard, TaskNode, MilestoneCard, GanttChart still use DB columns
+  - All UI screens use canonical RPCs (home, project detail, milestone detail, gantt, reports)
+  - Canonical TypeScript contract: `types/progress.ts` (EntityProgress, HierarchyRow, toEntityProgress)
+- ✅ Progress model correctness fix — Complete
+  - **Root cause**: `DeliverableCard.tsx` set `is_done` without `completed_at`; progress RPCs require both
+  - **DB fix**: `auto_set_completed_at` BEFORE trigger ensures `completed_at` is always set when `is_done` transitions
+  - **Backfill**: existing `is_done=true, completed_at=NULL` rows get `completed_at = updated_at`
+  - **Weight denominator dilution fix**: `mw_sum`/`tw_sums` now only include entities with deliverable descendants
+  - **SUM(DISTINCT) fix**: hierarchy RPC uses proper DISTINCT ON + GROUP BY instead of SUM(DISTINCT)
+  - **S-curve today point**: CURRENT_DATE always included in date_series via UNION
+  - Migrations: `20260215160000`, `20260215180000`, `20260215200000`
+- ✅ Baseline weight denominator fix — Complete
+  - `create_project_baseline` weight sums now filter with `EXISTS` (only entities with deliverable descendants)
+  - Matches corrected progress RPCs — frozen `effective_weight` sums to 1.0
+  - Migration: `20260215210000`
+- ✅ Gantt chart enhancements — Complete
+  - Tooltip now shows both Planned Progress % and Actual Progress % (previously only actual)
+  - Project-level summary bar at top of Gantt chart with overall planned/actual progress
+  - Dark slate color palette for project bar (distinct from milestone colors)
+  - Project row is collapsible — collapses all milestones and tasks beneath it
+  - 3-level hierarchy: Project → Milestone → Task
 - ⬜ Cost & EVM primitives
 - ⬜ Resource planning
 

@@ -8,6 +8,7 @@ import { completeMilestone } from "../lib/lifecycle";
 import { supabase } from "../lib/supabaseClient";
 import EditMilestoneModal from "./EditMilestoneModal";
 import { useToast } from "./ToastProvider";
+import ExplainButton from "./explain/ExplainButton";
 
 type Props = {
   milestone: Milestone;
@@ -15,6 +16,8 @@ type Props = {
   canEdit: boolean;
   canDelete: boolean;
   onUpdated?: () => void | Promise<void>;
+  canonicalPlanned?: number | null;
+  canonicalActual?: number | null;
 };
 
 export default function MilestoneCard({
@@ -23,6 +26,8 @@ export default function MilestoneCard({
   canEdit,
   canDelete,
   onUpdated,
+  canonicalPlanned,
+  canonicalActual,
 }: Props) {
   const router = useRouter();
   const { pushToast } = useToast();
@@ -62,7 +67,7 @@ export default function MilestoneCard({
 
   useEffect(() => {
     checkTaskCompletion();
-  }, [milestone.id, milestone.actual_progress, milestone.status]);
+  }, [milestone.id, milestone.status]);
 
   // Realtime on tasks for this milestone — updates allTasksComplete when tasks are completed
   useEffect(() => {
@@ -163,10 +168,11 @@ export default function MilestoneCard({
   const canComplete = canEdit && milestone.status !== "completed" && !completing;
   const buttonDisabled = !canComplete || !allTasksComplete || loadingTaskStatus;
 
-  const actualProgress = milestone.actual_progress ?? 0;
+  const plannedProgress = canonicalPlanned ?? 0;
+  const actualProgress = canonicalActual ?? 0;
 
   // Status badge reads ONLY milestone.status.
-  // actual_progress reaching 100 via rollup does NOT mean completed —
+  // Canonical progress reaching 100 via rollup does NOT mean completed —
   // user must explicitly click "Complete Milestone" to set status + actual_end.
   const getStatusBadge = () => {
     if (milestone.status === "completed") {
@@ -247,8 +253,9 @@ export default function MilestoneCard({
                 <span className="ml-2 text-gray-400">(Normalized: <span className="font-semibold">{((milestone.weight ?? 0) * 100).toFixed(1)}%</span>)</span>
               </div>
             </div>
-            <div className="flex items-center justify-start flex-shrink-0">
+            <div className="flex items-center gap-2 flex-shrink-0">
               {getStatusBadge()}
+              <ExplainButton entityType="milestone" entityId={milestone.id} compact />
             </div>
           </div>
 
@@ -330,22 +337,23 @@ export default function MilestoneCard({
               <div className="flex justify-between items-center mb-1.5">
                 <span className="text-xs font-medium text-slate-600">Planned Progress</span>
                 <span className="text-xs font-semibold text-slate-700">
-                  {(milestone.planned_progress ?? 0).toFixed(1)}%
+                  {canonicalPlanned != null ? `${plannedProgress.toFixed(1)}%` : "—"}
                 </span>
               </div>
               <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-blue-400 to-blue-500 rounded-full transition-all duration-300"
-                  style={{ width: `${Math.min(100, milestone.planned_progress ?? 0)}%` }}
+                  style={{ width: `${Math.min(100, plannedProgress)}%` }}
                 />
               </div>
             </div>
 
+ 
             <div>
               <div className="flex justify-between items-center mb-1.5">
                 <span className="text-xs font-medium text-slate-600">Actual Progress</span>
                 <span className="text-xs font-semibold text-slate-700">
-                  {actualProgress.toFixed(1)}%
+                  {canonicalActual != null ? `${actualProgress.toFixed(1)}%` : "—"}
                 </span>
               </div>
               <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
