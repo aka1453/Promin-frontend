@@ -96,7 +96,18 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
         p_project_id: projectId,
         p_asof: userToday,
       }),
-      fetch(`/api/projects/${projectId}/forecast`).then(r => r.json()).catch(() => null),
+      fetch(`/api/projects/${projectId}/forecast`)
+        .then(r => {
+          if (!r.ok) {
+            console.warn(`Forecast fetch returned ${r.status}`);
+            return null;
+          }
+          return r.json();
+        })
+        .catch((err) => {
+          console.warn("Forecast fetch failed:", err);
+          return null;
+        }),
     ]);
 
     const { data: hierRows, error: hierErr } = hierResult;
@@ -121,11 +132,14 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
       setMsProgressMap({});
     }
 
-    // Set forecast data
-    if (forecastResult?.ok && forecastResult.data) {
+    // Set forecast data — accept any truthy response with a data payload
+    if (forecastResult?.ok && forecastResult.data != null) {
       setForecastData(forecastResult.data as ForecastResult);
     } else {
       setForecastData(null);
+      if (forecastResult && !forecastResult.ok) {
+        console.warn("Forecast RPC error:", forecastResult.error);
+      }
     }
   }, [projectId, timezone]);
 
@@ -477,87 +491,89 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                   </div>
                 </div>
 
-                {/* Forecast Section */}
-                {forecastData && (
-                  <div className="pt-4 border-t border-slate-200 mb-2">
-                    <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">
-                      Forecast
-                    </h3>
-                    {forecastData.method === "completed" ? (
-                      <div className="flex items-center gap-2 text-emerald-700 bg-emerald-50 rounded-lg px-4 py-2 text-sm font-medium">
-                        Project completed
-                        {forecastData.forecast_completion_date && (
-                          <span className="ml-auto text-emerald-600">
-                            {new Date(forecastData.forecast_completion_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                {/* Forecast Section — always rendered; shows neutral state when unavailable */}
+                <div className="pt-4 border-t border-slate-200 mb-2">
+                  <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">
+                    Forecast
+                  </h3>
+                  {!forecastData ? (
+                    <div className="flex items-center gap-2 text-slate-400 bg-slate-50 rounded-lg px-4 py-2 text-sm">
+                      Forecast data unavailable
+                    </div>
+                  ) : forecastData.method === "completed" ? (
+                    <div className="flex items-center gap-2 text-emerald-700 bg-emerald-50 rounded-lg px-4 py-2 text-sm font-medium">
+                      Project completed
+                      {forecastData.forecast_completion_date && (
+                        <span className="ml-auto text-emerald-600">
+                          {new Date(forecastData.forecast_completion_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                        </span>
+                      )}
+                    </div>
+                  ) : forecastData.method === "not_started" ? (
+                    <div className="flex items-center gap-2 text-slate-500 bg-slate-50 rounded-lg px-4 py-2 text-sm">
+                      Not started — forecast unavailable
+                    </div>
+                  ) : forecastData.method === "insufficient_velocity" ? (
+                    <div className="flex items-center gap-2 text-amber-700 bg-amber-50 rounded-lg px-4 py-2 text-sm">
+                      Insufficient velocity to forecast
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* ECD + Schedule Status */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-slate-600">Expected Completion</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-800">
+                            {forecastData.forecast_completion_date
+                              ? new Date(forecastData.forecast_completion_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                              : "—"}
                           </span>
-                        )}
-                      </div>
-                    ) : forecastData.method === "not_started" ? (
-                      <div className="flex items-center gap-2 text-slate-500 bg-slate-50 rounded-lg px-4 py-2 text-sm">
-                        Not started — forecast unavailable
-                      </div>
-                    ) : forecastData.method === "insufficient_velocity" ? (
-                      <div className="flex items-center gap-2 text-amber-700 bg-amber-50 rounded-lg px-4 py-2 text-sm">
-                        Insufficient velocity to forecast
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {/* ECD + Schedule Status */}
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-slate-600">Expected Completion</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-slate-800">
-                              {forecastData.forecast_completion_date
-                                ? new Date(forecastData.forecast_completion_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-                                : "—"}
-                            </span>
-                            {forecastData.days_ahead_or_behind != null && (() => {
-                              const d = forecastData.days_ahead_or_behind;
-                              const abs = Math.abs(d);
-                              if (d < -3) return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-700">{abs}d early</span>;
-                              if (d <= 3) return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-100 text-emerald-700">On time</span>;
-                              if (d <= 14) return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-100 text-amber-700">{abs}d late</span>;
-                              return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700">{abs}d late</span>;
-                            })()}
-                          </div>
-                        </div>
-
-                        {/* Best–worst range */}
-                        {forecastData.best_case_date && forecastData.worst_case_date && (
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm text-slate-600">Range</span>
-                            <span className="text-xs text-slate-500">
-                              {new Date(forecastData.best_case_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                              {" — "}
-                              {new Date(forecastData.worst_case_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Confidence + Velocity */}
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-slate-600">Confidence</span>
-                          <div className="flex items-center gap-2">
-                            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                              forecastData.confidence === "high"
-                                ? "bg-emerald-100 text-emerald-700"
-                                : forecastData.confidence === "medium"
-                                ? "bg-amber-100 text-amber-700"
-                                : "bg-slate-100 text-slate-600"
-                            }`}>
-                              {forecastData.confidence}
-                            </span>
-                            {forecastData.velocity != null && (
-                              <span className="text-xs text-slate-400">
-                                {(forecastData.velocity * 100).toFixed(2)}%/day
-                              </span>
-                            )}
-                          </div>
+                          {forecastData.days_ahead_or_behind != null && (() => {
+                            const d = forecastData.days_ahead_or_behind;
+                            const abs = Math.abs(d);
+                            if (d < -3) return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-700">{abs}d early</span>;
+                            if (d <= 3) return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-100 text-emerald-700">On time</span>;
+                            if (d <= 14) return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-100 text-amber-700">{abs}d late</span>;
+                            return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700">{abs}d late</span>;
+                          })()}
                         </div>
                       </div>
-                    )}
-                  </div>
-                )}
+
+                      {/* Best–worst range */}
+                      {forecastData.best_case_date && forecastData.worst_case_date && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-slate-600">Range</span>
+                          <span className="text-xs text-slate-500">
+                            {new Date(forecastData.best_case_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                            {" — "}
+                            {new Date(forecastData.worst_case_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Confidence + Velocity */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-slate-600">Confidence</span>
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                            forecastData.confidence === "high"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : forecastData.confidence === "medium"
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-slate-100 text-slate-600"
+                          }`}>
+                            {forecastData.confidence}
+                          </span>
+                          {forecastData.velocity != null && (
+                            <span className="text-xs text-slate-400">
+                              {(Number(forecastData.velocity) * 100).toFixed(2)}%/day
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {/* Date Information */}
                 <div className="grid grid-cols-2 gap-4 pt-6 border-t border-slate-200">
