@@ -13,7 +13,7 @@ import type { Milestone } from "../../types/milestone";
 import CreateBaselineDialog from "../../components/CreateBaselineDialog";
 import { ArrowLeft, Settings, Clock, BarChart2, GanttChartSquare, Bookmark, FileText, Sparkles } from "lucide-react";
 import { useUserTimezone } from "../../context/UserTimezoneContext";
-import type { EntityProgress, HierarchyRow } from "../../types/progress";
+import type { EntityProgress, HierarchyRow, ForecastResult } from "../../types/progress";
 import { toEntityProgress } from "../../types/progress";
 import ExplainButton from "../../components/explain/ExplainButton";
 
@@ -59,6 +59,9 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
   // Per-milestone canonical progress from hierarchy RPC, keyed by string entity ID
   const [msProgressMap, setMsProgressMap] = useState<Record<string, EntityProgress>>({});
 
+  // Forecast data from get_project_forecast RPC
+  const [forecastData, setForecastData] = useState<ForecastResult | null>(null);
+
   // Track whether we've done the first load — realtime refreshes skip the spinner
   const initialLoadDone = useRef(false);
 
@@ -83,12 +86,20 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
   }, [projectId]);
 
   // Fetch canonical progress from hierarchy RPC (project + milestones in one call)
+  // Also fetches forecast data in parallel
   const fetchCanonicalProgress = useCallback(async () => {
     const userToday = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
-    const { data: hierRows, error: hierErr } = await supabase.rpc("get_project_progress_hierarchy", {
-      p_project_id: projectId,
-      p_asof: userToday,
-    });
+
+    // Fetch progress hierarchy and forecast in parallel
+    const [hierResult, forecastResult] = await Promise.all([
+      supabase.rpc("get_project_progress_hierarchy", {
+        p_project_id: projectId,
+        p_asof: userToday,
+      }),
+      fetch(`/api/projects/${projectId}/forecast`).then(r => r.json()).catch(() => null),
+    ]);
+
+    const { data: hierRows, error: hierErr } = hierResult;
     if (!hierErr && hierRows) {
       const rows = hierRows as HierarchyRow[];
       const projRow = rows.find(r => r.entity_type === "project");
@@ -108,6 +119,13 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
     } else {
       setCanonicalProgress({ planned: null, actual: null, risk_state: null });
       setMsProgressMap({});
+    }
+
+    // Set forecast data
+    if (forecastResult?.ok && forecastResult.data) {
+      setForecastData(forecastResult.data as ForecastResult);
+    } else {
+      setForecastData(null);
     }
   }, [projectId, timezone]);
 
@@ -458,6 +476,88 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                     </div>
                   </div>
                 </div>
+
+                {/* Forecast Section */}
+                {forecastData && (
+                  <div className="pt-4 border-t border-slate-200 mb-2">
+                    <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">
+                      Forecast
+                    </h3>
+                    {forecastData.method === "completed" ? (
+                      <div className="flex items-center gap-2 text-emerald-700 bg-emerald-50 rounded-lg px-4 py-2 text-sm font-medium">
+                        Project completed
+                        {forecastData.forecast_completion_date && (
+                          <span className="ml-auto text-emerald-600">
+                            {new Date(forecastData.forecast_completion_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                          </span>
+                        )}
+                      </div>
+                    ) : forecastData.method === "not_started" ? (
+                      <div className="flex items-center gap-2 text-slate-500 bg-slate-50 rounded-lg px-4 py-2 text-sm">
+                        Not started — forecast unavailable
+                      </div>
+                    ) : forecastData.method === "insufficient_velocity" ? (
+                      <div className="flex items-center gap-2 text-amber-700 bg-amber-50 rounded-lg px-4 py-2 text-sm">
+                        Insufficient velocity to forecast
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {/* ECD + Schedule Status */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-slate-600">Expected Completion</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-slate-800">
+                              {forecastData.forecast_completion_date
+                                ? new Date(forecastData.forecast_completion_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                                : "—"}
+                            </span>
+                            {forecastData.days_ahead_or_behind != null && (() => {
+                              const d = forecastData.days_ahead_or_behind;
+                              const abs = Math.abs(d);
+                              if (d < -3) return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-700">{abs}d early</span>;
+                              if (d <= 3) return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-100 text-emerald-700">On time</span>;
+                              if (d <= 14) return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-100 text-amber-700">{abs}d late</span>;
+                              return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700">{abs}d late</span>;
+                            })()}
+                          </div>
+                        </div>
+
+                        {/* Best–worst range */}
+                        {forecastData.best_case_date && forecastData.worst_case_date && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-slate-600">Range</span>
+                            <span className="text-xs text-slate-500">
+                              {new Date(forecastData.best_case_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                              {" — "}
+                              {new Date(forecastData.worst_case_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Confidence + Velocity */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-slate-600">Confidence</span>
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                              forecastData.confidence === "high"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : forecastData.confidence === "medium"
+                                ? "bg-amber-100 text-amber-700"
+                                : "bg-slate-100 text-slate-600"
+                            }`}>
+                              {forecastData.confidence}
+                            </span>
+                            {forecastData.velocity != null && (
+                              <span className="text-xs text-slate-400">
+                                {(forecastData.velocity * 100).toFixed(2)}%/day
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Date Information */}
                 <div className="grid grid-cols-2 gap-4 pt-6 border-t border-slate-200">

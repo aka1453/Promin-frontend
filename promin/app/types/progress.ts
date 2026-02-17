@@ -58,6 +58,29 @@ export type ScurveRow = {
 /** Map of entity ID → progress (0-100 scale), used as props to components */
 export type ProgressMap = Record<string, EntityProgress>;
 
+/** Forecast confidence level */
+export type ForecastConfidence = "high" | "medium" | "low";
+
+/** Forecast computation method */
+export type ForecastMethod =
+  | "linear_velocity"
+  | "completed"
+  | "not_started"
+  | "insufficient_velocity";
+
+/** Row returned by get_project_forecast RPC */
+export type ForecastResult = {
+  forecast_completion_date: string | null;
+  days_ahead_or_behind: number | null;
+  velocity: number | null;
+  remaining_progress: number | null;
+  best_case_date: string | null;
+  worst_case_date: string | null;
+  confidence: ForecastConfidence;
+  method: ForecastMethod;
+  metadata: Record<string, unknown>;
+};
+
 /**
  * Convert a raw RPC row (0-1 scale) to frontend EntityProgress (0-100 scale).
  */

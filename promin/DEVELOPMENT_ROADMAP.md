@@ -320,9 +320,31 @@ Drafts require **human review and acceptance** before becoming real plans.
 ## Phase 6 — Execution Intelligence (Post-Acceptance)
 
 Once accepted, the project behaves exactly like any other ProMin project.
+All existing intelligence (health, CPM, baselines, variance, progress) fires
+automatically when `accept_plan_draft()` inserts into live tables.
 
-- ⬜ Health, CPM, baselines, variance apply automatically  
-- ⬜ Draft origin preserved for traceability  
+- ✅ Health, CPM, baselines, variance apply automatically (certified — triggers fire on INSERT)
+- ✅ Draft origin preserved for traceability (`plan_drafts` audit records retained)
+- ✅ Deterministic project forecasting (ECD)
+  - `get_project_forecast(bigint)` RPC: linear velocity method, best/worst range, confidence
+  - API route: `GET /api/projects/[projectId]/forecast` (auth-gated, SECURITY INVOKER)
+  - UI: inline forecast section in Project Overview card (ECD, schedule badge, range, confidence, velocity)
+  - Methods: `linear_velocity`, `completed`, `not_started`, `insufficient_velocity`
+  - No AI, no ML — pure deterministic arithmetic
+  - Migration: `20260217100000_project_forecast_rpc.sql`
+- ✅ Verification: `docs/verification/phase6_execution_intelligence.md`
+
+### Phase 6 — Freeze Notes (Locked)
+
+Phase 6 is **complete and frozen** as of 2026-02-17.
+
+- All forecasting is **deterministic** — same inputs produce same outputs
+- Forecast is **read-only** — GET endpoint only, no mutations
+- SECURITY INVOKER — respects RLS, no escalation
+- No new UX paradigms — forecast is inline in existing Project Overview card
+- Existing intelligence (health, CPM, baselines, variance) confirmed to fire automatically on draft acceptance
+
+> Do not reopen Phase 6 items unless explicitly requested. Cost/EVM belongs in Phase 8.
 
 ---
 
