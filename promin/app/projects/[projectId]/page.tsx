@@ -90,24 +90,15 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
   const fetchCanonicalProgress = useCallback(async () => {
     const userToday = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
 
-    // Fetch progress hierarchy and forecast in parallel
+    // Fetch progress hierarchy and forecast in parallel (both via client-side RPC)
     const [hierResult, forecastResult] = await Promise.all([
       supabase.rpc("get_project_progress_hierarchy", {
         p_project_id: projectId,
         p_asof: userToday,
       }),
-      fetch(`/api/projects/${projectId}/forecast`)
-        .then(r => {
-          if (!r.ok) {
-            console.warn(`Forecast fetch returned ${r.status}`);
-            return null;
-          }
-          return r.json();
-        })
-        .catch((err) => {
-          console.warn("Forecast fetch failed:", err);
-          return null;
-        }),
+      supabase.rpc("get_project_forecast", {
+        p_project_id: projectId,
+      }),
     ]);
 
     const { data: hierRows, error: hierErr } = hierResult;
@@ -132,13 +123,15 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
       setMsProgressMap({});
     }
 
-    // Set forecast data — accept any truthy response with a data payload
-    if (forecastResult?.ok && forecastResult.data != null) {
-      setForecastData(forecastResult.data as ForecastResult);
+    // Set forecast data from direct RPC call
+    const { data: fcData, error: fcErr } = forecastResult;
+    if (!fcErr && fcData != null) {
+      const row = Array.isArray(fcData) ? fcData[0] ?? null : fcData;
+      setForecastData(row as ForecastResult);
     } else {
       setForecastData(null);
-      if (forecastResult && !forecastResult.ok) {
-        console.warn("Forecast RPC error:", forecastResult.error);
+      if (fcErr) {
+        console.warn("Forecast RPC error:", fcErr.message);
       }
     }
   }, [projectId, timezone]);
