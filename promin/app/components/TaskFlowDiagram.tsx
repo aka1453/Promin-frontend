@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import ReactFlow, {
   Background,
   Controls,
@@ -34,6 +34,8 @@ import type { TaskDependency, TaskWithDependencies } from "../types/taskDependen
 import TaskNode from "./TaskNode";
 import TaskDetailsDrawer from "./TaskDetailsDrawer";
 import AddTaskButton from "./AddTaskButton";
+import { useUserTimezone } from "../context/UserTimezoneContext";
+import { todayForTimezone } from "../utils/date";
 
 const nodeTypes: NodeTypes = {
   taskNode: TaskNode,
@@ -99,6 +101,8 @@ type Props = {
 };
 
 export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props) {
+  const { timezone } = useUserTimezone();
+  const asOfDate = useMemo(() => todayForTimezone(timezone), [timezone]);
   const [tasks, setTasks] = useState<TaskWithDependencies[]>([]);
   const [dependencies, setDependencies] = useState<TaskDependency[]>([]);
   const [loading, setLoading] = useState(true);
@@ -313,11 +317,13 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
         onTaskUpdated: loadData,
         canonicalPlanned: taskProgressMap?.[String(task.id)]?.planned ?? null,
         canonicalActual: taskProgressMap?.[String(task.id)]?.actual ?? null,
+        canonicalRiskState: taskProgressMap?.[String(task.id)]?.risk_state ?? null,
+        asOfDate,
       },
     }));
 
     setNodes(newNodes);
-  }, [tasks, handleToggleCollapse, handleTaskClick, handleTaskDelete, setNodes, taskProgressMap]);
+  }, [tasks, handleToggleCollapse, handleTaskClick, handleTaskDelete, setNodes, taskProgressMap, asOfDate]);
 
   // Convert dependencies to ReactFlow edges with duration labels
   useEffect(() => {
@@ -492,11 +498,19 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
     [loadData, tasks]
   );
 
-  // Handle node drag end - save position
+  // Handle node drag end - save position and update local state
   const onNodeDragStop = useCallback(
     async (event: React.MouseEvent, node: Node) => {
       const taskId = parseInt(node.id);
       await updateTaskPosition(taskId, node.position.x, node.position.y);
+      // Update local tasks state so re-renders don't revert to stale positions
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId
+            ? { ...t, diagram_x: node.position.x, diagram_y: node.position.y }
+            : t
+        )
+      );
     },
     []
   );

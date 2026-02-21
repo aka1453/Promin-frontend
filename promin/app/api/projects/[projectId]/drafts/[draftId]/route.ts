@@ -8,7 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServer } from "../../../../../lib/supabaseServer";
+import { getAuthenticatedClient } from "../../../../../lib/apiAuth";
 
 export async function GET(
   req: NextRequest,
@@ -28,18 +28,15 @@ export async function GET(
     );
   }
 
-  // Auth
-  const supabase = await createSupabaseServer();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session) {
+  // Auth — token-scoped client so all DB ops respect RLS
+  const auth = await getAuthenticatedClient(req);
+  if (!auth) {
     return NextResponse.json(
       { ok: false, error: "Not authenticated." },
       { status: 401 }
     );
   }
+  const { supabase } = auth;
 
   // Fetch draft
   const { data: draft, error: draftError } = await supabase
@@ -88,31 +85,41 @@ export async function GET(
         .eq("draft_id", draftId),
     ]);
 
-  const milestones = milestonesRes.data || [];
-  const tasks = tasksRes.data || [];
-  const deliverables = deliverablesRes.data || [];
-  const dependencies = depsRes.data || [];
-  const conflicts = conflictsRes.data || [];
-  const assumptions = assumptionsRes.data || [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const milestones = (milestonesRes.data || []) as any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tasks = (tasksRes.data || []) as any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const deliverables = (deliverablesRes.data || []) as any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dependencies = (depsRes.data || []) as any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const conflicts = (conflictsRes.data || []) as any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const assumptions = (assumptionsRes.data || []) as any[];
 
   // Assemble tree: milestones → tasks → deliverables
-  const tasksByMilestone = new Map<number, typeof tasks>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tasksByMilestone = new Map<number, any[]>();
   for (const t of tasks) {
     const list = tasksByMilestone.get(t.draft_milestone_id) || [];
     list.push(t);
     tasksByMilestone.set(t.draft_milestone_id, list);
   }
 
-  const delivsByTask = new Map<number, typeof deliverables>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const delivsByTask = new Map<number, any[]>();
   for (const d of deliverables) {
     const list = delivsByTask.get(d.draft_task_id) || [];
     list.push(d);
     delivsByTask.set(d.draft_task_id, list);
   }
 
-  const milestonesTree = milestones.map((ms) => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const milestonesTree = milestones.map((ms: any) => ({
     ...ms,
-    tasks: (tasksByMilestone.get(ms.id) || []).map((t) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tasks: (tasksByMilestone.get(ms.id) || []).map((t: any) => ({
       ...t,
       deliverables: delivsByTask.get(t.id) || [],
     })),
@@ -132,7 +139,8 @@ export async function GET(
       .select("id, full_name, email")
       .in("id", userIds);
 
-    for (const p of profiles || []) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const p of (profiles || []) as any[]) {
       nameMap[p.id] = p.full_name || p.email || "Unknown";
     }
   }

@@ -3,6 +3,8 @@
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { startTask, completeTask } from "../lib/lifecycle";
+import { useUserTimezone } from "../context/UserTimezoneContext";
+import { todayForTimezone } from "../utils/date";
 import DeliverableCard from "./DeliverableCard";
 import DeliverableCreateModal from "./DeliverableCreateModal";
 import CommentsSection from "./CommentsSection";
@@ -20,6 +22,7 @@ export default function TaskDetailsDrawer({
   onClose,
   onTaskUpdated,
 }: Props) {
+  const { timezone } = useUserTimezone();
   const [deliverables, setDeliverables] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -116,7 +119,7 @@ export default function TaskDetailsDrawer({
 
   const handleStartTask = async () => {
     try {
-      await startTask(localTask.id);
+      await startTask(localTask.id, todayForTimezone(timezone));
       await loadTask();
       onTaskUpdated?.();
     } catch (error) {
@@ -131,7 +134,7 @@ export default function TaskDetailsDrawer({
     if (!confirmed) return;
 
     try {
-      await completeTask(localTask.id);
+      await completeTask(localTask.id, todayForTimezone(timezone));
       await loadTask();
       onTaskUpdated?.();
     } catch (error) {

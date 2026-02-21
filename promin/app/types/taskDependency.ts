@@ -61,4 +61,8 @@ export interface TaskNodeData {
   onTaskUpdated?: () => void;
   canonicalPlanned?: number | null;
   canonicalActual?: number | null;
+  /** Canonical risk state from hierarchy progress RPC — primary status authority. */
+  canonicalRiskState?: string | null;
+  /** Timezone-aware YYYY-MM-DD "today" for schedule state comparison. */
+  asOfDate: string;
 }

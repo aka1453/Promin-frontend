@@ -8,8 +8,11 @@ import { getTaskScheduleState, getScheduleBorderClass } from "../utils/schedule"
 import { startTask, completeTask } from "../lib/lifecycle";
 import TaskCardMenu from "./TaskCardMenu";
 import { supabase } from "../lib/supabaseClient";
+import { useUserTimezone } from "../context/UserTimezoneContext";
+import { todayForTimezone } from "../utils/date";
 import EditTaskModal from "./EditTaskModal";
 import ExplainButton from "./explain/ExplainButton";
+import ChatButton from "./chat/ChatButton";
 
 type Props = {
   task: any;
@@ -17,9 +20,14 @@ type Props = {
   onTaskUpdated?: () => void;
   canonicalPlanned?: number | null;
   canonicalActual?: number | null;
+  /** Canonical risk state from hierarchy progress RPC — primary status authority. */
+  canonicalRiskState?: string | null;
+  /** Timezone-aware YYYY-MM-DD "today" for schedule state comparison. */
+  asOfDate: string;
 };
 
-export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanned, canonicalActual }: Props) {
+export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanned, canonicalActual, canonicalRiskState, asOfDate }: Props) {
+  const { timezone } = useUserTimezone();
   const [allDeliverablesComplete, setAllDeliverablesComplete] = useState(false);
   const [deliverablesCount, setDeliverablesCount] = useState(0);
   const [completedCount, setCompletedCount] = useState(0);
@@ -101,7 +109,7 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
   const handleStartTask = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     try {
-      await startTask(task.id);
+      await startTask(task.id, todayForTimezone(timezone));
       onTaskUpdated?.();
     } catch (error) {
       console.error("Failed to start task:", error);
@@ -117,7 +125,7 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
     if (!confirmed) return;
 
     try {
-      await completeTask(task.id);
+      await completeTask(task.id, todayForTimezone(timezone));
       onTaskUpdated?.();
     } catch (error) {
       console.error("Failed to complete task:", error);
@@ -188,7 +196,11 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
   const weight = Number(task.weight ?? 0);
 
   // Behind-schedule detection using shared helper (matches TaskNode styling)
-  const scheduleState = getTaskScheduleState(task);
+  // Merge canonical risk_state into the task object so the helper uses it as primary authority
+  const scheduleState = getTaskScheduleState(
+    canonicalRiskState != null ? { ...task, risk_state: canonicalRiskState } : task,
+    asOfDate
+  );
   const scheduleBorder = getScheduleBorderClass(scheduleState);
 
   return (
@@ -233,8 +245,9 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
           
           {/* BUTTONS */}
           <div className="flex items-center gap-1 flex-shrink-0">
-            {/* Explain button */}
+            {/* Explain + Ask buttons */}
             <ExplainButton entityType="task" entityId={task.id} compact />
+            <ChatButton entityType="task" entityId={task.id} entityName={task.name || undefined} compact />
 
             {/* Collapse button */}
             <button

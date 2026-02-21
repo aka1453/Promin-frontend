@@ -1,7 +1,15 @@
-export function todayLocalISO(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+/**
+ * Timezone-aware "today" utility.
+ *
+ * Returns YYYY-MM-DD for the given IANA timezone (defaults to UTC).
+ * This matches the pattern used by all progress RPCs and DB CURRENT_DATE.
+ *
+ * For client components: prefer useUserTimezone().userToday or the
+ * timezone string from that context.
+ *
+ * For non-React contexts (utilities, API routes): call this directly
+ * with the appropriate timezone.
+ */
+export function todayForTimezone(timezone: string = "UTC"): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: timezone });
 }

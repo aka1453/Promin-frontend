@@ -7,13 +7,15 @@ import type { TaskNodeData } from "../types/taskDependency";
 import { getTaskScheduleState } from "../utils/schedule";
 import EditTaskModal from "./EditTaskModal";
 import ExplainDrawer from "./explain/ExplainDrawer";
+import ChatDrawer from "./chat/ChatDrawer";
 
 function TaskNode({ data }: NodeProps<TaskNodeData>) {
-  const { task, collapsed, onToggleCollapse, onClick, onDelete, onTaskUpdated, canonicalPlanned, canonicalActual } = data;
+  const { task, collapsed, onToggleCollapse, onClick, onDelete, onTaskUpdated, canonicalPlanned, canonicalActual, canonicalRiskState, asOfDate } = data;
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [explainOpen, setExplainOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -46,8 +48,11 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
   // Canonical progress from hierarchy RPC (already 0-100 scale)
   const actualProgress = canonicalActual ?? task.progress ?? 0;
   const plannedProgress = canonicalPlanned ?? 0;
-  // Shared schedule-state helper — same predicate used by Kanban TaskCard
-  const scheduleState = getTaskScheduleState(task);
+  // Shared schedule-state helper — canonical risk_state is primary authority
+  const scheduleState = getTaskScheduleState(
+    canonicalRiskState != null ? { ...task, risk_state: canonicalRiskState } : task,
+    asOfDate
+  );
   const isDelayed = scheduleState === "DELAYED";
   const isBehind = scheduleState === "BEHIND";
 
@@ -126,6 +131,12 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
     setExplainOpen(true);
   };
 
+  const handleChatClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setMenuOpen(false);
+    setChatOpen(true);
+  };
+
   // Critical path ring (subtle purple glow, stacks on top of status border)
   const criticalRing = isCritical
     ? "ring-2 ring-purple-500/40"
@@ -146,10 +157,16 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
         Edit task
       </button>
       <button
-        className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 text-blue-700 rounded-b-lg"
+        className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 text-blue-700"
         onClick={handleExplainClick}
       >
         Explain status
+      </button>
+      <button
+        className="w-full text-left px-3 py-2 text-sm hover:bg-violet-50 text-violet-700 rounded-b-lg"
+        onClick={handleChatClick}
+      >
+        Ask about task
       </button>
     </div>
   );
@@ -187,6 +204,13 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
         onOpenChange={setExplainOpen}
         entityType="task"
         entityId={task.id}
+      />
+      <ChatDrawer
+        open={chatOpen}
+        onOpenChange={setChatOpen}
+        entityType="task"
+        entityId={task.id}
+        entityName={task.title || undefined}
       />
     </>
   );

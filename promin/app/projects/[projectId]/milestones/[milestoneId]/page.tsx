@@ -4,6 +4,7 @@ import { useEffect, useState, use, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../../lib/supabaseClient";
 import { useUserTimezone } from "../../../../context/UserTimezoneContext";
+import { todayForTimezone } from "../../../../utils/date";
 import TaskViewWrapper from "../../../../components/TaskViewWrapper";
 import type { EntityProgress, HierarchyRow } from "../../../../types/progress";
 import { toEntityProgress } from "../../../../types/progress";
@@ -48,7 +49,7 @@ export default function MilestonePage({
 
   // Fetch canonical progress from hierarchy RPC
   const fetchCanonicalProgress = useCallback(async () => {
-    const userToday = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
+    const userToday = todayForTimezone(timezone);
     const { data: hierRows, error } = await supabase.rpc("get_project_progress_hierarchy", {
       p_project_id: projectId,
       p_asof: userToday,

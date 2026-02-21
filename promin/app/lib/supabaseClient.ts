@@ -25,3 +25,10 @@ export const supabase =
       detectSessionInUrl: false,
     },
   }));
+
+/** Get Bearer token headers for authenticated API calls. */
+export async function getAuthHeaders(): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return {};
+  return { Authorization: `Bearer ${session.access_token}` };
+}

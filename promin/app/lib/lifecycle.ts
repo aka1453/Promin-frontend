@@ -1,15 +1,12 @@
-// TODO: Replace with DB RPCs; frontend must not write lifecycle fields.
-// Currently only writing date fields as a temporary mitigation.
-// Status and progress must be derived by DB triggers.
+// Lifecycle intent functions — call DB RPCs, never write lifecycle fields directly.
+// Callers must provide a timezone-aware date via todayForTimezone(userTimezone).
 import { supabase } from "./supabaseClient";
 
-export async function startTask(taskId: number) {
-  const { error } = await supabase
-    .from("tasks")
-    .update({
-      actual_start: new Date().toISOString().slice(0, 10),
-    })
-    .eq("id", taskId);
+export async function startTask(taskId: number, actualStart: string) {
+  const { error } = await supabase.rpc("start_task", {
+    p_task_id: taskId,
+    p_actual_start: actualStart,
+  });
 
   if (error) {
     console.error("Failed to start task:", error);
@@ -17,13 +14,11 @@ export async function startTask(taskId: number) {
   }
 }
 
-export async function completeTask(taskId: number) {
-  const { error } = await supabase
-    .from("tasks")
-    .update({
-      actual_end: new Date().toISOString().slice(0, 10),
-    })
-    .eq("id", taskId);
+export async function completeTask(taskId: number, actualEnd: string) {
+  const { error } = await supabase.rpc("complete_task", {
+    p_task_id: taskId,
+    p_actual_end: actualEnd,
+  });
 
   if (error) {
     console.error("Failed to complete task:", error);
@@ -31,16 +26,26 @@ export async function completeTask(taskId: number) {
   }
 }
 
-export async function completeMilestone(milestoneId: number) {
-  const { error } = await supabase
-    .from("milestones")
-    .update({
-      actual_end: new Date().toISOString().slice(0, 10),
-    })
-    .eq("id", milestoneId);
+export async function completeMilestone(milestoneId: number, actualEnd: string) {
+  const { error } = await supabase.rpc("complete_milestone", {
+    p_milestone_id: milestoneId,
+    p_actual_end: actualEnd,
+  });
 
   if (error) {
     console.error("Failed to complete milestone:", error);
     throw new Error(error.message || "Failed to complete milestone");
+  }
+}
+
+export async function completeProject(projectId: number, actualEnd: string) {
+  const { error } = await supabase.rpc("complete_project", {
+    p_project_id: projectId,
+    p_actual_end: actualEnd,
+  });
+
+  if (error) {
+    console.error("Failed to complete project:", error);
+    throw new Error(error.message || "Failed to complete project");
   }
 }

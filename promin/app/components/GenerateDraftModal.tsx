@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { X, Sparkles, FileText, Check } from "lucide-react";
+import { getAuthHeaders } from "../lib/supabaseClient";
 import type { ProjectDocument } from "../types/document";
 
 type Props = {
@@ -31,7 +32,8 @@ export default function GenerateDraftModal({
     setInstructions("");
     setLoadingDocs(true);
 
-    fetch(`/api/projects/${projectId}/documents`)
+    getAuthHeaders()
+      .then((headers) => fetch(`/api/projects/${projectId}/documents`, { headers }))
       .then((r) => r.json())
       .then((json) => {
         if (json.ok) {
@@ -70,11 +72,12 @@ export default function GenerateDraftModal({
     setError(null);
 
     try {
+      const authHeaders = await getAuthHeaders();
       const res = await fetch(
         `/api/projects/${projectId}/drafts/generate`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           body: JSON.stringify({
             document_ids: Array.from(selectedDocIds),
             user_instructions: instructions.trim() || undefined,
@@ -138,6 +141,7 @@ export default function GenerateDraftModal({
                 {documents.map((doc) => (
                   <label
                     key={doc.id}
+                    onClick={() => toggleDoc(doc.id)}
                     className="flex items-center gap-3 cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded"
                   >
                     <div

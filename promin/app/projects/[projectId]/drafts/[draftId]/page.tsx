@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { getAuthHeaders } from "../../../../lib/supabaseClient";
 import {
   ProjectRoleProvider,
   useProjectRole,
@@ -367,7 +368,8 @@ function DraftReviewContent({
   const [error, setError] = useState<string | null>(null);
 
   const fetchDraft = useCallback(async () => {
-    const res = await fetch(`/api/projects/${projectId}/drafts/${draftId}`);
+    const headers = await getAuthHeaders();
+    const res = await fetch(`/api/projects/${projectId}/drafts/${draftId}`, { headers });
     const json = await res.json();
     if (json.ok) {
       setDraft(json.draft);
@@ -384,9 +386,10 @@ function DraftReviewContent({
   const handleAccept = async () => {
     setActionLoading(true);
     try {
+      const headers = await getAuthHeaders();
       const res = await fetch(
         `/api/projects/${projectId}/drafts/${draftId}/accept`,
-        { method: "POST" }
+        { method: "POST", headers }
       );
       const json = await res.json();
       if (!res.ok || !json.ok) {
@@ -405,9 +408,10 @@ function DraftReviewContent({
   const handleReject = async () => {
     setActionLoading(true);
     try {
+      const headers = await getAuthHeaders();
       const res = await fetch(
         `/api/projects/${projectId}/drafts/${draftId}/reject`,
-        { method: "POST" }
+        { method: "POST", headers }
       );
       const json = await res.json();
       if (!res.ok || !json.ok) {
@@ -425,9 +429,10 @@ function DraftReviewContent({
 
   const handleResolveConflict = async (conflictId: number) => {
     try {
+      const headers = await getAuthHeaders();
       const res = await fetch(
         `/api/projects/${projectId}/drafts/${draftId}/conflicts/${conflictId}/resolve`,
-        { method: "POST" }
+        { method: "POST", headers }
       );
       const json = await res.json();
       if (!res.ok || !json.ok) {
@@ -443,9 +448,10 @@ function DraftReviewContent({
 
   const handleAcknowledge = async (assumptionId: number) => {
     try {
+      const headers = await getAuthHeaders();
       const res = await fetch(
         `/api/projects/${projectId}/drafts/${draftId}/assumptions/${assumptionId}/acknowledge`,
-        { method: "POST" }
+        { method: "POST", headers }
       );
       const json = await res.json();
       if (!res.ok || !json.ok) {

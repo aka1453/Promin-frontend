@@ -99,6 +99,19 @@ export default function CreateBaselineDialog({
       return;
     }
 
+    // Log baseline creation to activity feed
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      await supabase.from("activity_logs").insert({
+        project_id: projectId,
+        user_id: session.user.id,
+        entity_type: "baseline",
+        entity_id: projectId,
+        action: "created",
+        metadata: { title: name.trim() },
+      });
+    }
+
     pushToast("Baseline created and set as active", "success");
     onSuccess();
   };

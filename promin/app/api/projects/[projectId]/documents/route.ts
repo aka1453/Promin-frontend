@@ -9,7 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServer } from "../../../../lib/supabaseServer";
+import { getAuthenticatedClient } from "../../../../lib/apiAuth";
 import crypto from "crypto";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
@@ -32,18 +32,15 @@ export async function POST(
     );
   }
 
-  // Auth
-  const supabase = await createSupabaseServer();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session) {
+  // Auth — token-scoped client so all DB/storage ops respect RLS
+  const auth = await getAuthenticatedClient(req);
+  if (!auth) {
     return NextResponse.json(
       { ok: false, error: "Not authenticated." },
       { status: 401 }
     );
   }
+  const { supabase, userId } = auth;
 
   // Parse FormData
   let formData: FormData;
@@ -101,7 +98,7 @@ export async function POST(
     .from("project_documents")
     .insert({
       project_id: projectId,
-      uploader_user_id: session.user.id,
+      uploader_user_id: userId,
       original_filename: file.name,
       mime_type: file.type || "application/octet-stream",
       file_size_bytes: buffer.length,
@@ -141,18 +138,15 @@ export async function GET(
     );
   }
 
-  // Auth
-  const supabase = await createSupabaseServer();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session) {
+  // Auth — token-scoped client so all DB ops respect RLS
+  const auth = await getAuthenticatedClient(req);
+  if (!auth) {
     return NextResponse.json(
       { ok: false, error: "Not authenticated." },
       { status: 401 }
     );
   }
+  const { supabase } = auth;
 
   // Fetch documents (RLS enforces membership)
   const { data: documents, error } = await supabase
@@ -171,8 +165,10 @@ export async function GET(
   }
 
   // Resolve uploader display names from profiles
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const docs = (documents || []) as any[];
   const uploaderIds = [
-    ...new Set((documents || []).map((d) => d.uploader_user_id)),
+    ...new Set(docs.map((d) => d.uploader_user_id as string)),
   ];
   const nameMap: Record<string, string> = {};
 
@@ -182,12 +178,13 @@ export async function GET(
       .select("id, full_name, email")
       .in("id", uploaderIds);
 
-    for (const p of profiles || []) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const p of (profiles || []) as any[]) {
       nameMap[p.id] = p.full_name || p.email || "Unknown";
     }
   }
 
-  const enriched = (documents || []).map((d) => ({
+  const enriched = docs.map((d) => ({
     ...d,
     uploader_name: nameMap[d.uploader_user_id] || "Unknown",
   }));

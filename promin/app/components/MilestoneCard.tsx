@@ -6,9 +6,12 @@ import { MoreVertical, Edit, Trash, CheckCircle2, Clock, Circle } from "lucide-r
 import type { Milestone } from "../types/milestone";
 import { completeMilestone } from "../lib/lifecycle";
 import { supabase } from "../lib/supabaseClient";
+import { useUserTimezone } from "../context/UserTimezoneContext";
+import { todayForTimezone } from "../utils/date";
 import EditMilestoneModal from "./EditMilestoneModal";
 import { useToast } from "./ToastProvider";
 import ExplainButton from "./explain/ExplainButton";
+import ChatButton from "./chat/ChatButton";
 
 type Props = {
   milestone: Milestone;
@@ -18,6 +21,8 @@ type Props = {
   onUpdated?: () => void | Promise<void>;
   canonicalPlanned?: number | null;
   canonicalActual?: number | null;
+  /** Canonical risk state from hierarchy progress RPC — single authority for schedule status. */
+  canonicalRiskState?: string | null;
 };
 
 export default function MilestoneCard({
@@ -28,9 +33,11 @@ export default function MilestoneCard({
   onUpdated,
   canonicalPlanned,
   canonicalActual,
+  canonicalRiskState,
 }: Props) {
   const router = useRouter();
   const { pushToast } = useToast();
+  const { timezone } = useUserTimezone();
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [completing, setCompleting] = useState(false);
@@ -155,7 +162,7 @@ export default function MilestoneCard({
 
     setCompleting(true);
     try {
-      await completeMilestone(milestone.id);
+      await completeMilestone(milestone.id, todayForTimezone(timezone));
       onUpdated?.();
     } catch (error: any) {
       console.error("Failed to complete milestone:", error);
@@ -256,6 +263,7 @@ export default function MilestoneCard({
             <div className="flex items-center gap-2 flex-shrink-0">
               {getStatusBadge()}
               <ExplainButton entityType="milestone" entityId={milestone.id} compact />
+              <ChatButton entityType="milestone" entityId={milestone.id} entityName={milestone.name || undefined} compact />
             </div>
           </div>
 
@@ -266,32 +274,21 @@ export default function MilestoneCard({
           )}
 
           {(() => {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const plannedEnd = milestone.planned_end ? new Date(milestone.planned_end + "T00:00:00") : null;
-            const actualEnd = milestone.actual_end ? new Date(milestone.actual_end + "T00:00:00") : null;
+            // Schedule status derived exclusively from DB canonical risk_state — no inline heuristics.
             const isCompleted = milestone.status === "completed";
-            const isDelayed = !isCompleted && plannedEnd && today > plannedEnd;
-            const isOnTrack = isCompleted || (plannedEnd && today <= plannedEnd);
+            const riskState = isCompleted ? "ON_TRACK" : (canonicalRiskState ?? null);
 
-            let daysDiff = 0;
-            let hoverText = "";
-            if (plannedEnd) {
-              if (isCompleted && actualEnd) {
-                daysDiff = Math.round((plannedEnd.getTime() - actualEnd.getTime()) / (1000 * 60 * 60 * 24));
-              } else {
-                daysDiff = Math.round((plannedEnd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-              }
-              if (daysDiff > 0) hoverText = `${daysDiff} day${daysDiff !== 1 ? "s" : ""} ahead`;
-              else if (daysDiff < 0) hoverText = `${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? "s" : ""} delayed`;
-              else hoverText = "On schedule";
-            }
+            const bgColor =
+              riskState === "DELAYED"  ? "bg-red-50 border-red-200"
+              : riskState === "AT_RISK" ? "bg-amber-50 border-amber-200"
+              : riskState === "ON_TRACK" ? "bg-emerald-50 border-emerald-200"
+              : "bg-slate-50 border-slate-200"; // null/unknown — neutral
 
-            const bgColor = isDelayed
-              ? "bg-red-50 border-red-200"
-              : isOnTrack
-              ? "bg-emerald-50 border-emerald-200"
-              : "bg-slate-50 border-slate-200";
+            const hoverText =
+              riskState === "DELAYED"  ? "Delayed"
+              : riskState === "AT_RISK" ? "At Risk"
+              : riskState === "ON_TRACK" ? "On Track"
+              : "";
 
             return (
               <div className={`mb-4 rounded-lg p-3 border ${bgColor}`} title={hoverText}>

@@ -2,12 +2,16 @@
 
 import type { Task } from "../../../../types/task";
 import TaskCard from "../../../../components/TaskCard";
+import { useUserTimezone } from "../../../../context/UserTimezoneContext";
+import { todayForTimezone } from "../../../../utils/date";
 
 export default function TaskList({
   tasks,
 }: {
   tasks: Task[];
 }) {
+  const { timezone } = useUserTimezone();
+  const asOfDate = todayForTimezone(timezone);
   if (!tasks || tasks.length === 0) {
     return <p className="text-gray-500">No tasks yet.</p>;
   }
@@ -24,7 +28,7 @@ export default function TaskList({
       "
     >
       {tasks.map((t) => (
-        <TaskCard key={t.id} task={t} />
+        <TaskCard key={t.id} task={t} asOfDate={asOfDate} />
       ))}
     </div>
   );

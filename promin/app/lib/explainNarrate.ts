@@ -103,9 +103,18 @@ function getClient(): OpenAI {
   return _client;
 }
 
+/** In-memory cooldown cache to avoid repeated AI calls for the same entity. */
+const CACHE_TTL_MS = 30_000; // 30 seconds
+const narrativeCache = new Map<string, { value: string; expiresAt: number }>();
+
+function cacheKey(data: ExplainPayload): string {
+  return `${data.entity_type}:${data.entity_id}:${data.asof}`;
+}
+
 /**
  * Generate a narrative explanation from the explain_entity payload.
  * Returns "" if AI is disabled or on any error.
+ * Results are cached in-memory for 30 s to avoid redundant OpenAI calls.
  */
 export async function generateNarrative(data: ExplainPayload): Promise<string> {
   if (process.env.EXPLAIN_AI_ENABLED !== "true") {
@@ -119,6 +128,13 @@ export async function generateNarrative(data: ExplainPayload): Promise<string> {
   // Skip AI call when there are no reasons to narrate
   if (!data.reasons || data.reasons.length === 0) {
     return "";
+  }
+
+  // Check cooldown cache
+  const key = cacheKey(data);
+  const cached = narrativeCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
   }
 
   try {
@@ -138,7 +154,20 @@ export async function generateNarrative(data: ExplainPayload): Promise<string> {
       ],
     });
 
-    return response.choices[0]?.message?.content?.trim() ?? "";
+    const narrative = response.choices[0]?.message?.content?.trim() ?? "";
+
+    // Store in cache
+    narrativeCache.set(key, { value: narrative, expiresAt: Date.now() + CACHE_TTL_MS });
+
+    // Lazy eviction of expired entries (cap scan to avoid blocking)
+    if (narrativeCache.size > 100) {
+      const now = Date.now();
+      for (const [k, v] of narrativeCache) {
+        if (v.expiresAt <= now) narrativeCache.delete(k);
+      }
+    }
+
+    return narrative;
   } catch (err) {
     console.error("[explain-narrate] AI narration failed:", err instanceof Error ? err.message : "unknown error");
     return "";

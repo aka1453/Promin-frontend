@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabaseClient";
 import { ProjectRoleProvider } from "../../../context/ProjectRoleContext";
 import { useUserTimezone } from "../../../context/UserTimezoneContext";
+import { todayForTimezone } from "../../../utils/date";
 import {
   ArrowLeft,
   Settings,
@@ -130,8 +131,8 @@ function ProgressLineChart({
 
   if (scurveData.length === 0) {
     return (
-      <div className="h-64 flex items-center justify-center text-slate-400 text-sm">
-        No date range available
+      <div className="h-64 flex flex-col items-center justify-center text-slate-400 text-sm gap-2">
+        <p>Add tasks with planned dates and create a baseline to see the S-curve.</p>
       </div>
     );
   }
@@ -140,7 +141,13 @@ function ProgressLineChart({
   const endDate = new Date(scurveData[scurveData.length - 1].dt + "T00:00:00");
   const today = userToday;
   const totalDays = daysBetween(startDate, endDate);
-  if (totalDays <= 0) return null;
+  if (totalDays <= 0) {
+    return (
+      <div className="h-64 flex items-center justify-center text-slate-400 text-sm">
+        Add tasks with planned dates and create a baseline to see the S-curve.
+      </div>
+    );
+  }
 
   // ── SVG dimensions ──
   const W = 600;
@@ -672,8 +679,9 @@ function KPIStrip({
   const today = userToday;
   const plannedEnd = project.planned_end ? new Date(project.planned_end + "T00:00:00") : null;
   const daysRemaining = plannedEnd ? daysBetween(today, plannedEnd) : null;
-  const isOverdue = plannedEnd && today > plannedEnd && project.status !== "completed";
-  const isBehind = delta != null && delta < -3 && !isOverdue;
+
+  // Status derived exclusively from DB canonical risk_state — no inline heuristics.
+  const riskState = project.status === "completed" ? "COMPLETED" : (canonicalProgress.risk_state ?? null);
 
   // Budget
   const budget = project.budgeted_cost ?? 0;
@@ -734,10 +742,10 @@ function KPIStrip({
           </span>
           <span
             className={`text-xs ${
-              isOverdue ? "text-red-600" : isBehind ? "text-amber-600" : "text-slate-500"
+              riskState === "DELAYED" ? "text-red-600" : riskState === "AT_RISK" ? "text-amber-600" : "text-slate-500"
             }`}
           >
-            {isOverdue ? "⚠ Overdue" : isBehind ? "⚠ Behind schedule" : "On schedule"}
+            {riskState === "DELAYED" ? "Delayed" : riskState === "AT_RISK" ? "At Risk" : "On Track"}
           </span>
         </div>
       </div>
@@ -1240,7 +1248,7 @@ function ExportTab({
       const kpis = [
         { label: "Overall Progress", value: actual != null ? `${actual.toFixed(1)}%` : "—", sub: delta == null ? "—" : delta > 0 ? `+${delta.toFixed(1)}% vs plan` : delta < 0 ? `${delta.toFixed(1)}% vs plan` : "On track" },
         { label: "Milestones", value: `${completedMs} / ${totalMs}`, sub: `${totalMs - completedMs} remaining` },
-        { label: "Days Remaining", value: daysRem !== null ? String(daysRem) : "—", sub: daysRem !== null && daysRem <= 0 ? "Overdue" : "On schedule" },
+        { label: "Days Remaining", value: daysRem !== null ? String(daysRem) : "—", sub: canonicalProgress.risk_state === "DELAYED" ? "Delayed" : canonicalProgress.risk_state === "AT_RISK" ? "At Risk" : "On Track" },
         { label: "Budget Used", value: `${budgetPct}%`, sub: `$${spent.toLocaleString()} of $${budget.toLocaleString()}` },
       ];
 
@@ -1757,7 +1765,7 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
     if (proj) setProject(proj as Project);
 
     // Canonical progress from RPC (0-1 scale), timezone-aware
-    const tzToday = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
+    const tzToday = todayForTimezone(timezone);
     const { data: progRows, error: progError } = await supabase.rpc("get_project_progress_asof", {
       p_project_id: projectId,
       p_asof: tzToday,

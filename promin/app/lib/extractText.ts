@@ -13,11 +13,12 @@
 
 import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
+import * as XLSX from "xlsx";
 import crypto from "crypto";
 
 export type ExtractionResult = {
   text: string;
-  extractor: "pdf-parse" | "mammoth" | "plaintext";
+  extractor: "pdf-parse" | "mammoth" | "plaintext" | "xlsx";
   contentHash: string;
   charCount: number;
   confidence: "low" | "medium" | "high";
@@ -25,6 +26,9 @@ export type ExtractionResult = {
 
 const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const XLSX_MIME =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const XLS_MIME = "application/vnd.ms-excel";
 
 /**
  * Extract text from a document buffer.
@@ -59,6 +63,19 @@ export async function extractText(
     if (result.messages && result.messages.length > 0) {
       confidence = "medium";
     }
+  } else if (mimeType === XLSX_MIME || mimeType === XLS_MIME) {
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const sheets: string[] = [];
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
+      if (csv.trim()) {
+        sheets.push(`Sheet: ${sheetName}\n${csv}`);
+      }
+    }
+    text = sheets.join("\n\n");
+    extractor = "xlsx" as ExtractionResult["extractor"];
+    confidence = "medium";
   } else if (mimeType.startsWith("text/")) {
     text = buffer.toString("utf-8");
     extractor = "plaintext";

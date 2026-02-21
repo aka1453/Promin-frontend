@@ -49,8 +49,8 @@ export async function calculateTaskDurationFromDeliverables(
 
     let startTime = 0;
     if (dependsOn !== null && dependsOn !== undefined) {
-      // Sequential: starts after predecessor ends
-      startTime = calculateEndTime(dependsOn);
+      // Sequential: starts day after predecessor ends (FS+1)
+      startTime = calculateEndTime(dependsOn) + 1;
     }
     // else: Parallel (independent) - starts at time 0
 
@@ -166,10 +166,11 @@ export async function calculateTaskDates(taskId: number): Promise<{
     };
   }
 
-  // planned_start(T) = max(pred.planned_end) + offset_days(T)
+  // planned_start(T) = max(pred.planned_end) + 1 day + offset_days(T)
+  // FS+1: successor starts the day AFTER predecessor ends
   const thisTaskOffset = task.offset_days || 0;
   const plannedStart = new Date(latestPredEnd);
-  plannedStart.setDate(plannedStart.getDate() + thisTaskOffset);
+  plannedStart.setDate(plannedStart.getDate() + 1 + thisTaskOffset);
 
   // Calculate end date based on this task's duration (from deliverables)
   const plannedEnd = new Date(plannedStart);

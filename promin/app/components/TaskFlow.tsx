@@ -6,12 +6,16 @@ import type { Task } from "../types/task";
 import TaskCard from "./TaskCard";
 import AddTaskButton from "./AddTaskButton";
 import TaskDetailsDrawer from "./TaskDetailsDrawer";
+import { useUserTimezone } from "../context/UserTimezoneContext";
+import { todayForTimezone } from "../utils/date";
 
 type Props = {
   milestoneId: number;
 };
 
 export default function TaskFlow({ milestoneId }: Props) {
+  const { timezone } = useUserTimezone();
+  const asOfDate = todayForTimezone(timezone);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -63,10 +67,11 @@ export default function TaskFlow({ milestoneId }: Props) {
         )}
 
         {tasks.map((t) => (
-          <TaskCard 
-            key={t.id} 
-            task={t} 
+          <TaskCard
+            key={t.id}
+            task={t}
             onClick={handleTaskClick}
+            asOfDate={asOfDate}
           />
         ))}
       </div>

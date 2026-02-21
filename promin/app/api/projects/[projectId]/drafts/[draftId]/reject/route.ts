@@ -7,7 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServer } from "../../../../../../lib/supabaseServer";
+import { getAuthenticatedClient } from "../../../../../../lib/apiAuth";
 
 export async function POST(
   req: NextRequest,
@@ -27,18 +27,15 @@ export async function POST(
     );
   }
 
-  // Auth
-  const supabase = await createSupabaseServer();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session) {
+  // Auth — token-scoped client so all DB ops respect RLS
+  const auth = await getAuthenticatedClient(req);
+  if (!auth) {
     return NextResponse.json(
       { ok: false, error: "Not authenticated." },
       { status: 401 }
     );
   }
+  const { supabase } = auth;
 
   // Call rejection RPC
   const { data, error } = await supabase.rpc("reject_plan_draft", {

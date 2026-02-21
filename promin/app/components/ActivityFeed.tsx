@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { formatDistanceToNow } from "date-fns";
+import { Download } from "lucide-react";
 
 type Activity = {
   id: string;
@@ -105,7 +106,9 @@ export default function ActivityFeed({
       "deliverable-created": "📦",
       "deliverable-completed": "✅",
       "deliverable-reopened": "🔄",
+      "deliverable-undo_completion": "↩️",
       "deliverable-assigned": "👤",
+      "baseline-created": "📌",
       "comment-added": "💬",
     };
 
@@ -130,7 +133,9 @@ export default function ActivityFeed({
       "deliverable-created": `created deliverable "${title}"`,
       "deliverable-completed": `completed deliverable "${title}"`,
       "deliverable-reopened": `reopened deliverable "${title}"`,
+      "deliverable-undo_completion": `undid completion of deliverable "${title}"`,
       "deliverable-assigned": `assigned deliverable "${title}" to ${metadata?.assigned_to || "someone"}`,
+      "baseline-created": `created baseline "${title}"`,
       "comment-added": `commented on ${entity_type}`,
     };
 
@@ -200,11 +205,43 @@ export default function ActivityFeed({
     );
   }
 
+  const exportToCsv = () => {
+    const headers = ["Timestamp", "User", "Action", "Entity Type", "Entity ID", "Details"];
+    const rows = activities.map((a) => [
+      a.created_at,
+      a.user_name,
+      a.action,
+      a.entity_type,
+      String(a.entity_id),
+      a.metadata?.title || "",
+    ]);
+    const csvContent = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `activity_log_project_${projectId}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const groupedActivities = groupActivitiesByDate(activities);
   const orderedGroups = ["Today", "Yesterday", "This Week", "This Month", "Older"];
 
   return (
     <div className={`space-y-6 ${className}`}>
+      {/* Export button */}
+      <div className="flex justify-end">
+        <button
+          onClick={exportToCsv}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
+        >
+          <Download size={14} />
+          Export CSV
+        </button>
+      </div>
       {orderedGroups.map((groupKey) => {
         const groupActivities = groupedActivities[groupKey];
         if (!groupActivities || groupActivities.length === 0) return null;

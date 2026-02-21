@@ -8,6 +8,7 @@ import ProjectSettingsModal from "./components/ProjectSettingsModal";
 import { motion } from "framer-motion";
 import { useProjects } from "./context/ProjectsContext";
 import { useUserTimezone } from "./context/UserTimezoneContext";
+import { todayForTimezone } from "./utils/date";
 import type { EntityProgress, BatchProgressRow } from "./types/progress";
 import { toEntityProgress } from "./types/progress";
 
@@ -82,7 +83,7 @@ export default function HomePage() {
       setProgressMap({});
       return;
     }
-    const userToday = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
+    const userToday = todayForTimezone(timezone);
     const { data, error } = await supabase.rpc("get_projects_progress_asof", {
       p_project_ids: activeProjectIds,
       p_asof: userToday,
@@ -231,6 +232,7 @@ export default function HomePage() {
                       project={project}
                       canonicalPlanned={canon?.planned ?? null}
                       canonicalActual={canon?.actual ?? null}
+                      canonicalRiskState={canon?.risk_state ?? null}
                       onClick={() =>
                         router.push(`/projects/${project.id}`)
                       }

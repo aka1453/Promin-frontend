@@ -114,6 +114,7 @@ loadTrash();            // re-fetch Trash from DB
   hideSettings
   canonicalPlanned={null}
   canonicalActual={null}
+  canonicalRiskState={null}
 />
 
   {/* Restore */}

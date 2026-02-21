@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { supabase } from "../../../lib/supabaseClient";
+import { supabase, getAuthHeaders } from "../../../lib/supabaseClient";
 import {
   ProjectRoleProvider,
   useProjectRole,
@@ -42,7 +42,10 @@ function DocumentsPageContent({ projectId }: { projectId: number }) {
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isArchived = project?.status === "archived";
 
@@ -56,7 +59,8 @@ function DocumentsPageContent({ projectId }: { projectId: number }) {
   }, [projectId]);
 
   const fetchDocuments = useCallback(async () => {
-    const res = await fetch(`/api/projects/${projectId}/documents`);
+    const headers = await getAuthHeaders();
+    const res = await fetch(`/api/projects/${projectId}/documents`, { headers });
     const json = await res.json();
     if (json.ok) {
       setDocuments(json.documents);
@@ -76,42 +80,93 @@ function DocumentsPageContent({ projectId }: { projectId: number }) {
     loadAll();
   }, [loadAll]);
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  /** Upload a list of files (bulk support). */
+  const uploadFiles = async (files: File[]) => {
+    if (files.length === 0) return;
 
     setUploading(true);
+    const headers = await getAuthHeaders();
+    let successCount = 0;
+    let failCount = 0;
 
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      setUploadProgress(`Uploading ${i + 1} of ${files.length}: ${file.name}`);
 
-      const res = await fetch(`/api/projects/${projectId}/documents`, {
-        method: "POST",
-        body: formData,
-      });
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
 
-      const json = await res.json();
+        const res = await fetch(`/api/projects/${projectId}/documents`, {
+          method: "POST",
+          headers,
+          body: formData,
+        });
 
-      if (!res.ok || !json.ok) {
-        throw new Error(json.error || "Upload failed");
+        const json = await res.json();
+
+        if (!res.ok || !json.ok) {
+          failCount++;
+          pushToast(`Failed to upload ${file.name}: ${json.error || "Unknown error"}`, "error");
+        } else {
+          successCount++;
+        }
+      } catch {
+        failCount++;
+        pushToast(`Failed to upload ${file.name}`, "error");
       }
-
-      pushToast("Document uploaded successfully", "success");
-      await fetchDocuments();
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Upload failed";
-      pushToast(message, "error");
-    } finally {
-      setUploading(false);
-      e.target.value = "";
     }
+
+    setUploading(false);
+    setUploadProgress(null);
+
+    if (successCount > 0) {
+      pushToast(
+        `${successCount} document${successCount > 1 ? "s" : ""} uploaded successfully`,
+        "success"
+      );
+      await fetchDocuments();
+    }
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    await uploadFiles(Array.from(fileList));
+    e.target.value = "";
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+
+    if (isArchived || !canEdit) return;
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      await uploadFiles(files);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isArchived && canEdit) setDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
   };
 
   const handleDownload = async (doc: ProjectDocument) => {
     try {
+      const headers = await getAuthHeaders();
       const res = await fetch(
-        `/api/projects/${projectId}/documents/${doc.id}/download`
+        `/api/projects/${projectId}/documents/${doc.id}/download`,
+        { headers }
       );
       const json = await res.json();
 
@@ -119,7 +174,6 @@ function DocumentsPageContent({ projectId }: { projectId: number }) {
         throw new Error(json.error || "Download failed");
       }
 
-      // Open signed URL in new tab to trigger download
       window.open(json.url, "_blank");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Download failed";
@@ -149,7 +203,27 @@ function DocumentsPageContent({ projectId }: { projectId: number }) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div
+      className="min-h-screen bg-slate-50"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Drag overlay */}
+      {dragOver && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-blue-500/10 backdrop-blur-sm pointer-events-none">
+          <div className="bg-white rounded-2xl shadow-xl border-2 border-dashed border-blue-400 p-12 text-center">
+            <Upload size={48} className="mx-auto text-blue-500 mb-4" />
+            <p className="text-lg font-semibold text-blue-700">
+              Drop files to upload
+            </p>
+            <p className="text-sm text-blue-500 mt-1">
+              Release to start uploading
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* HEADER */}
       <div className="bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-8 py-4">
@@ -181,9 +255,11 @@ function DocumentsPageContent({ projectId }: { projectId: number }) {
                 }`}
               >
                 <Upload size={18} />
-                {uploading ? "Uploading..." : "Upload Document"}
+                {uploadProgress || (uploading ? "Uploading..." : "Upload Documents")}
                 <input
+                  ref={fileInputRef}
                   type="file"
+                  multiple
                   onChange={handleUpload}
                   disabled={uploading}
                   className="hidden"
@@ -212,14 +288,20 @@ function DocumentsPageContent({ projectId }: { projectId: number }) {
         )}
 
         {documents.length === 0 && !error && (
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
+          <div
+            className={`bg-white rounded-xl shadow-sm border-2 p-12 text-center transition-colors ${
+              dragOver
+                ? "border-blue-400 bg-blue-50"
+                : "border-slate-200 border-dashed"
+            }`}
+          >
             <FileText size={48} className="mx-auto text-slate-300 mb-4" />
             <p className="text-slate-500 text-lg">
               No documents uploaded yet.
             </p>
             {canEdit && !isArchived && (
               <p className="text-slate-400 text-sm mt-2">
-                Upload contracts, SOWs, BOMs, or other project evidence.
+                Drag and drop files here, or click Upload to add contracts, SOWs, BOMs, or other project evidence.
               </p>
             )}
           </div>

@@ -35,6 +35,7 @@ export default function MilestoneList({
           onUpdated={onMilestoneUpdated}
           canonicalPlanned={msProgressMap?.[String(m.id)]?.planned ?? null}
           canonicalActual={msProgressMap?.[String(m.id)]?.actual ?? null}
+          canonicalRiskState={msProgressMap?.[String(m.id)]?.risk_state ?? null}
         />
       ))}
     </div>

@@ -20,6 +20,9 @@
 import { useEffect, useState } from "react";
 import { X, ChevronDown, ChevronRight, Code } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
+import { useUserTimezone } from "../../context/UserTimezoneContext";
+import { todayForTimezone } from "../../utils/date";
+import { buildExplainSummary } from "../../lib/explainSummary";
 import type {
   ExplainEntityType,
   ExplainData,
@@ -27,6 +30,7 @@ import type {
   ExplainSeverity,
   ExplainStatus,
 } from "../../types/explain";
+import type { InsightContext } from "../../types/insights";
 
 type Props = {
   open: boolean;
@@ -34,12 +38,8 @@ type Props = {
   entityType: ExplainEntityType;
   entityId: number;
   asof?: string;
-};
-
-const ENTITY_LABEL: Record<string, string> = {
-  project: "Project",
-  milestone: "Milestone",
-  task: "Task",
+  /** When opened from an insight card, provides context for banner + highlighting */
+  insightContext?: InsightContext;
 };
 
 const STATUS_STYLES: Record<ExplainStatus, { bg: string; text: string; label: string }> = {
@@ -91,29 +91,28 @@ function formatKeyDetails(reason: ExplainReason): string | null {
       const maxVar = e.max_end_variance_days ?? e.end_variance_days ?? "?";
       return `Baseline slip: worst-case ${maxVar} day(s) behind baseline.`;
     }
+    case "CRITICAL_PATH": {
+      const count = e.critical_task_count ?? "?";
+      const names = Array.isArray(e.critical_tasks)
+        ? e.critical_tasks.slice(0, 3).map((t: Record<string, unknown>) => t.task_name ?? "Unknown").join(", ")
+        : "";
+      return `${count} task(s) on the critical path${names ? `: ${names}` : ""}. Any delay directly impacts the project end date.`;
+    }
     default:
       return null;
   }
 }
 
-/** Build a short deterministic summary from DB-returned status + top reason title. */
-function buildSummary(data: ExplainData): string {
-  const label = ENTITY_LABEL[data.entity_type] ?? "Entity";
-  const topReason = data.reasons?.[0];
 
-  switch (data.status) {
-    case "DELAYED":
-      return topReason ? `${label} is delayed: ${topReason.title}.` : `${label} is delayed.`;
-    case "AT_RISK":
-      return topReason ? `${label} is at risk: ${topReason.title}.` : `${label} is at risk.`;
-    case "ON_TRACK":
-      return `${label} is on track.`;
-    default:
-      return "";
-  }
-}
+const INSIGHT_TYPE_LABELS: Record<string, string> = {
+  BOTTLENECK: "Bottleneck",
+  ACCELERATION: "Acceleration",
+  RISK_DRIVER: "Risk Driver",
+  LEVERAGE: "Leverage",
+};
 
-export default function ExplainDrawer({ open, onOpenChange, entityType, entityId, asof }: Props) {
+export default function ExplainDrawer({ open, onOpenChange, entityType, entityId, asof, insightContext }: Props) {
+  const { timezone } = useUserTimezone();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ExplainData | null>(null);
@@ -136,11 +135,12 @@ export default function ExplainDrawer({ open, onOpenChange, entityType, entityId
     setExpandedJson(new Set());
 
     (async () => {
+      const effectiveAsof = asof || todayForTimezone(timezone);
+
       try {
         // Call the DB RPC directly via client-side Supabase (valid auth via localStorage)
         // Always pass all 3 params explicitly — PostgREST can't resolve functions
         // with DEFAULT parameters when called via GET with missing params.
-        const effectiveAsof = asof || new Date().toISOString().slice(0, 10);
 
         const { data: rpcData, error: rpcError } = await supabase.rpc("explain_entity", {
           p_entity_type: entityType,
@@ -157,7 +157,7 @@ export default function ExplainDrawer({ open, onOpenChange, entityType, entityId
 
         const explainData = rpcData as ExplainData;
         setData(explainData);
-        setSummary(buildSummary(explainData));
+        setSummary(buildExplainSummary(explainData, explainData.entity_type));
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Unexpected error");
@@ -169,8 +169,7 @@ export default function ExplainDrawer({ open, onOpenChange, entityType, entityId
       // Fire-and-forget: optionally fetch AI narrative from the API route.
       // This is a separate call so it never blocks loading or causes errors in the drawer.
       try {
-        const params = new URLSearchParams({ type: entityType, id: String(entityId) });
-        if (asof) params.set("asof", asof);
+        const params = new URLSearchParams({ type: entityType, id: String(entityId), asof: effectiveAsof });
         const res = await fetch(`/api/explain?${params}`);
         if (res.ok) {
           const json = await res.json();
@@ -184,7 +183,7 @@ export default function ExplainDrawer({ open, onOpenChange, entityType, entityId
     })();
 
     return () => { cancelled = true; };
-  }, [open, entityType, entityId, asof, fetchKey]);
+  }, [open, entityType, entityId, asof, fetchKey, timezone]);
 
   const handleRetry = () => setFetchKey((k) => k + 1);
 
@@ -209,6 +208,7 @@ export default function ExplainDrawer({ open, onOpenChange, entityType, entityId
   };
 
   const statusStyle = data ? STATUS_STYLES[data.status] : null;
+  const highlightedCodes = new Set(insightContext?.top_reason_codes ?? []);
 
   return (
     <>
@@ -262,6 +262,19 @@ export default function ExplainDrawer({ open, onOpenChange, entityType, entityId
                 </div>
               )}
 
+              {/* Insight context banner */}
+              {insightContext && (
+                <div className="rounded-lg bg-slate-50 border border-slate-200 px-4 py-2">
+                  <p className="text-xs text-slate-500">
+                    Opened from Insight:{" "}
+                    <span className="font-medium text-slate-700">
+                      {INSIGHT_TYPE_LABELS[insightContext.insight_type] ?? insightContext.insight_type}
+                    </span>
+                    {" "}(Severity: <span className="font-medium text-slate-700">{insightContext.insight_severity}</span>)
+                  </p>
+                </div>
+              )}
+
               {/* Summary */}
               {summary && (
                 <p className="text-sm text-slate-700 leading-relaxed">{summary}</p>
@@ -288,10 +301,15 @@ export default function ExplainDrawer({ open, onOpenChange, entityType, entityId
                   {data.reasons.map((reason) => {
                     const sev = SEVERITY_STYLES[reason.severity];
                     const isExpanded = expandedReasons.has(reason.rank);
+                    const isHighlighted = highlightedCodes.size > 0 && highlightedCodes.has(reason.code);
                     return (
                       <div
                         key={reason.rank}
-                        className="border border-slate-200 rounded-lg overflow-hidden"
+                        className={`rounded-lg overflow-hidden ${
+                          isHighlighted
+                            ? "border-2 border-blue-300 bg-blue-50/30"
+                            : "border border-slate-200"
+                        }`}
                       >
                         <button
                           onClick={() => toggleEvidence(reason.rank)}
@@ -305,7 +323,7 @@ export default function ExplainDrawer({ open, onOpenChange, entityType, entityId
                           <span className="text-xs font-mono text-slate-400 flex-shrink-0 w-5">
                             #{reason.rank}
                           </span>
-                          <span className="text-sm text-slate-800 flex-1">{reason.title}</span>
+                          <span className={`text-sm flex-1 ${isHighlighted ? "font-semibold text-blue-800" : "text-slate-800"}`}>{reason.title}</span>
                           <span
                             className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${sev.bg} ${sev.text} flex-shrink-0`}
                           >

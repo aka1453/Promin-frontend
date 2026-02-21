@@ -13,9 +13,13 @@ import type { Milestone } from "../../types/milestone";
 import CreateBaselineDialog from "../../components/CreateBaselineDialog";
 import { ArrowLeft, Settings, Clock, BarChart2, GanttChartSquare, Bookmark, FileText, Sparkles } from "lucide-react";
 import { useUserTimezone } from "../../context/UserTimezoneContext";
+import { todayForTimezone } from "../../utils/date";
 import type { EntityProgress, HierarchyRow, ForecastResult } from "../../types/progress";
 import { toEntityProgress } from "../../types/progress";
 import ExplainButton from "../../components/explain/ExplainButton";
+import ChatButton from "../../components/chat/ChatButton";
+import { completeProject } from "../../lib/lifecycle";
+import ProjectInsights from "../../components/insights/ProjectInsights";
 
 type Project = {
   id: number;
@@ -62,6 +66,9 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
   // Forecast data from get_project_forecast RPC
   const [forecastData, setForecastData] = useState<ForecastResult | null>(null);
 
+  // Raw hierarchy rows for entity name resolution (used by ProjectInsights)
+  const [hierarchyRows, setHierarchyRows] = useState<HierarchyRow[]>([]);
+
   // Track whether we've done the first load — realtime refreshes skip the spinner
   const initialLoadDone = useRef(false);
 
@@ -88,7 +95,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
   // Fetch canonical progress from hierarchy RPC (project + milestones in one call)
   // Also fetches forecast data in parallel
   const fetchCanonicalProgress = useCallback(async () => {
-    const userToday = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
+    const userToday = todayForTimezone(timezone);
 
     // Fetch progress hierarchy and forecast in parallel (both via client-side RPC)
     const [hierResult, forecastResult] = await Promise.all([
@@ -104,6 +111,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
     const { data: hierRows, error: hierErr } = hierResult;
     if (!hierErr && hierRows) {
       const rows = hierRows as HierarchyRow[];
+      setHierarchyRows(rows);
       const projRow = rows.find(r => r.entity_type === "project");
       if (projRow) {
         const p = toEntityProgress(projRow);
@@ -119,6 +127,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
       }
       setMsProgressMap(newMsMap);
     } else {
+      setHierarchyRows([]);
       setCanonicalProgress({ planned: null, actual: null, risk_state: null });
       setMsProgressMap({});
     }
@@ -246,38 +255,12 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
     );
     if (!confirmed) return;
 
-    const today = new Date().toISOString().slice(0, 10);
-
-    const { data: maxRow, error: maxErr } = await supabase
-      .from("projects")
-      .select("position")
-      .order("position", { ascending: false })
-      .limit(1)
-      .single();
-
-    if (maxErr) {
-      console.error("Failed to fetch max position:", maxErr.message);
-      return;
+    try {
+      await completeProject(project.id, todayForTimezone(timezone));
+      load();
+    } catch (err: any) {
+      console.error("Failed to complete project:", err.message);
     }
-
-    const nextPosition = (maxRow?.position ?? 0) + 1;
-
-    const { error } = await supabase
-      .from("projects")
-      .update({
-        status: "completed",
-        actual_end: today,
-        position: nextPosition,
-      })
-      .eq("id", project.id)
-      .neq("status", "completed");
-
-    if (error) {
-      console.error("Failed to complete project:", error.message);
-      return;
-    }
-
-    load();
   }
 
   const formatCurrency = (amount: number) => {
@@ -361,65 +344,64 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                 );
               })()}
 
-              {/* Gantt Button */}
-              <button
-                onClick={() => router.push(`/projects/${projectId}/gantt`)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-              >
-                <GanttChartSquare size={18} />
-                Gantt
-              </button>
-
-              {/* Reports Button */}
-              <button
-                onClick={() => router.push(`/projects/${projectId}/reports`)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-              >
-                <BarChart2 size={18} />
-                Reports
-              </button>
-
-              {/* Documents Button */}
-              <button
-                onClick={() => router.push(`/projects/${projectId}/documents`)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-              >
-                <FileText size={18} />
-                Documents
-              </button>
-
-              {/* Drafts Button */}
-              <button
-                onClick={() => router.push(`/projects/${projectId}/drafts`)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-              >
-                <Sparkles size={18} />
-                Drafts
-              </button>
-
-              {/* Create Baseline Button (owner/editor only) */}
-              {!isArchived && canEdit && (
+              {/* Action buttons — 3 rows x 2 columns */}
+              <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={() => setBaselineDialogOpen(true)}
+                  onClick={() => router.push(`/projects/${projectId}/gantt`)}
                   className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
                 >
-                  <Bookmark size={18} />
-                  Baseline
+                  <GanttChartSquare size={18} />
+                  Gantt
                 </button>
-              )}
 
-              {/* Activity Toggle Button */}
-              <button
-                onClick={() => setShowActivitySidebar(!showActivitySidebar)}
-                className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
-                  showActivitySidebar
-                    ? "bg-blue-600 text-white"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                }`}
-              >
-                <Clock size={18} />
-                Activity
-              </button>
+                <button
+                  onClick={() => router.push(`/projects/${projectId}/reports`)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                >
+                  <BarChart2 size={18} />
+                  Reports
+                </button>
+
+                <button
+                  onClick={() => router.push(`/projects/${projectId}/documents`)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                >
+                  <FileText size={18} />
+                  Documents
+                </button>
+
+                <button
+                  onClick={() => router.push(`/projects/${projectId}/drafts`)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                >
+                  <Sparkles size={18} />
+                  Drafts
+                </button>
+
+                {!isArchived && canEdit ? (
+                  <button
+                    onClick={() => setBaselineDialogOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                  >
+                    <Bookmark size={18} />
+                    Baseline
+                  </button>
+                ) : (
+                  <div />
+                )}
+
+                <button
+                  onClick={() => setShowActivitySidebar(!showActivitySidebar)}
+                  className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                    showActivitySidebar
+                      ? "bg-blue-600 text-white"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                >
+                  <Clock size={18} />
+                  Activity
+                </button>
+              </div>
 
               {/* Settings Gear */}
               <button
@@ -449,7 +431,10 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8">
                 <div className="flex items-center justify-between mb-5">
                   <h2 className="text-lg font-semibold text-slate-700">Project Overview</h2>
-                  <ExplainButton entityType="project" entityId={projectId} />
+                  <div className="flex items-center gap-2">
+                    <ExplainButton entityType="project" entityId={projectId} />
+                    <ChatButton entityType="project" entityId={projectId} entityName={project?.name || undefined} />
+                  </div>
                 </div>
 
                 <div className="space-y-4 mb-6">
@@ -674,6 +659,11 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                 </div>
               </div>
             )}
+
+            {/* Insights Section — own card for visibility */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8">
+              <ProjectInsights projectId={projectId} hierarchyRows={hierarchyRows} />
+            </div>
 
             <div className="mb-6">
               <div className="flex items-center justify-between mb-4">

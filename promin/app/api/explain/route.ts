@@ -6,9 +6,10 @@
  * Optionally includes AI-generated narrative (Phase 4.4, feature-flagged).
  *
  * Verification:
- *   GET /api/explain?type=project&id=123
- *   GET /api/explain?type=milestone&id=456
+ *   GET /api/explain?type=project&id=123&asof=2026-02-15
+ *   GET /api/explain?type=milestone&id=456&asof=2026-02-15
  *   GET /api/explain?type=task&id=789&asof=2026-02-15
+ *   (asof is REQUIRED — returns 400 if missing)
  *
  *   Expected: { ok: true, data: {...}, summary: "...", narrative: "..." }
  *
@@ -21,44 +22,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "../../lib/supabaseServer";
 import { generateNarrative } from "../../lib/explainNarrate";
+import { buildExplainSummary } from "../../lib/explainSummary";
+import { checkIpLimit, checkUserLimit } from "../../lib/rateLimit";
 
 const VALID_TYPES = new Set(["project", "milestone", "task"]);
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-const ENTITY_LABEL: Record<string, string> = {
-  project: "Project",
-  milestone: "Milestone",
-  task: "Task",
-};
-
-function buildSummary(
-  data: { status: string; reasons: { rank: number; title: string }[] },
-  entityType: string
-): string {
-  const label = ENTITY_LABEL[entityType] ?? "Entity";
-  const topReason = data.reasons?.[0];
-
-  switch (data.status) {
-    case "DELAYED":
-      return topReason
-        ? `${label} is delayed: ${topReason.title}.`
-        : `${label} is delayed.`;
-    case "AT_RISK":
-      return topReason
-        ? `${label} is at risk: ${topReason.title}.`
-        : `${label} is at risk.`;
-    case "ON_TRACK":
-      return `${label} is on track.`;
-    default:
-      return "";
-  }
-}
 
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const type = params.get("type");
   const idStr = params.get("id");
-  const asof = params.get("asof"); // optional
+  const asof = params.get("asof");
 
   // --- Validate inputs ---
   if (!type || !VALID_TYPES.has(type)) {
@@ -76,9 +50,11 @@ export async function GET(req: NextRequest) {
   }
   const id = parseInt(idStr, 10);
 
-  if (asof !== null && !DATE_RE.test(asof)) {
+  // asof is REQUIRED — caller must always supply a timezone-aware date.
+  // No server-side fallback to avoid as-of drift between client and server.
+  if (!asof || !DATE_RE.test(asof)) {
     return NextResponse.json(
-      { ok: false, error: 'Invalid "asof" format. Must be YYYY-MM-DD.' },
+      { ok: false, error: 'Missing or invalid "asof". Must be YYYY-MM-DD.' },
       { status: 400 }
     );
   }
@@ -96,15 +72,32 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  // --- Rate limit (only when AI narration is enabled) ---
+  if (process.env.EXPLAIN_AI_ENABLED === "true") {
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const ipCheck = checkIpLimit(ip);
+    if (ipCheck.limited) {
+      return NextResponse.json(
+        { ok: false, error: "Too many requests. Please try again later." },
+        { status: 429, headers: { "Retry-After": String(Math.ceil(ipCheck.retryAfterMs / 1000)) } },
+      );
+    }
+    const userCheck = checkUserLimit(session.user.id);
+    if (userCheck.limited) {
+      return NextResponse.json(
+        { ok: false, error: "Too many requests. Please try again later." },
+        { status: 429, headers: { "Retry-After": String(Math.ceil(userCheck.retryAfterMs / 1000)) } },
+      );
+    }
+  }
+
   // --- Call RPC ---
   try {
-    // Always pass all 3 params — PostgREST can't resolve DEFAULT params when omitted
-    const effectiveAsof = asof || new Date().toISOString().slice(0, 10);
-
+    // Always pass all 3 params — PostgREST can't resolve DEFAULT params when omitted.
     const { data, error } = await supabase.rpc("explain_entity", {
       p_entity_type: type,
       p_entity_id: id,
-      p_asof: effectiveAsof,
+      p_asof: asof,
     });
 
     if (error) {
@@ -114,7 +107,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const summary = buildSummary(data, type);
+    const summary = buildExplainSummary(data, type);
     const narrative = await generateNarrative(data);
 
     return NextResponse.json(

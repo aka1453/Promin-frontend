@@ -1,428 +1,400 @@
-# ProMin Execution Roadmap
+# ProMin Execution Roadmap (Canonical)
 
-> **This is the living document — Claude Code must update it.**
+> **This is the living document — Claude Code must update it.**  
+> **Single source of truth for execution state.**
 
-## Purpose
+## How to Read This File
 
-This file is the **single source of truth** for execution state.  
-It records what is done, what is in progress, and what remains.
+This roadmap is organized by **product tracks**, not by chronological noise.
 
-- Claude Code **must read this file** before implementing anything  
-- Claude Code **must update it** after completing work
-
----
-
-## Phase 0 — Foundational Platform (Completed — Locked)
-
-These phases shaped the existing infrastructure and are considered stable.
-
-- ✅ Workspace & Project model — Complete  
-- ✅ Project / Milestone / Task hierarchy — Complete  
-- ✅ Core CRUD flows & pages — Complete  
-- ✅ Authentication & project membership (RLS) — Complete  
-- ✅ Base scheduling fields & propagation — Complete  
-
-> These items should not be reworked unless explicitly reopened.
-
----
-
-## Phase 1 — Deterministic Project Intelligence (Execution Spine)
-
-### Phase 1.1 — Deterministic Health Engine
-
-- ✅ Health computation in DB — Complete  
-- ✅ Health propagation bottom-up — Complete  
-
-### Phase 1.2 — CPM / Critical Path
-
-- ✅ ES / EF / LS / LF computation — Complete  
-- ✅ Float calculation — Complete  
-- ✅ Critical & near-critical flags — Complete  
-- ✅ Cycle detection — Complete  
-
-### Phase 1.3 — Baselines & Variance
-
-- ✅ Project baseline tables created — Complete  
-- ✅ Baseline immutability enforced — Complete  
-- ✅ Active baseline selection per project — Complete  
-- ✅ Variance computation (DB-side) — Complete  
-- ✅ Create Baseline UI action — Complete
-- ✅ Baseline UX guardrails — Complete (confirmation modal, immutability warning, change-detection hint)
-
-> Phase 1.x establishes ProMin as a **deterministic execution engine**.  
-> All later intelligence must build on this foundation.
-
----
-
-## Phase 2 — Auditability & Governance (AI Readiness Spine)
-
-### Phase 2.1 — Immutable Change Log
-
-- ✅ Immutable change log — Complete  
-
-### Phase 2.2 — Governance Primitives
-
-These are **mandatory prerequisites** for any AI-driven drafting, explainability, or automation.
-
-- ✅ Plan change attribution (who / when / why)  
-- ✅ Completion locking & edit constraints  
-- ✅ Automatic daily snapshots (system-owned)  
-- ✅ Approval workflows (optional, gated)  
-
-#### Governance Semantics (Snapshots vs Implicit Commits)
-
-- The system records **automatic daily snapshots** (system-owned):
-  - Used for progress graphs, S-curves, and exports
-  - Always reflect current truth (progress may increase or decrease)
-  - Require **no user action**
-  - Do **not** lock editing or restrict changes
-
-- The system creates **implicit committed snapshots** at meaningful user actions:
-  - Baseline creation
-  - Milestone completion
-  - Project completion
-  - Formal report generation
-
-- Implicit commits:
-  - Are **authoritative reference points**
-  - Are attributable (who / when / why)
-  - Do **not** freeze editing or prevent future changes
-  - Enable baseline comparison, reporting context, and AI explainability
-
-- There is **no user-facing “lock” action**.  
-  Governance emerges **implicitly** as a side effect of normal user behavior.
-
----
-
-## Phase 3 — Reporting & Analytics (Read-Only Intelligence)
-
-### Phase 3.1 — Deterministic Reporting Primitives
-
-- ✅ Current state report RPC (`get_project_current_state_report`) — Complete  
-- ✅ Historical progress view (`project_progress_history`) — Complete  
-- ✅ Baseline comparison RPC (`get_project_baseline_comparison`) — Complete  
-- ✅ Hardening: reporting primitives explicitly read-only — Complete  
-
-### Phase 3.2 — Reporting Consumers
-
-- ✅ UI report components (charts, tables) — Complete
-  - S-curve line chart (`ProgressLineChart`), milestone donut, cost breakdown, KPI strip
-  - Route: `/projects/[projectId]/reports` with Overview / Milestones / Tasks / Export tabs
-- ✅ Export (PDF / Excel / CSV / S-Curve PDF) — Complete
-  - `jspdf` for PDF reports + S-curve PDF; `xlsx` for Excel; browser Blob for CSV
-
----
-
-## Phase 4 — Explainability & Assisted Intelligence (Read-Only AI)
-
-AI is **read-only by default**.
-Any write action must be **explicit, auditable, and user-approved**.
-
-> **Phase 4 invariants:** All explainability is strictly read-only (no DB writes).
-> AI narration is feature-flagged (`EXPLAIN_AI_ENABLED`, default OFF) — ProMin works with $0 AI spend.
-
-### Phase 4.1 — Deterministic Explainability (DB-Side, Read-Only)
-
-- ✅ `explain_entity(text, bigint, date)` RPC — Complete
-  - Returns structured JSON with reason codes + evidence for why an entity is DELAYED / AT_RISK / critical
-  - Reason codes (v1): `CRITICAL_TASK_LATE`, `BASELINE_SLIP`, `PLANNED_AHEAD_OF_ACTUAL`, `TASK_LATE`, `FLOAT_EXHAUSTED`
-  - Deterministic ranking: HIGH severity schedule blockers first → baseline slip → progress mismatch → non-critical late → float exhausted
-  - Top 5 reasons max, each with severity (HIGH/MEDIUM/LOW) and structured evidence
-  - Read-only, SECURITY INVOKER, reuses canonical progress/CPM/baseline RPCs
-  - Migration: `20260216100000_explain_entity_rpc.sql`
-  - Fixed: `FLOAT_EXHAUSTED` strict filter — OR-precedence bug caused unfiltered tasks (any float) to appear when entity_type=project; now only float_days=0 tasks are included
-  - Fixed: `entity_id` type mismatch — hierarchy RPC returns text IDs, added `::text` cast in filter
-  - Refined: status derived from reason codes, not raw risk_state — DELAYED requires `CRITICAL_TASK_LATE` or `BASELINE_SLIP`; `TASK_LATE`/`PLANNED_AHEAD_OF_ACTUAL` → `AT_RISK`; no reasons = `ON_TRACK`
-  - Status semantics: ahead-of-plan (actual >= planned) no longer headlines as AT_RISK due solely to low-severity advisories like FLOAT_EXHAUSTED; such reasons still appear in the reasons list for transparency
-  - Added hard DELAY rule (`PLANNED_COMPLETE_BUT_NOT_DONE`): when planned progress reaches 100% but work is not done, status is forced to DELAYED with HIGH severity; ranked first, overrides softer signals
-
-### Phase 4.2 — Explainability API Route (Server-Side, Read-Only)
-
-- ✅ `/api/explain` GET endpoint — Complete
-  - Query params: `type` (project|milestone|task), `id` (bigint), `asof` (YYYY-MM-DD, optional)
-  - Calls `explain_entity` RPC with user auth context (no service role)
-  - Returns `{ ok, data, summary, narrative }` with deterministic templated summary + optional AI narrative
-  - Auth-gated (401 if unauthenticated), input validation (400), RLS enforced via user session
-  - Cache-Control: private, max-age=30
-  - Route: `app/api/explain/route.ts`
-
-### Phase 4.3 — Explainability UI Consumers (Explain Button + Drawer)
-
-- ✅ Shared `ExplainDrawer` component — Complete
-  - Right-side drawer with status badge, summary, ranked reasons, collapsible evidence JSON
-  - Fetches from `/api/explain` on open; loading, error (with retry), and empty states handled
-  - Components: `app/components/explain/ExplainDrawer.tsx`, `ExplainButton.tsx`
-  - Types: `app/types/explain.ts`
-- ✅ Entry-point buttons wired into 3 surfaces — Complete
-  - Project overview card header (full "Explain" button)
-  - Milestone card (compact icon next to status badge)
-  - Task card header (compact icon next to collapse/menu buttons)
-- ✅ Read-only: no writes, no mutations, renders server payload only
-- ✅ Explain drawer: human-friendly key details for each reason code + raw JSON behind collapsed "Advanced (raw JSON)" toggle
-
-### Phase 4.4 — Optional AI Narration (Feature-Flagged, Read-Only)
-
-- ✅ AI narrative generation — Complete
-  - Feature flag: `EXPLAIN_AI_ENABLED` env var (default OFF, $0 AI spend)
-  - Model: configurable via `EXPLAIN_AI_MODEL` env var (default `gpt-4o-mini`)
-  - Strict grounding: LLM restates only facts from reason payload, no invented data
-  - Minimal payload sent: top 3 reasons, max 8 evidence keys each; skipped when no reasons
-  - Fail-safe: returns `narrative=""` if disabled, missing API key, or any error
-  - API response: `{ ok, data, summary, narrative }` — narrative always present
-  - UI: blue "AI Summary" box in ExplainDrawer (only rendered when narrative non-empty)
-  - Utility: `app/lib/explainNarrate.ts`
-  - Dependency added: `openai` SDK
-
-### Phase 4 — Hardening & Verification
-
-- ✅ End-to-end verification — Complete
-  - Manual verification checklist: `docs/verification/phase4_explainability.md`
-  - Covers: input validation, response shape, UI states, RLS, AI flag, performance
-  - Hardening fixes applied: retry button on error, improved empty-state message, HTTP status check, AI skipped on empty reasons
-
-### Phase 4 — UI Parity Fixes
-
-- ✅ Workflow node action menu (edit + explain) — Complete
-  - TaskNode now has ⋮ menu with "Edit task" (opens EditTaskModal) and "Explain status" (opens ExplainDrawer)
-  - Menu renders in both collapsed and expanded node views; clicks do not trigger node navigation
-- ✅ Kanban task card collapse/expand — Complete
-  - Chevron toggle in card header; collapsed view shows title + progress summary
-  - State persisted to localStorage per card
-- ✅ Consistent behind-schedule styling — Complete
-  - Shared helper `getTaskScheduleState()` in `utils/schedule.ts` uses DB-computed `is_delayed` and `status_health`
-  - Kanban TaskCard now shows red border + "Delayed" badge (or amber + "Behind") matching Workflow TaskNode
-  - No new DB/RPC calls; pure UI consumption of existing fields
-
-### Phase 4 — Freeze Notes (Locked)
-
-Phase 4 is **complete and frozen** as of 2026-02-16.
-
-- All explainability features are **strictly read-only** — no DB writes from explain stack
-- AI narration is **feature-flagged** (`EXPLAIN_AI_ENABLED`, default OFF) — ProMin operates with $0 AI spend by default
-- Status semantics are **deterministic and locked**:
-  - `DELAYED` requires `CRITICAL_TASK_LATE`, `BASELINE_SLIP`, or `PLANNED_COMPLETE_BUT_NOT_DONE`
-  - `AT_RISK` requires `TASK_LATE` or `PLANNED_AHEAD_OF_ACTUAL`
-  - `ON_TRACK` = no qualifying reasons
-- UI parity between Kanban and Workflow views uses shared `getTaskScheduleState()` predicate
-- Verification docs: `docs/verification/phase4_explainability.md`, `docs/verification/phase4_ui_parity.md`
-- Migration: `20260216100000_explain_entity_rpc.sql`
-
-> Do not reopen Phase 4 items unless explicitly requested. Future insight surfacing belongs in Phase 4.5+.
-
-### Phase 4.5+ — Remaining (Pending)
-
-- ⬜ Insight surfacing
-  - Bottlenecks, leverage points, risk drivers
-- ⬜ Natural-language explanations grounded in deterministic data
-
----
-
-## Phase 5 — Document-to-Plan Drafting (Proposal-Only AI)
-
-AI produces **proposal drafts**, never authoritative truth.  
-Drafts require **human review and acceptance** before becoming real plans.
-
-### Phase 5.1 — Document Intake & Evidence Layer
-
-- ✅ Upload multiple intake documents (Contract, SOW, BOM, TQs, etc.)
-  - Server-side API routes: `POST /api/projects/[projectId]/documents` (upload), `GET` (list)
-  - Download via signed URL: `GET /api/projects/[projectId]/documents/[documentId]/download`
-  - 50 MB file size limit enforced server-side
-  - UI page: `/projects/[projectId]/documents` with upload button, document table, download
-  - "Documents" nav button added to project header (visible to all members)
-- ✅ Versioned document storage with metadata
-  - Table: `project_documents` with auto-incrementing version per (project_id, original_filename)
-  - BEFORE INSERT trigger: `auto_version_project_document()` computes next version atomically
-  - Storage bucket: `project-documents` (private), path: `{projectId}/{timestamp}_{filename}`
-  - Immutable: no UPDATE or DELETE policies on table or storage objects
-  - Migration: `20260216120000_project_documents.sql`
-- ✅ Project-level access control (RLS)
-  - SELECT: `is_project_member()` AND NOT deleted
-  - INSERT: `can_edit_project()` AND NOT archived AND NOT deleted
-  - Storage RLS mirrors table RLS via `split_part(name,'/',1)::bigint` path extraction
-  - No UPDATE/DELETE policies (immutability guarantee)
-- ✅ Input hashing for traceability
-  - SHA-256 computed server-side on upload, stored as `content_hash`
-  - Hash displayed (truncated) in document list with full hash on hover
-  - Full attribution: `uploader_user_id` + `created_at` on every record
-
-#### Phase 5.1 — Verification Checklist
-
-1. ✅ RLS correctness: non-member blocked; viewer can list/download; editor/owner can upload
-2. ✅ Versioning: same filename uploaded twice → version 1 and version 2; both files in storage
-3. ✅ Immutability: no UPDATE/DELETE policies on table or storage; upsert: false on upload
-4. ✅ Hash integrity: SHA-256 computed server-side and stored with each document record
-5. ✅ Archived project: upload blocked (RLS INSERT policy checks `is_project_archived`)
-6. ✅ Attribution: every record has `uploader_user_id` (from session) and `created_at`
-7. ✅ Navigation: "Documents" button in project header links to documents page
-8. ✅ Build: `next build` passes with all new routes registered
-
-### Phase 5.2 — Draft Plan Generation (Non-Authoritative) — COMPLETE and FROZEN
-
-- ✅ AI-generated draft project structure:
-  - Milestones (with weights, dates, source references)
-  - Tasks (with weights, durations, priorities, dependencies)
-  - Deliverables (with weights, priorities)
-  - Dependencies & sequencing assumptions
-  - Server-side text extraction: pdf-parse (PDF), mammoth (DOCX), plaintext
-  - Extracted text snapshots: immutable, hashed, versioned, linked to source documents
-  - `document_extractions` table with confidence tracking
-  - Feature-flagged via `DRAFT_AI_ENABLED` env var (default: OFF)
-  - Configurable AI model via `DRAFT_AI_MODEL` env var (default: gpt-4o)
-  - Evidence precedence enforced in AI system prompt
-- ✅ Draft stored as **proposal JSON**, not applied to live plan
-  - 8 draft tables: `plan_drafts`, `draft_milestones`, `draft_tasks`, `draft_deliverables`, `draft_task_dependencies`, `draft_conflicts`, `draft_assumptions`, `document_extractions`
-  - Draft tables fully isolated from live tables (no cross-FK)
-  - RLS: member can view, editor can insert/modify
-  - Migration: `20260216140000_draft_plan_generation.sql`
-- ✅ Explicit assumptions captured (durations, weights, logic)
-  - `draft_assumptions` table with confidence level (low/medium/high)
-  - Must be acknowledged before acceptance
-- ✅ Conflicts from contradictory documents
-  - `draft_conflicts` table with severity (blocking/warning)
-  - Blocking conflicts must be resolved before acceptance
-- ✅ API routes:
-  - `GET /api/projects/[projectId]/drafts` — list drafts
-  - `POST /api/projects/[projectId]/drafts/generate` — generate draft from documents
-  - `GET /api/projects/[projectId]/drafts/[draftId]` — full draft detail with tree + validation
-  - `POST .../accept` — atomic acceptance via `accept_plan_draft()` RPC
-  - `POST .../reject` — rejection via `reject_plan_draft()` RPC
-  - `POST .../conflicts/[id]/resolve` — resolve conflict
-  - `POST .../assumptions/[id]/acknowledge` — acknowledge assumption
-- ✅ UI:
-  - Drafts list page: `/projects/[projectId]/drafts`
-  - Draft review page: `/projects/[projectId]/drafts/[draftId]`
-  - GenerateDraftModal: document selection + user instructions
-  - "Drafts" nav button added to project header
-- ✅ Build verified: `next build` passes with all routes registered
-
-### Phase 5.3 — Review, Edit & Acceptance Flow — COMPLETE (minimal draft acceptance flow only)
-
-- ✅ Validation before acceptance (weights, deps, cycles)
-  - `validate_plan_draft()` RPC: checks conflicts, assumptions, hierarchy completeness, weight sanity, dependency cycles (Kahn's topological sort)
-- ✅ Explicit "Accept Draft" action converts proposal → real plan
-  - `accept_plan_draft()` SECURITY DEFINER RPC: atomic transaction creates milestones → tasks → subtasks → task_dependencies
-  - Maps draft IDs → real IDs using jsonb maps for FK wiring
-  - Weight normalization triggers fire automatically on each INSERT
-- ✅ Full audit trail of draft acceptance
-  - `plan_drafts.decided_at`, `decided_by`, `extraction_ids`, `ai_model` fields
-  - Draft records preserved after acceptance (immutable audit log)
-
-### Phase 5.3E — Full Draft Editing UX — NOT STARTED
-
-- ⬜ Side-by-side draft vs editable structure
-- ⬜ User modifies draft freely (inline editing)
-
-> **No further changes to Phase 5.2 or Phase 5.3 without explicit reopening.**
-
----
-
-## Phase 6 — Execution Intelligence (Post-Acceptance)
-
-Once accepted, the project behaves exactly like any other ProMin project.
-All existing intelligence (health, CPM, baselines, variance, progress) fires
-automatically when `accept_plan_draft()` inserts into live tables.
-
-- ✅ Health, CPM, baselines, variance apply automatically (certified — triggers fire on INSERT)
-- ✅ Draft origin preserved for traceability (`plan_drafts` audit records retained)
-- ✅ Deterministic project forecasting (ECD)
-  - `get_project_forecast(bigint)` RPC: linear velocity method, best/worst range, confidence
-  - API route: `GET /api/projects/[projectId]/forecast` (auth-gated, SECURITY INVOKER)
-  - UI: inline forecast section in Project Overview card (ECD, schedule badge, range, confidence, velocity)
-  - Methods: `linear_velocity`, `completed`, `not_started`, `insufficient_velocity`
-  - No AI, no ML — pure deterministic arithmetic
-  - Migration: `20260217100000_project_forecast_rpc.sql`
-- ✅ Verification: `docs/verification/phase6_execution_intelligence.md`
-
-### Phase 6 — Freeze Notes (Locked)
-
-Phase 6 is **complete and frozen** as of 2026-02-17.
-
-- All forecasting is **deterministic** — same inputs produce same outputs
-- Forecast is **read-only** — GET endpoint only, no mutations
-- SECURITY INVOKER — respects RLS, no escalation
-- No new UX paradigms — forecast is inline in existing Project Overview card
-- Existing intelligence (health, CPM, baselines, variance) confirmed to fire automatically on draft acceptance
-
-> Do not reopen Phase 6 items unless explicitly requested. Cost/EVM belongs in Phase 8.
-
----
-
-## Phase 7 — Conversational Guidance (Explain, Don’t Mutate)
-
-Chat is an **accelerator of understanding**, not a planner.
-
-- ⬜ Chatbot answers grounded in deterministic data:
-  - “What is delaying this project?”
-  - “What should I tackle first to accelerate?”
-  - “Why is this task critical?”
-- ⬜ Suggestions only — no silent mutations  
-- ⬜ Any action requires explicit UI confirmation  
-
----
-
-## Phase 8 — Advanced Planning
-
-- ✅ Progress curves (S-curves) — Complete
-  - DB RPC `get_project_scurve(bigint, text, boolean)` with baseline wiring (migration `20260214180000`)
-  - `project_baseline_subtasks` table: frozen subtask-level snapshot with normalized `effective_weight`
-  - `create_project_baseline` populates subtask rows with hierarchical weight normalization: `(mw/Σmw)·(tw/Σtw)·(sw/Σsw)`
-  - Baseline S-curve uses frozen effective_weight — immune to current weight changes
-  - UI chart renders baseline (dotted gray) + planned + actual; legend + tooltip updated
-  - S-curve PDF export includes baseline line + baseline column in data table
-- ✅ Canonical progress model — Complete
-  - DB RPCs: `get_project_progress_asof`, `get_project_scurve` (consistency fix), `get_project_progress_hierarchy`
-  - Batch RPC: `get_projects_progress_asof(bigint[], date)` — single call for home/projects list
-  - Step-function semantics: planned = 1 if asof >= planned_end, actual = 1 if is_done
-  - Hierarchical weight normalization: `(mw/Σmw)·(tw/Σtw)·(sw/Σsw)`
-  - Worst-case risk rollup: ON_TRACK / AT_RISK / DELAYED
-  - All UI screens use canonical RPCs (home, project detail, milestone detail, gantt, reports)
-  - Canonical TypeScript contract: `types/progress.ts` (EntityProgress, HierarchyRow, toEntityProgress)
-- ✅ Progress model correctness fix — Complete
-  - **Root cause**: `DeliverableCard.tsx` set `is_done` without `completed_at`; progress RPCs require both
-  - **DB fix**: `auto_set_completed_at` BEFORE trigger ensures `completed_at` is always set when `is_done` transitions
-  - **Backfill**: existing `is_done=true, completed_at=NULL` rows get `completed_at = updated_at`
-  - **Weight denominator dilution fix**: `mw_sum`/`tw_sums` now only include entities with deliverable descendants
-  - **SUM(DISTINCT) fix**: hierarchy RPC uses proper DISTINCT ON + GROUP BY instead of SUM(DISTINCT)
-  - **S-curve today point**: CURRENT_DATE always included in date_series via UNION
-  - Migrations: `20260215160000`, `20260215180000`, `20260215200000`
-- ✅ Baseline weight denominator fix — Complete
-  - `create_project_baseline` weight sums now filter with `EXISTS` (only entities with deliverable descendants)
-  - Matches corrected progress RPCs — frozen `effective_weight` sums to 1.0
-  - Migration: `20260215210000`
-- ✅ Gantt chart enhancements — Complete
-  - Tooltip now shows both Planned Progress % and Actual Progress % (previously only actual)
-  - Project-level summary bar at top of Gantt chart with overall planned/actual progress
-  - Dark slate color palette for project bar (distinct from milestone colors)
-  - Project row is collapsible — collapses all milestones and tasks beneath it
-  - 3-level hierarchy: Project → Milestone → Task
-- ⬜ Cost & EVM primitives
-- ⬜ Resource planning
-
----
-
-## Phase 9 — Productization & Enterprise
-
-- ⬜ Billing & licensing  
-- ⬜ Multi-tenant hardening  
-- ⬜ SSO / compliance  
-
----
-
-## Status Legend (MANDATORY)
+### Status Semantics (MANDATORY)
 
 | Symbol | Meaning |
 |------|--------|
 | ✅ | **Complete** — Implemented and verified |
-| 🟡 | **Partial** — Some work done; gaps documented |
 | 🟠 | **In Progress** — Actively being worked on |
 | ⬜ | **Pending** — Not started |
+| 🧊 | **Frozen** — Locked; do not reopen unless explicitly requested |
+
+### Working Agreement
+
+- Claude Code must read this file before implementing anything.
+- Claude Code must update this file after completing work.
+- No item may be marked ✅ unless verified.
+- Frozen sections must not be changed unless explicitly reopened by Amro.
 
 ---
 
-## Working Agreement
+## Current State (Today)
 
-- This file is updated after every completed deliverable  
-- Claude Code must not mark items ✅ unless verified  
-- Only the next active phase may be marked 🟠 In Progress  
-- If in doubt, leave the item ⬜ Pending
+### Platform Spine (Locked)
+- ✅ Phase 0–3 — Foundation + Reporting
+- 🧊 Phase 4 — Explainability (Read-Only) **Frozen**
+- 🧊 Phase 4.5 — Insights (Read-Only) **Frozen**
+- ✅ Phase 5.1–5.3 — Document-to-Plan (Proposal-only; acceptance is explicit)
+- 🧊 Phase 5.2/5.3 — Draft generation & minimal acceptance flow **Frozen**
+- ✅ Phase 6 — Deterministic Forecasting **Frozen**
+- 🧊 Phase 7.1 — Read-only Conversational Guidance **Frozen**
+- ✅ Phase 8 (partial) — Progress + S-curves + Gantt enhancements
+
+### Next Active Work (Per Amro Decision)
+- ✅ **Phase 4.6+ — Natural-language explanations grounded in deterministic data** (Complete)
+- ⬜ **Phase 7.2+ — Conversational enhancements** (MUST-HAVE NEXT)
+
+### Explicit Deferrals
+- ⬜ Phase 5.3E — Full Draft Editing UX (deferred)
+
+### Post-Publish Only
+- ⬜ Phase 9 — Billing / licensing / SSO / enterprise hardening (ONLY AFTER publish-ready)
+
+---
+
+# Track A — Core Platform (Locked)
+
+## Phase 0 — Foundational Platform (✅ Complete, 🧊 Locked)
+
+- ✅ Workspace & Project model
+- ✅ Project / Milestone / Task hierarchy
+- ✅ Core CRUD flows & pages
+- ✅ Authentication & project membership (RLS)
+- ✅ Base scheduling fields & propagation
+
+> Do not rework unless explicitly reopened.
+
+---
+
+# Track B — Deterministic Project Intelligence (Locked)
+
+## Phase 1 — Deterministic Project Intelligence (✅ Complete)
+
+### Phase 1.1 — Deterministic Health Engine
+- ✅ Health computation in DB
+- ✅ Health propagation bottom-up
+
+### Phase 1.2 — CPM / Critical Path
+- ✅ ES / EF / LS / LF computation
+- ✅ Float calculation
+- ✅ Critical & near-critical flags
+- ✅ Cycle detection
+
+### Phase 1.3 — Baselines & Variance
+- ✅ Project baseline tables created
+- ✅ Baseline immutability enforced
+- ✅ Active baseline selection per project
+- ✅ Variance computation (DB-side)
+- ✅ Create Baseline UI action
+- ✅ Baseline UX guardrails (confirmation modal, immutability warning, change-detection hint)
+
+---
+
+# Track C — Auditability & Governance (Locked)
+
+## Phase 2 — Auditability & Governance (✅ Complete)
+
+### Phase 2.1 — Immutable Change Log
+- ✅ Immutable change log
+
+### Phase 2.2 — Governance Primitives
+- ✅ Plan change attribution (who / when / why)
+- ✅ Completion locking & edit constraints
+- ✅ Automatic daily snapshots (system-owned)
+- ✅ Approval workflows (optional, gated)
+
+#### Governance Semantics (Locked)
+- Daily snapshots: system-owned, no user action, do not lock editing.
+- Implicit committed snapshots occur at baseline creation, milestone completion, project completion, formal report generation.
+- No user-facing “lock” action; governance emerges implicitly.
+
+---
+
+# Track D — Reporting & Analytics (Locked)
+
+## Phase 3 — Reporting & Analytics (✅ Complete)
+
+### Phase 3.1 — Deterministic Reporting Primitives
+- ✅ Current state report RPC (`get_project_current_state_report`)
+- ✅ Historical progress view (`project_progress_history`)
+- ✅ Baseline comparison RPC (`get_project_baseline_comparison`)
+- ✅ Reporting primitives explicitly read-only
+
+### Phase 3.2 — Reporting Consumers
+- ✅ Reports UI route: `/projects/[projectId]/reports` (Overview / Milestones / Tasks / Export)
+- ✅ Export: PDF / Excel / CSV / S-curve PDF (`jspdf`, `xlsx`, Blob CSV)
+
+---
+
+# Track E — Explainability & Insights (Read-Only, Frozen)
+
+## Phase 4 — Explainability (✅ Complete, 🧊 Frozen as of 2026-02-17)
+
+### Invariants (Locked)
+- Strictly read-only (no DB writes).
+- AI narration feature-flagged (`EXPLAIN_AI_ENABLED`, default OFF).
+- Status semantics locked:
+  - DELAYED requires `CRITICAL_TASK_LATE` or `BASELINE_SLIP` or `PLANNED_COMPLETE_BUT_NOT_DONE`
+  - AT_RISK requires `TASK_LATE` or `PLANNED_AHEAD_OF_ACTUAL`
+  - ON_TRACK = no qualifying reasons
+  - Status floor: `MAX(progress_risk_state, reason_status)` (can only escalate)
+- No UI surface may disagree on status; all status derives from DB `risk_state`.
+- Timezone parity: as-of date always controlled by client timezone (`todayForTimezone()` / `useUserTimezone()`), no UTC fallback.
+
+### Artifacts (Implemented)
+- ✅ DB RPC: `explain_entity(text, bigint, date)`  
+  - Migration: `20260216100000_explain_entity_rpc.sql`
+- ✅ Status floor hardening
+  - Migration: `20260217200000_explain_entity_status_floor.sql`
+- ✅ API: `/api/explain` (GET, auth-gated, asof required)
+- ✅ UI: ExplainDrawer + ExplainButton integrated into project/milestone/task + workflow menu
+- ✅ UI parity: Kanban collapse; consistent behind-schedule styling via shared `getTaskScheduleState()`
+- ✅ Shared summary builder extracted (`lib/explainSummary.ts`)
+- ✅ Verification docs:
+  - `docs/verification/phase4_explainability.md`
+  - `docs/verification/phase4_ui_parity.md`
+
+> 🧊 Do not reopen Phase 4 unless explicitly requested.
+
+---
+
+## Phase 4.5 — Insight Extraction & Surfacing (✅ Complete, 🧊 Frozen as of 2026-02-19)
+
+### Invariants (Locked)
+- Read-only and deterministic (no heuristics).
+- RPCs are SECURITY INVOKER, STABLE; asof required (no fallback).
+- UI evidence bullets are allow-listed per insight type with stable ordering.
+- UI normalizes severity CRITICAL → HIGH (display only).
+
+### Artifacts (Implemented)
+- ✅ Migration: `20260219120000_project_insights_rpc.sql`
+- ✅ RPCs:
+  - `get_project_insights(p_project_id, p_asof)` (deduped aggregator)
+  - `get_project_insight_bottlenecks`
+  - `get_project_insight_acceleration`
+  - `get_project_insight_risk_drivers`
+  - `get_project_insight_leverage_points`
+- ✅ UI:
+  - `app/components/insights/ProjectInsights.tsx`
+  - `app/types/insights.ts`
+  - Wired into `app/projects/[projectId]/page.tsx` as a standalone Insights card
+- ✅ Explain alignment:
+  - Insight → Explain banner + reason highlighting (no reranking/filtering)
+  - `ExplainDrawer.tsx` supports `insightContext`
+
+> 🧊 Do not reopen Phase 4.5 unless explicitly requested.
+
+---
+
+## Phase 4.6+ — Natural-Language Insight Explanations (✅ Complete)
+
+### Invariants (Locked)
+- Additive only — no changes to insight qualification, ranking, evidence, or deduplication.
+- No database changes, no new RPCs.
+- AI refinement feature-flagged (`INSIGHTS_AI_ENABLED`, default OFF).
+- Deterministic explanations are always sufficient; AI is optional polish.
+
+### Artifacts (Implemented)
+- ✅ Deterministic explanation builder: `app/lib/insightExplanation.ts`
+  - Fixed three-part structure: what this means / why it matters / what you can do
+  - Uses ONLY fields from the insight payload (type, severity, entity, evidence)
+  - ~70 words target, 90-word hard cap
+- ✅ Optional AI refinement route: `app/api/insights/refine/route.ts`
+  - Feature-flagged: `INSIGHTS_AI_ENABLED` (default OFF)
+  - Model: `INSIGHTS_AI_MODEL` (default gpt-4o-mini)
+  - System prompt enforces strict grounding ("rephrase only; no new facts")
+  - Fail-safe: returns deterministic draft on any error
+  - Auth-gated (session required)
+- ✅ UI: Per-insight "Why?" expand/collapse in `ProjectInsights.tsx`
+  - Each insight card has a "Why?" toggle showing the grounded explanation
+  - Optional "Refine with AI" button (calls `/api/insights/refine`)
+- ✅ UI: Global collapse control for Insights card
+  - Header shows "Insights (N)" with chevron toggle
+  - Collapsed state renders header only
+  - Collapse state persisted in localStorage per project
+
+### Verification (2026-02-21)
+- ✅ Deterministic explanations: grounded 3-part templates for all 4 insight types, 90-word hard cap
+- ✅ AI refinement route: feature-flagged (`INSIGHTS_AI_ENABLED`), auth-gated, fail-safe fallback to deterministic draft
+- ✅ UX: global Insights collapse (persisted per project in localStorage) + per-insight "Why?" toggle
+- ✅ B6 closure: "Refine with AI" button gated by `NEXT_PUBLIC_INSIGHTS_AI_ENABLED` client-side; absent from DOM when unset
+- ✅ `npm run build` passes with zero errors
+- ✅ No database changes, no new RPCs, Phase 4/4.5 invariants intact
+- Verification doc: `docs/verification/phase4_6_insight_explanations.md`
+
+> Phase 4.6+ is complete. Do not reopen unless explicitly requested.
+
+---
+
+# Track F — Document-to-Plan Drafting (Proposal-Only)
+
+## Phase 5 — Document-to-Plan Drafting
+
+### Phase 5.1 — Document Intake & Evidence Layer (✅ Complete)
+- ✅ Upload/list/download signed URL routes
+- ✅ Versioned immutable storage + metadata (`project_documents`)
+- ✅ RLS for table + storage, immutability (no UPDATE/DELETE)
+- ✅ Server-side SHA-256 hashing stored as `content_hash`
+- ✅ Verification checklist completed
+- ✅ Migration: `20260216120000_project_documents.sql`
+
+### Phase 5.2 — Draft Plan Generation (🧊 Frozen)
+- ✅ Feature-flagged `DRAFT_AI_ENABLED` (default OFF)
+- ✅ `document_extractions` table + immutable extraction snapshots
+- ✅ Draft tables isolated from live plan
+- ✅ Conflicts + assumptions captured and gated
+- ✅ API + UI drafts pages
+- ✅ Migration: `20260216140000_draft_plan_generation.sql`
+
+### Phase 5.3 — Review & Acceptance Flow (🧊 Frozen)
+- ✅ `validate_plan_draft()` gating (weights, deps, cycles, conflicts, assumptions)
+- ✅ `accept_plan_draft()` atomic acceptance (SECURITY DEFINER) into live plan
+- ✅ Audit preserved in `plan_drafts` decision fields
+
+### Phase 5.3E — Full Draft Editing UX (⬜ Deferred)
+- ⬜ Side-by-side editable draft structure
+- ⬜ Inline editing before acceptance
+
+---
+
+# Track G — Execution Intelligence (Frozen)
+
+## Phase 6 — Deterministic Forecasting (✅ Complete, 🧊 Frozen as of 2026-02-17)
+
+- ✅ `get_project_forecast(bigint)` RPC (deterministic linear velocity)
+- ✅ UI inline forecast section in Project Overview card
+- ✅ Migration: `20260217100000_project_forecast_rpc.sql`
+- ✅ Verification doc: `docs/verification/phase6_execution_intelligence.md`
+
+> Do not reopen Phase 6 unless explicitly requested.
+
+---
+
+# Track H — Conversational Guidance (Read-Only)
+
+## Phase 7 — Conversational Guidance
+
+### Phase 7.1 — Read-Only Conversational Guidance (✅ Complete, 🧊 Frozen as of 2026-02-17)
+- ✅ `/api/chat` (POST, auth-gated, timezone required)
+- ✅ Grounded in existing RPCs (`explain_entity`, `get_project_progress_hierarchy`)
+- ✅ Strict allow-list question types; mutation refusal enforced
+- ✅ UI: ChatDrawer + ChatButton integrated across project/milestone/task/workflow
+- ✅ No persistent chat state; messages live in React state only
+
+> 🧊 Do not reopen Phase 7.1 unless explicitly requested.
+
+### Phase 7.2+ — Conversational Enhancements (🟠 In Progress, MUST-HAVE AFTER 4.6+)
+
+#### Phase 7.2A — Streaming Responses (✅ Complete)
+- ✅ Feature flag: `CHAT_STREAMING_ENABLED` (server) + `NEXT_PUBLIC_CHAT_STREAMING_ENABLED` (client)
+  - Default OFF — non-streaming behavior identical to Phase 7.1
+  - When ON — SSE streaming with progressive text rendering
+- ✅ Server: `/api/chat/route.ts` supports dual-mode (streaming / non-streaming)
+  - All deterministic data fetched BEFORE streaming begins
+  - SSE protocol: `meta` → `delta*` → `done` events
+  - Fail-safe: streaming errors emit `error` event; client can retry
+- ✅ Client: `ChatDrawer.tsx` streaming consumption
+  - Progressive text append to in-progress assistant message
+  - Input disabled during streaming; "Generating..." indicator
+  - Clean error handling — no corrupted message history on failure
+  - AbortController support for drawer close during streaming
+- ✅ Verification (2026-02-21):
+  - `npm run build` passes with zero errors
+  - Flag OFF: identical to Phase 7.1 (non-streaming JSON response)
+  - Flag ON: same final content, delivered progressively via SSE
+  - Fallback: streaming error → `error` SSE event → client shows retry
+  - Flag mismatch safety: client ON + server OFF → Content-Type fallback to JSON parsing (prevents false empty-response error)
+  - No new DB calls, RPCs, or heuristics introduced
+
+#### Phase 7.2B — Session Memory (✅ Complete)
+- ✅ sessionStorage persistence: messages survive refresh, clear on tab close
+  - Storage key: `promin-chat:${entityType}:${entityId}` (scoped per entity)
+  - Load on drawer open; persist on message change
+- ✅ Bounded history sent to `/api/chat`:
+  - Client: last 12 messages, max 4000 chars (oldest trimmed first)
+  - Server: validates structure, enforces same caps as defense-in-depth
+  - History inserted between grounding context and current user question
+  - Deterministic context remains authoritative (history is for continuity only)
+- ✅ Server: `MAX_BODY_BYTES` increased from 2000 → 8000 to accommodate history
+- ✅ Types: `ChatHistoryEntry` added to `types/chat.ts`
+- ✅ UI: helper text updated to "Resets when you close the tab"
+- ✅ Verification (2026-02-21):
+  - `npm run build` passes with zero errors
+  - Refresh: chat history restores from sessionStorage
+  - Tab close + reopen: chat history cleared (sessionStorage default)
+  - Server rejects malformed history (400); enforces 12-msg / 4000-char caps
+  - Allow-list + mutation refusal unchanged
+  - No new DB calls, RPCs, or heuristics introduced
+
+#### Phase 7.2C — Insight Surfacing via Chat (✅ Complete)
+- ✅ "Show insights" button in ChatDrawer (Lightbulb icon, compact placement in input area)
+- ✅ Fetches project-wide insights via `get_project_insights(p_project_id, p_asof)` RPC
+  - Works from all contexts: project (direct), milestone (resolves parent), task (resolves parent)
+  - Client-side `resolveProjectId()` — read-only queries only
+  - Timezone-aware asof via `todayForTimezone(timezone)` — no UTC fallback
+- ✅ Deterministic assistant message format:
+  - Heading: "Insights (as of YYYY-MM-DD)"
+  - Grouped by type: Bottlenecks, Acceleration, Risk Drivers, Leverage Points (non-empty only)
+  - Per insight: severity (CRITICAL→HIGH normalized), headline, entity label, up to 2 evidence bullets
+  - Evidence allow-list matches Phase 4.5 (fixed order, no new heuristics)
+  - Empty state: "No insights found for this date."
+- ✅ Persisted via 7.2B sessionStorage (survives refresh)
+- ✅ Does not interfere with 7.2A streaming (local deterministic insertion, no OpenAI call)
+- ✅ Verification (2026-02-21):
+  - `npm run build` passes with zero errors
+  - Project context: insights appended directly
+  - Milestone context: projectId resolves via milestones.project_id → insights appended
+  - Task context: projectId resolves via tasks.milestone_id → milestones.project_id → insights appended
+  - No new RPCs, no new heuristics, no DB writes
+  - Allow-list + mutation refusal unchanged
+
+#### Phase 7.2D+ — Remaining Enhancements (⬜ Pending)
+- ⬜ Natural-language explanations grounded in deterministic data (chat consumption)
+
+---
+
+# Track I — Advanced Planning (Future)
+
+## Phase 8 — Advanced Planning
+
+### Completed (✅)
+- ✅ S-curves with baseline wiring (`get_project_scurve`)
+- ✅ Canonical progress model + hierarchy weighting + batch progress RPC
+- ✅ Progress correctness fixes + baseline denominator fixes
+- ✅ Gantt enhancements (planned+actual tooltip, project summary row, collapsible hierarchy)
+
+### Remaining (⬜ Future)
+- ⬜ Cost & EVM primitives
+- ⬜ Resource planning
+
+> Phase 8 begins only after Phase 4.6+ and 7.2+ are complete and the product feels publish-ready.
+
+---
+
+# Track J — Productization & Enterprise (Post-Publish Only)
+
+## Phase 9 — Productization & Enterprise (⬜ Post-Publish Only)
+- ⬜ Billing & licensing
+- ⬜ Multi-tenant hardening
+- ⬜ SSO / compliance
+
+---
+
+# Post-Verification Hotfix Ledger (Locked History)
+
+## SEC-01 — Deliverables View RLS Leak (✅ Complete)
+- ✅ `deliverables` view recreated with `security_invoker = true`
+- ✅ Migration: `20260220100000_hotfix_deliverables_view_rls.sql`
+- ✅ Verified: unauth returns 0 rows; auth returns expected rows
+
+## DEPLOY-01 — Remote DB Migration Drift (✅ Complete)
+- ✅ Applied `20260219120000_project_insights_rpc.sql` to remote Supabase
+- ✅ Verified: insight RPCs return HTTP 200 (no PGRST202)
+
+## TIME-01 — Remove Frontend Lifecycle Writes (✅ Complete)
+- ✅ Removed frontend writes to `actual_start`/`actual_end`/`status`
+- ✅ Added intent RPCs: `start_task`, `complete_milestone`, `complete_project` (SECURITY INVOKER)
+- ✅ Callers pass timezone-aware `todayForTimezone(timezone)`; no UTC drift
+- ✅ Migration: `20260220110000_lifecycle_intent_rpcs.sql`
+
+## SEC-02 — OpenAI API Key Rotation (✅ Complete; CLOSED)
+- ✅ Key rotated; new key in `.env.local` only; gitignored
+- ✅ AI Draft + Explain verified working
+- ✅ Standing rule: never paste API keys into chat/logs/tool output

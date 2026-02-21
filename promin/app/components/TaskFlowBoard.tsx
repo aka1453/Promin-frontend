@@ -7,6 +7,8 @@ import TaskCard from "./TaskCard";
 import AddTaskButton from "./AddTaskButton";
 import TaskDetailsDrawer from "./TaskDetailsDrawer";
 import { useToast } from "./ToastProvider";
+import { useUserTimezone } from "../context/UserTimezoneContext";
+import { todayForTimezone } from "../utils/date";
 
 type Props = {
   milestoneId: number;
@@ -26,6 +28,8 @@ export default function TaskFlowBoard({
   taskProgressMap,
 }: Props) {
   const { pushToast } = useToast();
+  const { timezone } = useUserTimezone();
+  const asOfDate = todayForTimezone(timezone);
 
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -110,6 +114,8 @@ export default function TaskFlowBoard({
                 onTaskUpdated={handleTaskUpdated}
                 canonicalPlanned={taskProgressMap?.[String(task.id)]?.planned ?? null}
                 canonicalActual={taskProgressMap?.[String(task.id)]?.actual ?? null}
+                canonicalRiskState={taskProgressMap?.[String(task.id)]?.risk_state ?? null}
+                asOfDate={asOfDate}
               />
             ))}
             {pendingTasks.length === 0 && (
@@ -134,6 +140,8 @@ export default function TaskFlowBoard({
                 onTaskUpdated={handleTaskUpdated}
                 canonicalPlanned={taskProgressMap?.[String(task.id)]?.planned ?? null}
                 canonicalActual={taskProgressMap?.[String(task.id)]?.actual ?? null}
+                canonicalRiskState={taskProgressMap?.[String(task.id)]?.risk_state ?? null}
+                asOfDate={asOfDate}
               />
             ))}
             {inProgressTasks.length === 0 && (
@@ -158,6 +166,8 @@ export default function TaskFlowBoard({
                 onTaskUpdated={handleTaskUpdated}
                 canonicalPlanned={taskProgressMap?.[String(task.id)]?.planned ?? null}
                 canonicalActual={taskProgressMap?.[String(task.id)]?.actual ?? null}
+                canonicalRiskState={taskProgressMap?.[String(task.id)]?.risk_state ?? null}
+                asOfDate={asOfDate}
               />
             ))}
             {completedTasks.length === 0 && (

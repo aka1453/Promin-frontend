@@ -7,7 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServer } from "../../../../../../lib/supabaseServer";
+import { getAuthenticatedClient } from "../../../../../../lib/apiAuth";
 
 export async function GET(
   req: NextRequest,
@@ -27,18 +27,15 @@ export async function GET(
     );
   }
 
-  // Auth
-  const supabase = await createSupabaseServer();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session) {
+  // Auth — token-scoped client so all DB/storage ops respect RLS
+  const auth = await getAuthenticatedClient(req);
+  if (!auth) {
     return NextResponse.json(
       { ok: false, error: "Not authenticated." },
       { status: 401 }
     );
   }
+  const { supabase } = auth;
 
   // Fetch document record (RLS enforces membership)
   const { data: doc, error } = await supabase

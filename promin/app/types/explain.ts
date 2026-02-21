@@ -17,6 +17,8 @@ export type ExplainData = {
   entity_id: number;
   asof: string;
   status: ExplainStatus;
+  planned: number;
+  actual: number;
   reasons: ExplainReason[];
   meta: {
     generated_at: string;

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { BarChart2, Settings } from "lucide-react";
 import ProgressBar from "./ProgressBar";
+import DeltaBadge from "./DeltaBadge";
 
 type Props = {
   project: any;
@@ -14,6 +15,8 @@ type Props = {
   canonicalPlanned: number | null;
   /** Canonical actual progress (0-100 scale) from batch RPC. */
   canonicalActual: number | null;
+  /** Canonical risk state from batch progress RPC — single authority for status. */
+  canonicalRiskState: string | null;
 };
 
 
@@ -51,6 +54,7 @@ export default function ProjectOverviewCard({
   hideSettings,
   canonicalPlanned,
   canonicalActual,
+  canonicalRiskState,
 }: Props) {
   const router = useRouter();
   const [showMenu, setShowMenu] = useState(false);
@@ -62,28 +66,22 @@ export default function ProjectOverviewCard({
   const pmName = project?.project_manager?.full_name;
   const pmId = project?.project_manager?.id;
 
-  const delta = actual - planned;
-  const absDelta = Math.abs(delta);
+  // Status derived exclusively from DB canonical risk_state — no inline heuristics.
+  const riskState = isCompleted ? "COMPLETED" : (canonicalRiskState ?? null);
 
-  const isOnTrack = Math.abs(delta) <= 3;
-  const isAhead = delta > 3;
-  const isBehind = delta < -3;
+  const statusColor =
+    riskState === "COMPLETED" ? "text-emerald-700"
+    : riskState === "DELAYED"  ? "text-red-600"
+    : riskState === "AT_RISK"  ? "text-amber-600"
+    : riskState === "ON_TRACK" ? "text-emerald-600"
+    : "text-slate-400"; // null/unknown — neutral
 
-  const statusColor = isCompleted
-    ? "text-emerald-700"
-    : isOnTrack
-    ? "text-slate-500"
-    : isAhead
-    ? "text-emerald-600"
-    : "text-amber-600";
-
-  const statusLabel = isCompleted
-    ? "Completed"
-    : isOnTrack
-    ? "On track"
-    : isAhead
-    ? `▲ ${absDelta.toFixed(1)}%`
-    : `▼ ${absDelta.toFixed(1)}%`;
+  const statusLabel =
+    riskState === "COMPLETED" ? "Completed"
+    : riskState === "DELAYED"  ? "Delayed"
+    : riskState === "AT_RISK"  ? "At Risk"
+    : riskState === "ON_TRACK" ? "On Track"
+    : "—"; // null/unknown — neutral
 
   // Close menu on outside click or Escape
   useEffect(() => {
@@ -133,8 +131,9 @@ export default function ProjectOverviewCard({
         </h3>
       </div>
 
-      {/* RIGHT — STATUS + ⋮ DROPDOWN */}
+      {/* RIGHT — DELTA + STATUS + ⋮ DROPDOWN */}
       <div className="flex items-center gap-3">
+        <DeltaBadge actual={actual} planned={planned} />
         <div className={`text-sm font-medium ${statusColor}`}>
           {statusLabel}
         </div>

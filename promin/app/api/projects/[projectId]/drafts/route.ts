@@ -7,7 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServer } from "../../../../lib/supabaseServer";
+import { getAuthenticatedClient } from "../../../../lib/apiAuth";
 
 export async function GET(
   req: NextRequest,
@@ -23,18 +23,15 @@ export async function GET(
     );
   }
 
-  // Auth
-  const supabase = await createSupabaseServer();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session) {
+  // Auth — token-scoped client so all DB/storage ops respect RLS
+  const auth = await getAuthenticatedClient(req);
+  if (!auth) {
     return NextResponse.json(
       { ok: false, error: "Not authenticated." },
       { status: 401 }
     );
   }
+  const { supabase } = auth;
 
   // Fetch drafts (RLS enforces membership)
   const { data: drafts, error } = await supabase
@@ -53,9 +50,11 @@ export async function GET(
   }
 
   // Resolve user display names
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const draftsList = (drafts || []) as any[];
   const userIds = [
     ...new Set(
-      (drafts || []).flatMap((d) =>
+      draftsList.flatMap((d) =>
         [d.generated_by, d.decided_by].filter(Boolean)
       )
     ),
@@ -68,12 +67,13 @@ export async function GET(
       .select("id, full_name, email")
       .in("id", userIds);
 
-    for (const p of profiles || []) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const p of (profiles || []) as any[]) {
       nameMap[p.id] = p.full_name || p.email || "Unknown";
     }
   }
 
-  const enriched = (drafts || []).map((d) => ({
+  const enriched = draftsList.map((d) => ({
     ...d,
     generated_by_name: nameMap[d.generated_by] || "Unknown",
     decided_by_name: d.decided_by ? nameMap[d.decided_by] || "Unknown" : null,

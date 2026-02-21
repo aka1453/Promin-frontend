@@ -35,6 +35,7 @@ export default function DeliverableCard({
   const [dependsOnDeliverable, setDependsOnDeliverable] = useState<any>(null);
 
   const readOnly = !canEdit;
+  const [confirmUncheck, setConfirmUncheck] = useState(false);
 
   // Load assigned user name and dependency info
   useEffect(() => {
@@ -70,6 +71,16 @@ export default function DeliverableCard({
   async function toggleDone(checked: boolean) {
     if (readOnly) return;
 
+    // If unchecking (reverting completion), require confirmation
+    if (!checked && localDeliverable.is_done) {
+      setConfirmUncheck(true);
+      return;
+    }
+
+    await performToggle(checked);
+  }
+
+  async function performToggle(checked: boolean) {
     setUpdating(true);
 
     const updatePayload: any = {
@@ -91,8 +102,23 @@ export default function DeliverableCard({
       console.error("Toggle deliverable error:", error);
       pushToast("Failed to update deliverable", "error");
     } else {
+      // Log undo-completion to activity_logs for audit trail
+      if (!checked) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user && projectId) {
+          await supabase.from("activity_logs").insert({
+            project_id: projectId,
+            user_id: session.user.id,
+            entity_type: "deliverable",
+            entity_id: localDeliverable.id,
+            action: "undo_completion",
+            metadata: { title: localDeliverable.title },
+          });
+        }
+      }
+
       pushToast(
-        checked ? "Deliverable marked as done" : "Deliverable marked as not done",
+        checked ? "Deliverable marked as done" : "Deliverable completion undone",
         "success"
       );
       onChanged?.();
@@ -207,11 +233,11 @@ export default function DeliverableCard({
             <input
               type="checkbox"
               checked={!!localDeliverable.is_done}
-              disabled={readOnly || updating || !taskActualStart}
+              disabled={readOnly || updating || (!taskActualStart && !localDeliverable.is_done)}
               onChange={(e) => toggleDone(e.target.checked)}
               className="mt-1 h-4 w-4 rounded border-slate-300"
               title={
-                !taskActualStart
+                !taskActualStart && !localDeliverable.is_done
                   ? "Start the task before completing deliverables"
                   : ""
               }
@@ -382,6 +408,37 @@ export default function DeliverableCard({
           onClose={() => setEditOpen(false)}
           onSuccess={handleEditSuccess}
         />
+      )}
+
+      {/* Confirmation dialog for undoing completion */}
+      {confirmUncheck && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-xl shadow-xl border border-slate-200 p-6 max-w-sm mx-4">
+            <h3 className="text-base font-semibold text-slate-900 mb-2">
+              Undo completion?
+            </h3>
+            <p className="text-sm text-slate-600 mb-4">
+              Are you sure you want to undo completion of &ldquo;{localDeliverable.title}&rdquo;? This action will be recorded in the activity log.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmUncheck(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  setConfirmUncheck(false);
+                  await performToggle(false);
+                }}
+                className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 transition-colors"
+              >
+                Undo Completion
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

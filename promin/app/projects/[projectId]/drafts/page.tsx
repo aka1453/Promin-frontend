@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { supabase } from "../../../lib/supabaseClient";
+import { supabase, getAuthHeaders } from "../../../lib/supabaseClient";
 import {
   ProjectRoleProvider,
   useProjectRole,
@@ -92,7 +92,8 @@ function DraftsPageContent({ projectId }: { projectId: number }) {
   }, [projectId]);
 
   const fetchDrafts = useCallback(async () => {
-    const res = await fetch(`/api/projects/${projectId}/drafts`);
+    const headers = await getAuthHeaders();
+    const res = await fetch(`/api/projects/${projectId}/drafts`, { headers });
     const json = await res.json();
     if (json.ok) {
       setDrafts(json.drafts);

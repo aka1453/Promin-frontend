@@ -1,0 +1,455 @@
+"use client";
+
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { HelpCircle, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
+import { supabase } from "../../lib/supabaseClient";
+import { useUserTimezone } from "../../context/UserTimezoneContext";
+import { todayForTimezone } from "../../utils/date";
+import { buildInsightExplanation } from "../../lib/insightExplanation";
+import type { InsightRow, InsightType, InsightSeverity, InsightContext } from "../../types/insights";
+import type { ExplainEntityType } from "../../types/explain";
+import type { HierarchyRow } from "../../types/progress";
+import ExplainDrawer from "../explain/ExplainDrawer";
+
+type Props = {
+  projectId: number;
+  hierarchyRows: HierarchyRow[];
+};
+
+/** Normalize RPC severity to the approved UI set: HIGH / MEDIUM / LOW */
+function normalizeSeverity(raw: string): InsightSeverity {
+  if (raw === "HIGH") return "HIGH";
+  if (raw === "MEDIUM") return "MEDIUM";
+  if (raw === "LOW") return "LOW";
+  if (raw === "CRITICAL") return "HIGH";
+  return "LOW";
+}
+
+const INSIGHT_TYPE_LABELS: Record<InsightType, string> = {
+  BOTTLENECK: "Bottleneck",
+  ACCELERATION: "Acceleration",
+  RISK_DRIVER: "Risk Driver",
+  LEVERAGE: "Leverage",
+};
+
+const INSIGHT_TYPE_COLORS: Record<InsightType, string> = {
+  BOTTLENECK: "bg-red-100 text-red-700",
+  ACCELERATION: "bg-blue-100 text-blue-700",
+  RISK_DRIVER: "bg-amber-100 text-amber-700",
+  LEVERAGE: "bg-purple-100 text-purple-700",
+};
+
+const SEVERITY_COLORS: Record<InsightSeverity, string> = {
+  HIGH: "bg-red-100 text-red-700",
+  MEDIUM: "bg-amber-100 text-amber-700",
+  LOW: "bg-slate-100 text-slate-600",
+};
+
+/** Fixed allow-list per insight_type, in render order. Max 4 bullets. */
+const EVIDENCE_KEYS_BY_TYPE: Record<InsightType, readonly string[]> = {
+  BOTTLENECK: ["is_critical", "float_days", "blocking_count", "remaining_duration_days"],
+  ACCELERATION: ["is_critical", "float_days", "remaining_duration_days", "effective_weight"],
+  RISK_DRIVER: ["risk_state", "top_reason_codes", "baseline_slip_days", "planned_end"],
+  LEVERAGE: ["effective_weight", "is_critical", "float_days", "remaining_duration_days"],
+};
+
+/** Valid entity types for ExplainDrawer */
+const EXPLAIN_ENTITY_TYPES = new Set<string>(["project", "milestone", "task"]);
+
+function formatEvidenceKey(key: string): string {
+  return key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatEvidenceValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "number") return String(value);
+  if (Array.isArray(value)) return value.join(", ");
+  return String(value);
+}
+
+function getEvidenceBullets(
+  insightType: InsightType,
+  evidence: Record<string, unknown>,
+): Array<{ label: string; value: string }> {
+  const allowList = EVIDENCE_KEYS_BY_TYPE[insightType];
+  const bullets: Array<{ label: string; value: string }> = [];
+
+  for (const key of allowList) {
+    if (key in evidence) {
+      bullets.push({
+        label: formatEvidenceKey(key),
+        value: formatEvidenceValue(evidence[key]),
+      });
+    }
+  }
+
+  return bullets;
+}
+
+/** Build entity_type:entity_id -> entity_name lookup from hierarchy rows */
+function buildNameMap(rows: HierarchyRow[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    map.set(`${row.entity_type}:${row.entity_id}`, row.entity_name);
+  }
+  return map;
+}
+
+function resolveEntityLabel(
+  entityType: string,
+  entityId: number,
+  nameMap: Map<string, string>,
+): string {
+  const name = nameMap.get(`${entityType}:${entityId}`);
+  const typeLabel = entityType.charAt(0).toUpperCase() + entityType.slice(1);
+  if (name) return `${typeLabel}: ${name}`;
+  return `${typeLabel} #${entityId}`;
+}
+
+function buildInsightContext(insight: InsightRow): InsightContext {
+  const ctx: InsightContext = {
+    source: "insight",
+    insight_type: insight.insight_type,
+    insight_severity: insight.severity,
+  };
+  const codes = insight.evidence.top_reason_codes;
+  if (Array.isArray(codes) && codes.length > 0) {
+    ctx.top_reason_codes = codes.map(String);
+  }
+  return ctx;
+}
+
+/* ------------------------------------------------------------------ */
+/*  localStorage helpers for collapse persistence                      */
+/* ------------------------------------------------------------------ */
+
+function getCollapseKey(projectId: number): string {
+  return `promin:insights-collapsed:${projectId}`;
+}
+
+function loadCollapsed(projectId: number): boolean {
+  try {
+    return localStorage.getItem(getCollapseKey(projectId)) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function saveCollapsed(projectId: number, collapsed: boolean): void {
+  try {
+    localStorage.setItem(getCollapseKey(projectId), String(collapsed));
+  } catch {
+    // localStorage unavailable — ignore
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  AI refinement hook                                                 */
+/* ------------------------------------------------------------------ */
+
+function useAiRefinement() {
+  const [cache] = useState(() => new Map<string, string>());
+
+  const refine = useCallback(
+    async (insight: InsightRow, draft: string): Promise<string> => {
+      const key = `${insight.insight_type}:${insight.entity_type}:${insight.entity_id}`;
+      const cached = cache.get(key);
+      if (cached) return cached;
+
+      try {
+        const res = await fetch("/api/insights/refine", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ insight, draftExplanation: draft }),
+        });
+        if (!res.ok) return draft;
+        const json = await res.json();
+        const result = json.explanation ?? draft;
+        cache.set(key, result);
+        return result;
+      } catch {
+        return draft;
+      }
+    },
+    [cache],
+  );
+
+  return refine;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Per-insight explanation row                                         */
+/* ------------------------------------------------------------------ */
+
+function InsightExplanation({
+  insight,
+  entityLabel,
+}: {
+  insight: InsightRow;
+  entityLabel: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [aiText, setAiText] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const refine = useAiRefinement();
+
+  const draft = useMemo(
+    () => buildInsightExplanation(insight, entityLabel),
+    [insight, entityLabel],
+  );
+
+  const displayText = aiText ?? draft;
+
+  async function handleAiRefine(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (aiLoading || aiText) return;
+    setAiLoading(true);
+    const result = await refine(insight, draft);
+    setAiText(result);
+    setAiLoading(false);
+  }
+
+  return (
+    <div className="mt-1.5">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setExpanded(!expanded);
+        }}
+        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors"
+      >
+        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        Why?
+      </button>
+      {expanded && (
+        <div className="mt-1.5 pl-4 border-l-2 border-blue-100">
+          <p className="text-xs text-slate-600 leading-relaxed">{displayText}</p>
+          {!aiText && process.env.NEXT_PUBLIC_INSIGHTS_AI_ENABLED === "true" && (
+            <button
+              onClick={handleAiRefine}
+              disabled={aiLoading}
+              className="mt-1 inline-flex items-center gap-1 text-[10px] text-slate-400 hover:text-blue-500 transition-colors disabled:opacity-50"
+              title="Refine with AI"
+            >
+              <Sparkles size={10} />
+              {aiLoading ? "Refining..." : "Refine with AI"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Main component                                                     */
+/* ------------------------------------------------------------------ */
+
+export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
+  const { timezone } = useUserTimezone();
+  const router = useRouter();
+  const [insights, setInsights] = useState<InsightRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
+
+  // ExplainDrawer state: which insight index is open (null = closed)
+  const [explainIdx, setExplainIdx] = useState<number | null>(null);
+
+  const nameMap = useMemo(() => buildNameMap(hierarchyRows), [hierarchyRows]);
+
+  // Load persisted collapse state once on mount
+  useEffect(() => {
+    setCollapsed(loadCollapsed(projectId));
+  }, [projectId]);
+
+  const fetchInsights = useCallback(async () => {
+    const userToday = todayForTimezone(timezone);
+    const { data, error: rpcErr } = await supabase.rpc("get_project_insights", {
+      p_project_id: projectId,
+      p_asof: userToday,
+    });
+
+    if (rpcErr) {
+      setError(rpcErr.message);
+      setInsights([]);
+    } else {
+      const raw = (data ?? []) as Array<{
+        insight_type: InsightType;
+        entity_type: string;
+        entity_id: number;
+        asof: string;
+        impact_rank: number;
+        severity: string;
+        headline: string;
+        evidence: Record<string, unknown>;
+      }>;
+      setInsights(
+        raw.map((r) => ({ ...r, severity: normalizeSeverity(r.severity) })),
+      );
+      setError(null);
+    }
+    setLoading(false);
+  }, [projectId, timezone]);
+
+  useEffect(() => {
+    fetchInsights();
+  }, [fetchInsights]);
+
+  function handleNavigate(insight: InsightRow) {
+    if (insight.entity_type === "milestone") {
+      router.push(`/projects/${projectId}/milestones/${insight.entity_id}`);
+    }
+  }
+
+  function toggleCollapsed() {
+    const next = !collapsed;
+    setCollapsed(next);
+    saveCollapsed(projectId, next);
+  }
+
+  const explainInsight = explainIdx !== null ? insights[explainIdx] : null;
+  const canExplain = explainInsight && EXPLAIN_ENTITY_TYPES.has(explainInsight.entity_type);
+
+  const insightCount = insights.length;
+
+  // Header — always rendered (loading, error, empty, or populated)
+  const header = (
+    <button
+      onClick={toggleCollapsed}
+      className="flex items-center gap-1.5 w-full text-left group"
+    >
+      {collapsed ? (
+        <ChevronRight size={14} className="text-slate-400 group-hover:text-slate-600 transition-colors" />
+      ) : (
+        <ChevronDown size={14} className="text-slate-400 group-hover:text-slate-600 transition-colors" />
+      )}
+      <h3 className="text-sm font-semibold text-slate-700">
+        Insights{!loading && !error ? ` (${insightCount})` : ""}
+      </h3>
+    </button>
+  );
+
+  if (loading) {
+    return (
+      <div>
+        {header}
+        {!collapsed && (
+          <div className="text-sm text-slate-400 mt-3">Loading insights...</div>
+        )}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div>
+        {header}
+        {!collapsed && (
+          <div className="text-sm text-slate-400 mt-3">Insights unavailable</div>
+        )}
+      </div>
+    );
+  }
+
+  if (insights.length === 0) {
+    return (
+      <div>
+        {header}
+        {!collapsed && (
+          <div className="text-sm text-slate-400 mt-3">No insights available</div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {header}
+      {!collapsed && (
+        <>
+          <div className="space-y-3 mt-3">
+            {insights.slice(0, 5).map((insight, idx) => {
+              const isClickable = insight.entity_type === "milestone";
+              const entityLabel = resolveEntityLabel(insight.entity_type, insight.entity_id, nameMap);
+              const bullets = getEvidenceBullets(insight.insight_type, insight.evidence);
+              const hasExplain = EXPLAIN_ENTITY_TYPES.has(insight.entity_type);
+
+              return (
+                <div
+                  key={`${insight.insight_type}-${insight.entity_type}-${insight.entity_id}-${idx}`}
+                  className={`rounded-lg border border-slate-200 px-4 py-3 ${
+                    isClickable ? "cursor-pointer hover:bg-slate-50 transition-colors" : ""
+                  }`}
+                  onClick={isClickable ? () => handleNavigate(insight) : undefined}
+                  role={isClickable ? "button" : undefined}
+                  tabIndex={isClickable ? 0 : undefined}
+                  onKeyDown={isClickable ? (e) => { if (e.key === "Enter") handleNavigate(insight); } : undefined}
+                >
+                  {/* Badges row */}
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${INSIGHT_TYPE_COLORS[insight.insight_type]}`}>
+                      {INSIGHT_TYPE_LABELS[insight.insight_type]}
+                    </span>
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${SEVERITY_COLORS[insight.severity]}`}>
+                      {insight.severity}
+                    </span>
+                    <span className="text-xs text-slate-400 ml-auto">
+                      {entityLabel}
+                    </span>
+                    {hasExplain && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExplainIdx(idx);
+                        }}
+                        className="p-1 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                        title="Explain this entity"
+                      >
+                        <HelpCircle size={14} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Headline */}
+                  <p className="text-sm font-medium text-slate-800 mb-1">
+                    {insight.headline}
+                  </p>
+
+                  {/* Evidence bullets */}
+                  {bullets.length > 0 && (
+                    <ul className="text-xs text-slate-500 space-y-0.5">
+                      {bullets.map((b, i) => (
+                        <li key={i}>
+                          <span className="text-slate-400">{b.label}:</span> {b.value}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {/* Phase 4.6+: Per-insight explanation */}
+                  <InsightExplanation insight={insight} entityLabel={entityLabel} />
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ExplainDrawer for the selected insight */}
+          {canExplain && explainInsight && (
+            <ExplainDrawer
+              open={true}
+              onOpenChange={(isOpen) => { if (!isOpen) setExplainIdx(null); }}
+              entityType={explainInsight.entity_type as ExplainEntityType}
+              entityId={explainInsight.entity_id}
+              insightContext={buildInsightContext(explainInsight)}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
+}

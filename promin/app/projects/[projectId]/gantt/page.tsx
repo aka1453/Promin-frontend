@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabaseClient";
 import { ProjectRoleProvider } from "../../../context/ProjectRoleContext";
 import { useUserTimezone } from "../../../context/UserTimezoneContext";
+import { todayForTimezone } from "../../../utils/date";
 import { ArrowLeft } from "lucide-react";
 import GanttChart from "../../../components/GanttChart";
 import type { Milestone } from "../../../types/milestone";
@@ -67,7 +68,7 @@ function GanttPageContent({ projectId }: { projectId: number }) {
       if (proj) setProject(proj as Project);
 
       // Canonical progress from hierarchy RPC
-      const tzToday = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
+      const tzToday = todayForTimezone(timezone);
       const { data: hierRows } = await supabase.rpc("get_project_progress_hierarchy", {
         p_project_id: projectId,
         p_asof: tzToday,
