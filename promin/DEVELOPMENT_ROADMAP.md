@@ -377,6 +377,32 @@ This roadmap is organized by **product tracks**, not by chronological noise.
 
 ---
 
+# Track K — Verification & UX Polish
+
+## Phase K.1 — UX & Interaction Polish
+
+### K.1-A — Complete Removal of Explain Surfaces (✅ Complete)
+- ✅ Removed `ExplainButton` from project page, MilestoneCard, TaskCard
+- ✅ Removed `ExplainDrawer` from ProjectInsights and TaskNode (workflow)
+- ✅ Removed "Explain status" menu item from TaskNode action menu
+- ✅ Deleted `ExplainButton.tsx` and `ExplainDrawer.tsx` component files
+- ✅ Removed `InsightContext` type (dead code after ExplainDrawer removal)
+- ✅ "Why?" / Supporting Evidence inline toggle is now the sole explanation surface
+- ✅ Verification (2026-02-26): `tsc --noEmit` passes; `next build` compiles successfully
+
+### K.1-B — Primary Focus Attention Anchor (✅ Complete)
+- ✅ Primary Focus block renders above ranked insight list
+- ✅ When insights exist: shows top-ranked insight (impact_rank ASC) with entity name, parent context, category badge, headline, and navigation link
+- ✅ When zero insights: calm explicit empty state — "Nothing requires attention right now."
+- ✅ Navigation supports milestones (direct) and tasks (via parent milestone)
+- ✅ Visually dominant (border-2, larger headline text, Target icon) relative to insight list cards
+- ✅ No new ranking logic, no new insight types, no AI reasoning
+- ✅ Verification (2026-02-26): `tsc --noEmit` passes; `next build` compiles successfully
+
+## Phase K.4 — Verification & Confidence Pass (⬜ Pending)
+
+---
+
 # Post-Verification Hotfix Ledger (Locked History)
 
 ## SEC-01 — Deliverables View RLS Leak (✅ Complete)

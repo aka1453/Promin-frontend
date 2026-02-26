@@ -2,15 +2,13 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { HelpCircle, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
+import { ChevronDown, ChevronRight, Sparkles, Target } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useUserTimezone } from "../../context/UserTimezoneContext";
 import { todayForTimezone } from "../../utils/date";
 import { buildInsightExplanation } from "../../lib/insightExplanation";
-import type { InsightRow, InsightType, InsightSeverity, InsightContext } from "../../types/insights";
-import type { ExplainEntityType } from "../../types/explain";
+import type { InsightRow, InsightType, InsightSeverity } from "../../types/insights";
 import type { HierarchyRow } from "../../types/progress";
-import ExplainDrawer from "../explain/ExplainDrawer";
 
 type Props = {
   projectId: number;
@@ -53,9 +51,6 @@ const EVIDENCE_KEYS_BY_TYPE: Record<InsightType, readonly string[]> = {
   RISK_DRIVER: ["risk_state", "top_reason_codes", "baseline_slip_days", "planned_end"],
   LEVERAGE: ["effective_weight", "is_critical", "float_days", "remaining_duration_days"],
 };
-
-/** Valid entity types for ExplainDrawer */
-const EXPLAIN_ENTITY_TYPES = new Set<string>(["project", "milestone", "task"]);
 
 function formatEvidenceKey(key: string): string {
   return key
@@ -110,17 +105,44 @@ function resolveEntityLabel(
   return `${typeLabel} #${entityId}`;
 }
 
-function buildInsightContext(insight: InsightRow): InsightContext {
-  const ctx: InsightContext = {
-    source: "insight",
-    insight_type: insight.insight_type,
-    insight_severity: insight.severity,
-  };
-  const codes = insight.evidence.top_reason_codes;
-  if (Array.isArray(codes) && codes.length > 0) {
-    ctx.top_reason_codes = codes.map(String);
+/** Resolve parent context string for an entity (e.g. "in Milestone: Alpha") */
+function resolveParentContext(
+  entityType: string,
+  entityId: number,
+  hierarchyRows: HierarchyRow[],
+): string | null {
+  const row = hierarchyRows.find(
+    (r) => r.entity_type === entityType && String(r.entity_id) === String(entityId),
+  );
+  if (!row || !row.parent_id) return null;
+  const parentRow = hierarchyRows.find(
+    (r) => String(r.entity_id) === String(row.parent_id),
+  );
+  if (!parentRow) return null;
+  const parentTypeLabel = parentRow.entity_type.charAt(0).toUpperCase() + parentRow.entity_type.slice(1);
+  return `in ${parentTypeLabel}: ${parentRow.entity_name}`;
+}
+
+/** Build a navigation URL for an insight entity */
+function buildEntityUrl(
+  projectId: number,
+  insight: InsightRow,
+  hierarchyRows: HierarchyRow[],
+): string | null {
+  if (insight.entity_type === "milestone") {
+    return `/projects/${projectId}/milestones/${insight.entity_id}`;
   }
-  return ctx;
+  if (insight.entity_type === "task") {
+    // Navigate to the parent milestone page where the task lives
+    const row = hierarchyRows.find(
+      (r) => r.entity_type === "task" && String(r.entity_id) === String(insight.entity_id),
+    );
+    if (row?.parent_id) {
+      return `/projects/${projectId}/milestones/${row.parent_id}`;
+    }
+  }
+  // project-level insights — already on the project page
+  return null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -257,9 +279,6 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
 
-  // ExplainDrawer state: which insight index is open (null = closed)
-  const [explainIdx, setExplainIdx] = useState<number | null>(null);
-
   const nameMap = useMemo(() => buildNameMap(hierarchyRows), [hierarchyRows]);
 
   // Load persisted collapse state once on mount
@@ -300,20 +319,11 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
     fetchInsights();
   }, [fetchInsights]);
 
-  function handleNavigate(insight: InsightRow) {
-    if (insight.entity_type === "milestone") {
-      router.push(`/projects/${projectId}/milestones/${insight.entity_id}`);
-    }
-  }
-
   function toggleCollapsed() {
     const next = !collapsed;
     setCollapsed(next);
     saveCollapsed(projectId, next);
   }
-
-  const explainInsight = explainIdx !== null ? insights[explainIdx] : null;
-  const canExplain = explainInsight && EXPLAIN_ENTITY_TYPES.has(explainInsight.entity_type);
 
   const insightCount = insights.length;
 
@@ -361,92 +371,114 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
       <div>
         {header}
         {!collapsed && (
-          <div className="text-sm text-slate-400 mt-3">No insights available</div>
+          <>
+            {/* Primary Focus — empty state */}
+            <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/50 px-5 py-4">
+              <div className="flex items-center gap-2 mb-1">
+                <Target size={16} className="text-emerald-600" />
+                <span className="text-sm font-semibold text-emerald-800">Primary Focus</span>
+              </div>
+              <p className="text-sm text-emerald-700">Nothing requires attention right now.</p>
+            </div>
+          </>
         )}
       </div>
     );
   }
+
+  const topInsight = insights[0];
+  const topEntityLabel = resolveEntityLabel(topInsight.entity_type, topInsight.entity_id, nameMap);
+  const topParentContext = resolveParentContext(topInsight.entity_type, topInsight.entity_id, hierarchyRows);
+  const topNavUrl = buildEntityUrl(projectId, topInsight, hierarchyRows);
+  const remainingInsights = insights.slice(1, 5);
 
   return (
     <div>
       {header}
       {!collapsed && (
         <>
-          <div className="space-y-3 mt-3">
-            {insights.slice(0, 5).map((insight, idx) => {
-              const isClickable = insight.entity_type === "milestone";
-              const entityLabel = resolveEntityLabel(insight.entity_type, insight.entity_id, nameMap);
-              const bullets = getEvidenceBullets(insight.insight_type, insight.evidence);
-              const hasExplain = EXPLAIN_ENTITY_TYPES.has(insight.entity_type);
-
-              return (
-                <div
-                  key={`${insight.insight_type}-${insight.entity_type}-${insight.entity_id}-${idx}`}
-                  className={`rounded-lg border border-slate-200 px-4 py-3 ${
-                    isClickable ? "cursor-pointer hover:bg-slate-50 transition-colors" : ""
-                  }`}
-                  onClick={isClickable ? () => handleNavigate(insight) : undefined}
-                  role={isClickable ? "button" : undefined}
-                  tabIndex={isClickable ? 0 : undefined}
-                  onKeyDown={isClickable ? (e) => { if (e.key === "Enter") handleNavigate(insight); } : undefined}
-                >
-                  {/* Badges row */}
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${INSIGHT_TYPE_COLORS[insight.insight_type]}`}>
-                      {INSIGHT_TYPE_LABELS[insight.insight_type]}
-                    </span>
-                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${SEVERITY_COLORS[insight.severity]}`}>
-                      {insight.severity}
-                    </span>
-                    <span className="text-xs text-slate-400 ml-auto">
-                      {entityLabel}
-                    </span>
-                    {hasExplain && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setExplainIdx(idx);
-                        }}
-                        className="p-1 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                        title="Explain this entity"
-                      >
-                        <HelpCircle size={14} />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Headline */}
-                  <p className="text-sm font-medium text-slate-800 mb-1">
-                    {insight.headline}
-                  </p>
-
-                  {/* Evidence bullets */}
-                  {bullets.length > 0 && (
-                    <ul className="text-xs text-slate-500 space-y-0.5">
-                      {bullets.map((b, i) => (
-                        <li key={i}>
-                          <span className="text-slate-400">{b.label}:</span> {b.value}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-
-                  {/* Phase 4.6+: Per-insight explanation */}
-                  <InsightExplanation insight={insight} entityLabel={entityLabel} />
-                </div>
-              );
-            })}
+          {/* Primary Focus — top-ranked insight */}
+          <div className="mt-4 rounded-lg border-2 border-slate-300 bg-slate-50 px-5 py-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Target size={16} className="text-slate-700" />
+              <span className="text-sm font-semibold text-slate-800">Primary Focus</span>
+              <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${INSIGHT_TYPE_COLORS[topInsight.insight_type]}`}>
+                {INSIGHT_TYPE_LABELS[topInsight.insight_type]}
+              </span>
+            </div>
+            <p className="text-base font-semibold text-slate-900 mb-1">
+              {topInsight.headline}
+            </p>
+            <p className="text-sm text-slate-600">
+              {topEntityLabel}
+              {topParentContext && (
+                <span className="text-slate-400"> — {topParentContext}</span>
+              )}
+            </p>
+            {topNavUrl && (
+              <button
+                onClick={() => router.push(topNavUrl)}
+                className="mt-2 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors"
+              >
+                Go to {topInsight.entity_type} →
+              </button>
+            )}
           </div>
 
-          {/* ExplainDrawer for the selected insight */}
-          {canExplain && explainInsight && (
-            <ExplainDrawer
-              open={true}
-              onOpenChange={(isOpen) => { if (!isOpen) setExplainIdx(null); }}
-              entityType={explainInsight.entity_type as ExplainEntityType}
-              entityId={explainInsight.entity_id}
-              insightContext={buildInsightContext(explainInsight)}
-            />
+          {/* Remaining insights list */}
+          {remainingInsights.length > 0 && (
+            <div className="space-y-3 mt-4">
+              {remainingInsights.map((insight, idx) => {
+                const navUrl = buildEntityUrl(projectId, insight, hierarchyRows);
+                const entityLabel = resolveEntityLabel(insight.entity_type, insight.entity_id, nameMap);
+                const bullets = getEvidenceBullets(insight.insight_type, insight.evidence);
+
+                return (
+                  <div
+                    key={`${insight.insight_type}-${insight.entity_type}-${insight.entity_id}-${idx}`}
+                    className={`rounded-lg border border-slate-200 px-4 py-3 ${
+                      navUrl ? "cursor-pointer hover:bg-slate-50 transition-colors" : ""
+                    }`}
+                    onClick={navUrl ? () => router.push(navUrl) : undefined}
+                    role={navUrl ? "button" : undefined}
+                    tabIndex={navUrl ? 0 : undefined}
+                    onKeyDown={navUrl ? (e) => { if (e.key === "Enter") router.push(navUrl); } : undefined}
+                  >
+                    {/* Badges row */}
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${INSIGHT_TYPE_COLORS[insight.insight_type]}`}>
+                        {INSIGHT_TYPE_LABELS[insight.insight_type]}
+                      </span>
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${SEVERITY_COLORS[insight.severity]}`}>
+                        {insight.severity}
+                      </span>
+                      <span className="text-xs text-slate-400 ml-auto">
+                        {entityLabel}
+                      </span>
+                    </div>
+
+                    {/* Headline */}
+                    <p className="text-sm font-medium text-slate-800 mb-1">
+                      {insight.headline}
+                    </p>
+
+                    {/* Evidence bullets */}
+                    {bullets.length > 0 && (
+                      <ul className="text-xs text-slate-500 space-y-0.5">
+                        {bullets.map((b, i) => (
+                          <li key={i}>
+                            <span className="text-slate-400">{b.label}:</span> {b.value}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {/* Per-insight explanation */}
+                    <InsightExplanation insight={insight} entityLabel={entityLabel} />
+                  </div>
+                );
+              })}
+            </div>
           )}
         </>
       )}

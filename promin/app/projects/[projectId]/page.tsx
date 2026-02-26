@@ -16,7 +16,6 @@ import { useUserTimezone } from "../../context/UserTimezoneContext";
 import { todayForTimezone } from "../../utils/date";
 import type { EntityProgress, HierarchyRow, ForecastResult } from "../../types/progress";
 import { toEntityProgress } from "../../types/progress";
-import ExplainButton from "../../components/explain/ExplainButton";
 import ChatButton from "../../components/chat/ChatButton";
 import { completeProject } from "../../lib/lifecycle";
 import ProjectInsights from "../../components/insights/ProjectInsights";
@@ -432,7 +431,6 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                 <div className="flex items-center justify-between mb-5">
                   <h2 className="text-lg font-semibold text-slate-700">Project Overview</h2>
                   <div className="flex items-center gap-2">
-                    <ExplainButton entityType="project" entityId={projectId} />
                     <ChatButton entityType="project" entityId={projectId} entityName={project?.name || undefined} />
                   </div>
                 </div>

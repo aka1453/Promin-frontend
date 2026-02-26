@@ -10,7 +10,6 @@ import { useUserTimezone } from "../context/UserTimezoneContext";
 import { todayForTimezone } from "../utils/date";
 import EditMilestoneModal from "./EditMilestoneModal";
 import { useToast } from "./ToastProvider";
-import ExplainButton from "./explain/ExplainButton";
 import ChatButton from "./chat/ChatButton";
 
 type Props = {
@@ -262,7 +261,6 @@ export default function MilestoneCard({
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               {getStatusBadge()}
-              <ExplainButton entityType="milestone" entityId={milestone.id} compact />
               <ChatButton entityType="milestone" entityId={milestone.id} entityName={milestone.name || undefined} compact />
             </div>
           </div>
