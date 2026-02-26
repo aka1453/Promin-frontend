@@ -2,15 +2,13 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { HelpCircle, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
+import { ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useUserTimezone } from "../../context/UserTimezoneContext";
 import { todayForTimezone } from "../../utils/date";
 import { buildInsightExplanation } from "../../lib/insightExplanation";
-import type { InsightRow, InsightType, InsightSeverity, InsightContext } from "../../types/insights";
-import type { ExplainEntityType } from "../../types/explain";
+import type { InsightRow, InsightType, InsightSeverity } from "../../types/insights";
 import type { HierarchyRow } from "../../types/progress";
-import ExplainDrawer from "../explain/ExplainDrawer";
 
 type Props = {
   projectId: number;
@@ -53,9 +51,6 @@ const EVIDENCE_KEYS_BY_TYPE: Record<InsightType, readonly string[]> = {
   RISK_DRIVER: ["risk_state", "top_reason_codes", "baseline_slip_days", "planned_end"],
   LEVERAGE: ["effective_weight", "is_critical", "float_days", "remaining_duration_days"],
 };
-
-/** Valid entity types for ExplainDrawer */
-const EXPLAIN_ENTITY_TYPES = new Set<string>(["project", "milestone", "task"]);
 
 function formatEvidenceKey(key: string): string {
   return key
@@ -108,19 +103,6 @@ function resolveEntityLabel(
   const typeLabel = entityType.charAt(0).toUpperCase() + entityType.slice(1);
   if (name) return `${typeLabel}: ${name}`;
   return `${typeLabel} #${entityId}`;
-}
-
-function buildInsightContext(insight: InsightRow): InsightContext {
-  const ctx: InsightContext = {
-    source: "insight",
-    insight_type: insight.insight_type,
-    insight_severity: insight.severity,
-  };
-  const codes = insight.evidence.top_reason_codes;
-  if (Array.isArray(codes) && codes.length > 0) {
-    ctx.top_reason_codes = codes.map(String);
-  }
-  return ctx;
 }
 
 /* ------------------------------------------------------------------ */
@@ -257,9 +239,6 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
 
-  // ExplainDrawer state: which insight index is open (null = closed)
-  const [explainIdx, setExplainIdx] = useState<number | null>(null);
-
   const nameMap = useMemo(() => buildNameMap(hierarchyRows), [hierarchyRows]);
 
   // Load persisted collapse state once on mount
@@ -311,9 +290,6 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
     setCollapsed(next);
     saveCollapsed(projectId, next);
   }
-
-  const explainInsight = explainIdx !== null ? insights[explainIdx] : null;
-  const canExplain = explainInsight && EXPLAIN_ENTITY_TYPES.has(explainInsight.entity_type);
 
   const insightCount = insights.length;
 
@@ -377,7 +353,6 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
               const isClickable = insight.entity_type === "milestone";
               const entityLabel = resolveEntityLabel(insight.entity_type, insight.entity_id, nameMap);
               const bullets = getEvidenceBullets(insight.insight_type, insight.evidence);
-              const hasExplain = EXPLAIN_ENTITY_TYPES.has(insight.entity_type);
 
               return (
                 <div
@@ -401,18 +376,6 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
                     <span className="text-xs text-slate-400 ml-auto">
                       {entityLabel}
                     </span>
-                    {hasExplain && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setExplainIdx(idx);
-                        }}
-                        className="p-1 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                        title="Explain this entity"
-                      >
-                        <HelpCircle size={14} />
-                      </button>
-                    )}
                   </div>
 
                   {/* Headline */}
@@ -438,16 +401,6 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
             })}
           </div>
 
-          {/* ExplainDrawer for the selected insight */}
-          {canExplain && explainInsight && (
-            <ExplainDrawer
-              open={true}
-              onOpenChange={(isOpen) => { if (!isOpen) setExplainIdx(null); }}
-              entityType={explainInsight.entity_type as ExplainEntityType}
-              entityId={explainInsight.entity_id}
-              insightContext={buildInsightContext(explainInsight)}
-            />
-          )}
         </>
       )}
     </div>

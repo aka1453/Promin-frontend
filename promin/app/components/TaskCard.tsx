@@ -11,7 +11,6 @@ import { supabase } from "../lib/supabaseClient";
 import { useUserTimezone } from "../context/UserTimezoneContext";
 import { todayForTimezone } from "../utils/date";
 import EditTaskModal from "./EditTaskModal";
-import ExplainButton from "./explain/ExplainButton";
 import ChatButton from "./chat/ChatButton";
 
 type Props = {
@@ -245,8 +244,6 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
           
           {/* BUTTONS */}
           <div className="flex items-center gap-1 flex-shrink-0">
-            {/* Explain + Ask buttons */}
-            <ExplainButton entityType="task" entityId={task.id} compact />
             <ChatButton entityType="task" entityId={task.id} entityName={task.name || undefined} compact />
 
             {/* Collapse button */}

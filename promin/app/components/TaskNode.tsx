@@ -6,7 +6,6 @@ import type { NodeProps } from "reactflow";
 import type { TaskNodeData } from "../types/taskDependency";
 import { getTaskScheduleState } from "../utils/schedule";
 import EditTaskModal from "./EditTaskModal";
-import ExplainDrawer from "./explain/ExplainDrawer";
 import ChatDrawer from "./chat/ChatDrawer";
 
 function TaskNode({ data }: NodeProps<TaskNodeData>) {
@@ -14,7 +13,6 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [explainOpen, setExplainOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
 
   // Close menu when clicking outside
@@ -125,12 +123,6 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
     setEditOpen(true);
   };
 
-  const handleExplainClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setMenuOpen(false);
-    setExplainOpen(true);
-  };
-
   const handleChatClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     setMenuOpen(false);
@@ -155,12 +147,6 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
         onClick={handleEditClick}
       >
         Edit task
-      </button>
-      <button
-        className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 text-blue-700"
-        onClick={handleExplainClick}
-      >
-        Explain status
       </button>
       <button
         className="w-full text-left px-3 py-2 text-sm hover:bg-violet-50 text-violet-700 rounded-b-lg"
@@ -199,12 +185,6 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
           }}
         />
       )}
-      <ExplainDrawer
-        open={explainOpen}
-        onOpenChange={setExplainOpen}
-        entityType="task"
-        entityId={task.id}
-      />
       <ChatDrawer
         open={chatOpen}
         onOpenChange={setChatOpen}
