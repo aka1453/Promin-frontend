@@ -1,16 +1,12 @@
 # ProMin Execution Roadmap (Canonical)
 
-> **This is the living document — Claude Code must update it.**  
+> **Living document — Claude Code must update after completing work.**
 > **Single source of truth for execution state.**
 
-## How to Read This File
-
-This roadmap is organized by **product tracks**, not by chronological noise.
-
-### Status Semantics (MANDATORY)
+## Status Semantics
 
 | Symbol | Meaning |
-|------|--------|
+|--------|---------|
 | ✅ | **Complete** — Implemented and verified |
 | 🟠 | **In Progress** — Actively being worked on |
 | ⬜ | **Pending** — Not started |
@@ -18,383 +14,255 @@ This roadmap is organized by **product tracks**, not by chronological noise.
 
 ### Working Agreement
 
-- Claude Code must read this file before implementing anything.
-- Claude Code must update this file after completing work.
-- No item may be marked ✅ unless verified.
-- Frozen sections must not be changed unless explicitly reopened by Amro.
+- Read this file before implementing. Update after completing.
+- No ✅ without verification. Frozen sections locked unless Amro reopens.
 
 ---
 
-## Current State (Today)
+## Current State
 
-### Platform Spine (Locked)
-- ✅ Phase 0–3 — Foundation + Reporting
-- 🧊 Phase 4 — Explainability (Read-Only) **Frozen**
-- 🧊 Phase 4.5 — Insights (Read-Only) **Frozen**
-- ✅ Phase 5.1–5.3 — Document-to-Plan (Proposal-only; acceptance is explicit)
-- 🧊 Phase 5.2/5.3 — Draft generation & minimal acceptance flow **Frozen**
-- ✅ Phase 6 — Deterministic Forecasting **Frozen**
-- 🧊 Phase 7.1 — Read-only Conversational Guidance **Frozen**
-- ✅ Phase 8 (partial) — Progress + S-curves + Gantt enhancements
-
-### Next Active Work (Per Amro Decision)
-- ✅ **Phase 4.6+ — Natural-language explanations grounded in deterministic data** (Complete)
-- ⬜ **Phase 7.2+ — Conversational enhancements** (MUST-HAVE NEXT)
-
-### Explicit Deferrals
-- ⬜ Phase 5.3E — Full Draft Editing UX (deferred)
-
-### Post-Publish Only
-- ⬜ Phase 9 — Billing / licensing / SSO / enterprise hardening (ONLY AFTER publish-ready)
+| Area | Status |
+|------|--------|
+| Phase 0–3 (Foundation + Reporting) | ✅ Locked |
+| Phase 4 (Explainability) | 🧊 Frozen |
+| Phase 4.5 (Insights) | 🧊 Frozen |
+| Phase 4.6+ (NL Insight Explanations) | 🧊 Frozen |
+| Phase 5.2/5.3 (Drafting) | 🧊 Frozen |
+| Phase 6 (Forecasting) | 🧊 Frozen |
+| Phase 7.1–7.2C (Conversational) | 🧊 Frozen |
+| Phase 8 (partial — Progress/S-curves/Gantt) | ✅ |
+| **Track K (Stabilization & Polish)** | **🟠 Active** |
+| Phase 5.3E (Full Draft Editing UX) | ⬜ Deferred |
+| Phase 9 (Billing/SSO/Enterprise) | ⬜ Post-publish only |
 
 ---
 
-# Track A — Core Platform (Locked)
+# Track A — Core Platform (🧊 Locked)
 
-## Phase 0 — Foundational Platform (✅ Complete, 🧊 Locked)
+## Phase 0 — Foundational Platform (✅)
 
-- ✅ Workspace & Project model
-- ✅ Project / Milestone / Task hierarchy
-- ✅ Core CRUD flows & pages
-- ✅ Authentication & project membership (RLS)
-- ✅ Base scheduling fields & propagation
-
-> Do not rework unless explicitly reopened.
+Workspace/Project model, hierarchy CRUD, auth + RLS, scheduling fields. Do not rework.
 
 ---
 
-# Track B — Deterministic Project Intelligence (Locked)
+# Track B — Deterministic Project Intelligence (🧊 Locked)
 
-## Phase 1 — Deterministic Project Intelligence (✅ Complete)
+## Phase 1 — Deterministic Project Intelligence (✅)
 
-### Phase 1.1 — Deterministic Health Engine
-- ✅ Health computation in DB
-- ✅ Health propagation bottom-up
-
-### Phase 1.2 — CPM / Critical Path
-- ✅ ES / EF / LS / LF computation
-- ✅ Float calculation
-- ✅ Critical & near-critical flags
-- ✅ Cycle detection
-
-### Phase 1.3 — Baselines & Variance
-- ✅ Project baseline tables created
-- ✅ Baseline immutability enforced
-- ✅ Active baseline selection per project
-- ✅ Variance computation (DB-side)
-- ✅ Create Baseline UI action
-- ✅ Baseline UX guardrails (confirmation modal, immutability warning, change-detection hint)
+- **1.1** Health computation + bottom-up propagation
+- **1.2** CPM (ES/EF/LS/LF, float, critical/near-critical flags, cycle detection)
+- **1.3** Baselines (tables, immutability, active selection, variance, UI action + guardrails)
 
 ---
 
-# Track C — Auditability & Governance (Locked)
+# Track C — Auditability & Governance (🧊 Locked)
 
-## Phase 2 — Auditability & Governance (✅ Complete)
+## Phase 2 — Auditability & Governance (✅)
 
-### Phase 2.1 — Immutable Change Log
-- ✅ Immutable change log
-
-### Phase 2.2 — Governance Primitives
-- ✅ Plan change attribution (who / when / why)
-- ✅ Completion locking & edit constraints
-- ✅ Automatic daily snapshots (system-owned)
-- ✅ Approval workflows (optional, gated)
-
-#### Governance Semantics (Locked)
-- Daily snapshots: system-owned, no user action, do not lock editing.
-- Implicit committed snapshots occur at baseline creation, milestone completion, project completion, formal report generation.
-- No user-facing “lock” action; governance emerges implicitly.
+Immutable change log, plan change attribution, completion locking, daily snapshots, approval workflows.
 
 ---
 
-# Track D — Reporting & Analytics (Locked)
+# Track D — Reporting & Analytics (🧊 Locked)
 
-## Phase 3 — Reporting & Analytics (✅ Complete)
+## Phase 3 — Reporting & Analytics (✅)
 
-### Phase 3.1 — Deterministic Reporting Primitives
-- ✅ Current state report RPC (`get_project_current_state_report`)
-- ✅ Historical progress view (`project_progress_history`)
-- ✅ Baseline comparison RPC (`get_project_baseline_comparison`)
-- ✅ Reporting primitives explicitly read-only
-
-### Phase 3.2 — Reporting Consumers
-- ✅ Reports UI route: `/projects/[projectId]/reports` (Overview / Milestones / Tasks / Export)
-- ✅ Export: PDF / Excel / CSV / S-curve PDF (`jspdf`, `xlsx`, Blob CSV)
+Deterministic reporting RPCs + UI exports (PDF/Excel/CSV/S-curve).
 
 ---
 
-# Track E — Explainability & Insights (Read-Only, Frozen)
+# Track E — Explainability & Insights (🧊 Frozen)
 
-## Phase 4 — Explainability (✅ Complete, 🧊 Frozen as of 2026-02-17)
+## Phase 4 — Explainability (🧊 Frozen)
 
-### Invariants (Locked)
-- Strictly read-only (no DB writes).
-- AI narration feature-flagged (`EXPLAIN_AI_ENABLED`, default OFF).
-- Status semantics locked:
-  - DELAYED requires `CRITICAL_TASK_LATE` or `BASELINE_SLIP` or `PLANNED_COMPLETE_BUT_NOT_DONE`
-  - AT_RISK requires `TASK_LATE` or `PLANNED_AHEAD_OF_ACTUAL`
-  - ON_TRACK = no qualifying reasons
-  - Status floor: `MAX(progress_risk_state, reason_status)` (can only escalate)
-- No UI surface may disagree on status; all status derives from DB `risk_state`.
-- Timezone parity: as-of date always controlled by client timezone (`todayForTimezone()` / `useUserTimezone()`), no UTC fallback.
+All invariants, RPCs, UI, and verification complete and locked.
 
-### Artifacts (Implemented)
-- ✅ DB RPC: `explain_entity(text, bigint, date)`  
-  - Migration: `20260216100000_explain_entity_rpc.sql`
-- ✅ Status floor hardening
-  - Migration: `20260217200000_explain_entity_status_floor.sql`
-- ✅ API: `/api/explain` (GET, auth-gated, asof required)
-- ✅ UI: ExplainDrawer + ExplainButton integrated into project/milestone/task + workflow menu
-- ✅ UI parity: Kanban collapse; consistent behind-schedule styling via shared `getTaskScheduleState()`
-- ✅ Shared summary builder extracted (`lib/explainSummary.ts`)
-- ✅ Verification docs:
-  - `docs/verification/phase4_explainability.md`
-  - `docs/verification/phase4_ui_parity.md`
+## Phase 4.5 — Insight Extraction & Surfacing (🧊 Frozen)
 
-> 🧊 Do not reopen Phase 4 unless explicitly requested.
+Deterministic insight RPCs and UI complete and locked.
 
----
+Authorized hotfixes (authorized by Amro, 2026-02-24; all verified: `npm run build` passes, no new migrations):
 
-## Phase 4.5 — Insight Extraction & Surfacing (✅ Complete, 🧊 Frozen as of 2026-02-19)
+- ✅ **BOTTLENECK** — zero-float requires `blocking_count >= 1`; readiness gate added; ranking unchanged.
+- ✅ **ACCELERATION** — critical tasks excluded; readiness gate added; severity locked MEDIUM; ranking: float ASC then remaining × weight; evidence enriched.
+- ✅ **LEVERAGE** — critical excluded; remaining > 0 required; readiness gate added; severity locked LOW; ranking: weight × 100k + remaining tiebreak; top-20 post-filter. **Phase 4.5 re-frozen.**
 
-### Invariants (Locked)
-- Read-only and deterministic (no heuristics).
-- RPCs are SECURITY INVOKER, STABLE; asof required (no fallback).
-- UI evidence bullets are allow-listed per insight type with stable ordering.
-- UI normalizes severity CRITICAL → HIGH (display only).
+## Phase 4.6+ — Natural-Language Insight Explanations (🧊 Frozen)
 
-### Artifacts (Implemented)
-- ✅ Migration: `20260219120000_project_insights_rpc.sql`
-- ✅ RPCs:
-  - `get_project_insights(p_project_id, p_asof)` (deduped aggregator)
-  - `get_project_insight_bottlenecks`
-  - `get_project_insight_acceleration`
-  - `get_project_insight_risk_drivers`
-  - `get_project_insight_leverage_points`
-- ✅ UI:
-  - `app/components/insights/ProjectInsights.tsx`
-  - `app/types/insights.ts`
-  - Wired into `app/projects/[projectId]/page.tsx` as a standalone Insights card
-- ✅ Explain alignment:
-  - Insight → Explain banner + reason highlighting (no reranking/filtering)
-  - `ExplainDrawer.tsx` supports `insightContext`
+Deterministic explanations + optional AI refinement complete and locked.
 
-> 🧊 Do not reopen Phase 4.5 unless explicitly requested.
+## Insight Rules Canon (Authoritative)
 
----
+> **Normative.** All insight behavior must conform. Changes require Amro's authorization + dated amendment.
 
-## Phase 4.6+ — Natural-Language Insight Explanations (✅ Complete)
+### BOTTLENECK
 
-### Invariants (Locked)
-- Additive only — no changes to insight qualification, ranking, evidence, or deduplication.
-- No database changes, no new RPCs.
-- AI refinement feature-flagged (`INSIGHTS_AI_ENABLED`, default OFF).
-- Deterministic explanations are always sufficient; AI is optional polish.
+**Purpose:** Actionable tasks constraining project finish date.
 
-### Artifacts (Implemented)
-- ✅ Deterministic explanation builder: `app/lib/insightExplanation.ts`
-  - Fixed three-part structure: what this means / why it matters / what you can do
-  - Uses ONLY fields from the insight payload (type, severity, entity, evidence)
-  - ~70 words target, 90-word hard cap
-- ✅ Optional AI refinement route: `app/api/insights/refine/route.ts`
-  - Feature-flagged: `INSIGHTS_AI_ENABLED` (default OFF)
-  - Model: `INSIGHTS_AI_MODEL` (default gpt-4o-mini)
-  - System prompt enforces strict grounding ("rephrase only; no new facts")
-  - Fail-safe: returns deterministic draft on any error
-  - Auth-gated (session required)
-- ✅ UI: Per-insight "Why?" expand/collapse in `ProjectInsights.tsx`
-  - Each insight card has a "Why?" toggle showing the grounded explanation
-  - Optional "Refine with AI" button (calls `/api/insights/refine`)
-- ✅ UI: Global collapse control for Insights card
-  - Header shows "Insights (N)" with chevron toggle
-  - Collapsed state renders header only
-  - Collapse state persisted in localStorage per project
+**Qualification (ALL required):** task only; not completed; `is_critical = true` OR (`float = 0` AND `blocking_count >= 1`); readiness gate (`planned_start <= asof` OR all predecessors completed).
 
-### Verification (2026-02-21)
-- ✅ Deterministic explanations: grounded 3-part templates for all 4 insight types, 90-word hard cap
-- ✅ AI refinement route: feature-flagged (`INSIGHTS_AI_ENABLED`), auth-gated, fail-safe fallback to deterministic draft
-- ✅ UX: global Insights collapse (persisted per project in localStorage) + per-insight "Why?" toggle
-- ✅ B6 closure: "Refine with AI" button gated by `NEXT_PUBLIC_INSIGHTS_AI_ENABLED` client-side; absent from DOM when unset
-- ✅ `npm run build` passes with zero errors
-- ✅ No database changes, no new RPCs, Phase 4/4.5 invariants intact
-- Verification doc: `docs/verification/phase4_6_insight_explanations.md`
+**Exclusions:** completed tasks; float=0 with zero dependents; future start + incomplete predecessors.
 
-> Phase 4.6+ is complete. Do not reopen unless explicitly requested.
+**Severity:** HIGH if critical, MEDIUM if float=0 non-critical. Never LOW.
+
+### ACCELERATION
+
+**Purpose:** Near-critical tasks where acceleration creates buffer. Opportunity signal.
+
+**Qualification (ALL required):** task only; not completed; `is_near_critical = true` AND `is_critical = false`; `remaining_duration_days > 0`; readiness gate.
+
+**Exclusions:** critical tasks (BOTTLENECK owns criticality); completed; zero remaining; future start + incomplete predecessors.
+
+**Severity:** MEDIUM only. Never HIGH or LOW.
+
+### RISK_DRIVER
+
+**Purpose:** Explains WHY an entity is unhealthy. Explanatory only, not actionable.
+
+**Qualification (ALL required):** task/milestone/project; `risk_state` AT_RISK or DELAYED; `explain_entity()` returns ≥ 1 reason code.
+
+**Exclusions:** ON_TRACK entities; zero reason codes. No readiness gate (by design). No positive messages.
+
+**Severity:** HIGH if DELAYED, MEDIUM if AT_RISK. Never LOW.
+
+### LEVERAGE
+
+**Purpose:** Actionable, non-critical, high-weight tasks. No urgency implied.
+
+**Qualification (ALL required):** task only; not completed; `is_critical = false`; `remaining_duration_days > 0`; readiness gate; top-20 by effective weight (post-filter).
+
+**Exclusions:** critical; completed; zero remaining; future start + incomplete predecessors.
+
+**Severity:** LOW only. Never HIGH or MEDIUM.
+
+### Global Invariants
+
+**Dedup precedence:** BOTTLENECK > ACCELERATION > RISK_DRIVER > LEVERAGE. Highest-priority wins per entity.
+
+**Caps:** 5 per category (pre-dedup), 20 total (post-dedup).
+
+**Empty categories are valid** — UI must not fabricate fallback insights.
+
+**Actionability:** BOTTLENECK/ACCELERATION = actionable (readiness-gated). RISK_DRIVER = explanatory (no gate). LEVERAGE = opportunistic (gated, always LOW).
+
+**Readiness gate:** BOTTLENECK, ACCELERATION, LEVERAGE use `planned_start <= asof OR upstream_incomplete_count = 0`. RISK_DRIVER has none. `planned_start` falls back to `cpm_es_date`.
 
 ---
 
-# Track F — Document-to-Plan Drafting (Proposal-Only)
+# Track F — Document-to-Plan Drafting
 
-## Phase 5 — Document-to-Plan Drafting
+## Phase 5
 
-### Phase 5.1 — Document Intake & Evidence Layer (✅ Complete)
-- ✅ Upload/list/download signed URL routes
-- ✅ Versioned immutable storage + metadata (`project_documents`)
-- ✅ RLS for table + storage, immutability (no UPDATE/DELETE)
-- ✅ Server-side SHA-256 hashing stored as `content_hash`
-- ✅ Verification checklist completed
-- ✅ Migration: `20260216120000_project_documents.sql`
-
-### Phase 5.2 — Draft Plan Generation (🧊 Frozen)
-- ✅ Feature-flagged `DRAFT_AI_ENABLED` (default OFF)
-- ✅ `document_extractions` table + immutable extraction snapshots
-- ✅ Draft tables isolated from live plan
-- ✅ Conflicts + assumptions captured and gated
-- ✅ API + UI drafts pages
-- ✅ Migration: `20260216140000_draft_plan_generation.sql`
-
-### Phase 5.3 — Review & Acceptance Flow (🧊 Frozen)
-- ✅ `validate_plan_draft()` gating (weights, deps, cycles, conflicts, assumptions)
-- ✅ `accept_plan_draft()` atomic acceptance (SECURITY DEFINER) into live plan
-- ✅ Audit preserved in `plan_drafts` decision fields
-
-### Phase 5.3E — Full Draft Editing UX (⬜ Deferred)
-- ⬜ Side-by-side editable draft structure
-- ⬜ Inline editing before acceptance
+- **5.1** Document Intake & Evidence Layer (✅) — Upload, versioning, immutability, RLS, hashing.
+- **5.2** Draft Plan Generation (🧊 Frozen) — AI draft generation (proposal-only).
+- **5.3** Review & Acceptance Flow (🧊 Frozen) — Validation + atomic acceptance.
+- **5.3E** Full Draft Editing UX (⬜ Deferred) — Side-by-side editable drafts, inline editing.
 
 ---
 
-# Track G — Execution Intelligence (Frozen)
+# Track G — Execution Intelligence (🧊 Frozen)
 
-## Phase 6 — Deterministic Forecasting (✅ Complete, 🧊 Frozen as of 2026-02-17)
+## Phase 6 — Deterministic Forecasting (🧊 Frozen)
 
-- ✅ `get_project_forecast(bigint)` RPC (deterministic linear velocity)
-- ✅ UI inline forecast section in Project Overview card
-- ✅ Migration: `20260217100000_project_forecast_rpc.sql`
-- ✅ Verification doc: `docs/verification/phase6_execution_intelligence.md`
-
-> Do not reopen Phase 6 unless explicitly requested.
+Deterministic ECD forecasting complete and locked.
 
 ---
 
-# Track H — Conversational Guidance (Read-Only)
+# Track H — Conversational Guidance (🧊 Frozen)
 
-## Phase 7 — Conversational Guidance
+## Phase 7
 
-### Phase 7.1 — Read-Only Conversational Guidance (✅ Complete, 🧊 Frozen as of 2026-02-17)
-- ✅ `/api/chat` (POST, auth-gated, timezone required)
-- ✅ Grounded in existing RPCs (`explain_entity`, `get_project_progress_hierarchy`)
-- ✅ Strict allow-list question types; mutation refusal enforced
-- ✅ UI: ChatDrawer + ChatButton integrated across project/milestone/task/workflow
-- ✅ No persistent chat state; messages live in React state only
+- **7.1** Read-Only Conversational Guidance (🧊) — Explain-only, grounded, refusal-enforced chat.
+- **7.2A** Streaming Responses (🧊) — SSE streaming with safe fallback.
+- **7.2B** Session Memory (🧊) — sessionStorage-based bounded memory.
+- **7.2C** Insight Surfacing via Chat (🧊) — One-click project-wide insights snapshot.
 
-> 🧊 Do not reopen Phase 7.1 unless explicitly requested.
+---
 
-### Phase 7.2+ — Conversational Enhancements (🟠 In Progress, MUST-HAVE AFTER 4.6+)
+# 🟠 Track K — Stabilization & Polish Sprint (ACTIVE)
 
-#### Phase 7.2A — Streaming Responses (✅ Complete)
-- ✅ Feature flag: `CHAT_STREAMING_ENABLED` (server) + `NEXT_PUBLIC_CHAT_STREAMING_ENABLED` (client)
-  - Default OFF — non-streaming behavior identical to Phase 7.1
-  - When ON — SSE streaming with progressive text rendering
-- ✅ Server: `/api/chat/route.ts` supports dual-mode (streaming / non-streaming)
-  - All deterministic data fetched BEFORE streaming begins
-  - SSE protocol: `meta` → `delta*` → `done` events
-  - Fail-safe: streaming errors emit `error` event; client can retry
-- ✅ Client: `ChatDrawer.tsx` streaming consumption
-  - Progressive text append to in-progress assistant message
-  - Input disabled during streaming; "Generating..." indicator
-  - Clean error handling — no corrupted message history on failure
-  - AbortController support for drawer close during streaming
-- ✅ Verification (2026-02-21):
-  - `npm run build` passes with zero errors
-  - Flag OFF: identical to Phase 7.1 (non-streaming JSON response)
-  - Flag ON: same final content, delivered progressively via SSE
-  - Fallback: streaming error → `error` SSE event → client shows retry
-  - Flag mismatch safety: client ON + server OFF → Content-Type fallback to JSON parsing (prevents false empty-response error)
-  - No new DB calls, RPCs, or heuristics introduced
+> Make ProMin feel finished, predictable, and calm before any new feature work.
 
-#### Phase 7.2B — Session Memory (✅ Complete)
-- ✅ sessionStorage persistence: messages survive refresh, clear on tab close
-  - Storage key: `promin-chat:${entityType}:${entityId}` (scoped per entity)
-  - Load on drawer open; persist on message change
-- ✅ Bounded history sent to `/api/chat`:
-  - Client: last 12 messages, max 4000 chars (oldest trimmed first)
-  - Server: validates structure, enforces same caps as defense-in-depth
-  - History inserted between grounding context and current user question
-  - Deterministic context remains authoritative (history is for continuity only)
-- ✅ Server: `MAX_BODY_BYTES` increased from 2000 → 8000 to accommodate history
-- ✅ Types: `ChatHistoryEntry` added to `types/chat.ts`
-- ✅ UI: helper text updated to "Resets when you close the tab"
-- ✅ Verification (2026-02-21):
-  - `npm run build` passes with zero errors
-  - Refresh: chat history restores from sessionStorage
-  - Tab close + reopen: chat history cleared (sessionStorage default)
-  - Server rejects malformed history (400); enforces 12-msg / 4000-char caps
-  - Allow-list + mutation refusal unchanged
-  - No new DB calls, RPCs, or heuristics introduced
+### Hard Rules
+- ❌ No new features, no schema changes (unless approved), no reopening frozen phases
+- ❌ No AI behavior changes, no roadmap expansion outside this track
 
-#### Phase 7.2C — Insight Surfacing via Chat (✅ Complete)
-- ✅ "Show insights" button in ChatDrawer (Lightbulb icon, compact placement in input area)
-- ✅ Fetches project-wide insights via `get_project_insights(p_project_id, p_asof)` RPC
-  - Works from all contexts: project (direct), milestone (resolves parent), task (resolves parent)
-  - Client-side `resolveProjectId()` — read-only queries only
-  - Timezone-aware asof via `todayForTimezone(timezone)` — no UTC fallback
-- ✅ Deterministic assistant message format:
-  - Heading: "Insights (as of YYYY-MM-DD)"
-  - Grouped by type: Bottlenecks, Acceleration, Risk Drivers, Leverage Points (non-empty only)
-  - Per insight: severity (CRITICAL→HIGH normalized), headline, entity label, up to 2 evidence bullets
-  - Evidence allow-list matches Phase 4.5 (fixed order, no new heuristics)
-  - Empty state: "No insights found for this date."
-- ✅ Persisted via 7.2B sessionStorage (survives refresh)
-- ✅ Does not interfere with 7.2A streaming (local deterministic insertion, no OpenAI call)
-- ✅ Verification (2026-02-21):
-  - `npm run build` passes with zero errors
-  - Project context: insights appended directly
-  - Milestone context: projectId resolves via milestones.project_id → insights appended
-  - Task context: projectId resolves via tasks.milestone_id → milestones.project_id → insights appended
-  - No new RPCs, no new heuristics, no DB writes
-  - Allow-list + mutation refusal unchanged
+### Allowed: UI/UX polish, edge-case handling, error/empty states, performance, code cleanup, accessibility, mobile fixes
 
-#### Phase 7.2D+ — Remaining Enhancements (⬜ Pending)
-- ⬜ Natural-language explanations grounded in deterministic data (chat consumption)
+### Phase K.1 — UX & Interaction Polish
+
+**Completed:**
+- ✅ **Project Verdict block** — Status, quantified impact, immediate action, conditional impact line, collapsible "why this matters". UI-only. (2026-02-23)
+- ✅ **Supporting Evidence clarity** — Human-readable headlines/consequence lines per insight type; raw codes behind "Why?" toggle. (2026-02-23)
+- ✅ **Insights clarity + navigation** — Deterministic explanation + human evidence in "Why?"; raw diagnostics behind "Details" toggle; entity labels as clickable navigation links. (2026-02-23)
+- ✅ **Insight → Task deep link** — Task labels navigate to milestone page with `?openTaskId=` auto-open. Parent lookup via `hierarchyRows`. URL cleaned via `replaceState`. (2026-02-23)
+- ✅ **Insights Overview restructure** — Verdict + Primary Focus + Ranked list; urgency copy removed; "Float" → "Schedule buffer"; critical path wording clarified. (2026-02-23)
+- ✅ **Verdict consistency + Primary Focus context** — Worst-case rollup shows "N items behind schedule" when project-level gap is zero; "<1% behind plan" for sub-0.5% deltas; milestone name shown for task entities. (2026-02-23)
+- ✅ **Insights identity/traceability** — Resolved task names from hierarchy → evidence → safe fallback (no "Task #ID"). Milestone context on all ranked cards. Sanity-verified: no extra fetches, no label flash, null-safe subtitles. (2026-02-24)
+- ✅ **Remove "Explain" button from insight cards** — Removed HelpCircle buttons + ExplainDrawer integration from insights. Dead code cleaned (explainIdx, EXPLAIN_ENTITY_TYPES, buildInsightContext). "Why?" toggle remains as sole explanation surface. (2026-02-25)
+
+All above verified: `tsc --noEmit` passes; Turbopack compilation succeeds (`next build` prerender fails due to missing env vars — pre-existing); no new migrations; no DB changes.
+
+**Pending:**
+- ⬜ Layout spacing consistency (cards, drawers, headers)
+- ⬜ Intentional collapse/expand defaults
+- ⬜ Calm, consistent loading/busy indicators
+- ⬜ Clear empty states
+- ⬜ Mobile usability review
+
+### Phase K.2 — Edge Cases & Error Handling
+- ⬜ Graceful handling of empty entities
+- ⬜ Retry flows where appropriate
+- ⬜ Clear permission-denied states
+- ⬜ No silent UI failures
+
+### Phase K.3 — Performance & Cleanliness
+- ⬜ Remove dead code
+- ⬜ Reduce redundant RPC calls
+- ⬜ Memoize heavy components/selectors where safe
+- ⬜ Reduce unnecessary re-renders
+
+### Phase K.4 — Verification & Confidence Pass
+
+**Completed (2026-02-24):**
+- ✅ **BOTTLENECK spec verification** — All 3 qualification rules + readiness gate confirmed; float=0 requires blocking_count ≥ 1; severity correct; ranking matches spec; empty handled gracefully; asof parameter-controlled. No fixes needed.
+- ✅ **ACCELERATION audit + sanity-verification** — Float 1–2 via `is_near_critical`; `is_critical=false` explicit; readiness gate present; remaining > 0; severity MEDIUM; ranking float ASC then remaining×weight; all evidence fields present; NULL/negative float safe. No defects.
+- ✅ **RISK_DRIVER audit + lock-in** — Explanatory-only confirmed; no readiness gate by design; ≥ 1 reason code required; no positive messages; ON_TRACK produces no rows. Lock-in documentation added in function headers. No behavior changes.
+- ✅ **LEVERAGE audit** — Top-20 weight among not-done tasks; severity HIGH if critical else LOW; ranking weight×100k + criticality bonus + remaining. No changes; findings delivered.
+- ✅ **Insight Rules Canon** — All 4 types documented as authoritative under Track E (purpose, qualification, exclusions, severity, global invariants). Documentation-only.
+
+**Pending:**
+- ⬜ Manual UI walkthrough
+- ⬜ Regression check on frozen phases
+- ⬜ Final release-candidate build pass (post-K.4 manual walkthrough)
+- ⬜ Verification note added to roadmap
+
+> Track K ends only when **Amro explicitly confirms the product feels right.**
 
 ---
 
 # Track I — Advanced Planning (Future)
 
 ## Phase 8 — Advanced Planning
-
-### Completed (✅)
-- ✅ S-curves with baseline wiring (`get_project_scurve`)
-- ✅ Canonical progress model + hierarchy weighting + batch progress RPC
-- ✅ Progress correctness fixes + baseline denominator fixes
-- ✅ Gantt enhancements (planned+actual tooltip, project summary row, collapsible hierarchy)
-
-### Remaining (⬜ Future)
 - ⬜ Cost & EVM primitives
 - ⬜ Resource planning
 
-> Phase 8 begins only after Phase 4.6+ and 7.2+ are complete and the product feels publish-ready.
+> Begins only after publish-ready.
 
 ---
 
 # Track J — Productization & Enterprise (Post-Publish Only)
 
-## Phase 9 — Productization & Enterprise (⬜ Post-Publish Only)
+## Phase 9
 - ⬜ Billing & licensing
 - ⬜ Multi-tenant hardening
 - ⬜ SSO / compliance
 
 ---
 
-# Post-Verification Hotfix Ledger (Locked History)
+# Post-Verification Hotfix Ledger (Locked)
 
-## SEC-01 — Deliverables View RLS Leak (✅ Complete)
-- ✅ `deliverables` view recreated with `security_invoker = true`
-- ✅ Migration: `20260220100000_hotfix_deliverables_view_rls.sql`
-- ✅ Verified: unauth returns 0 rows; auth returns expected rows
-
-## DEPLOY-01 — Remote DB Migration Drift (✅ Complete)
-- ✅ Applied `20260219120000_project_insights_rpc.sql` to remote Supabase
-- ✅ Verified: insight RPCs return HTTP 200 (no PGRST202)
-
-## TIME-01 — Remove Frontend Lifecycle Writes (✅ Complete)
-- ✅ Removed frontend writes to `actual_start`/`actual_end`/`status`
-- ✅ Added intent RPCs: `start_task`, `complete_milestone`, `complete_project` (SECURITY INVOKER)
-- ✅ Callers pass timezone-aware `todayForTimezone(timezone)`; no UTC drift
-- ✅ Migration: `20260220110000_lifecycle_intent_rpcs.sql`
-
-## SEC-02 — OpenAI API Key Rotation (✅ Complete; CLOSED)
-- ✅ Key rotated; new key in `.env.local` only; gitignored
-- ✅ AI Draft + Explain verified working
-- ✅ Standing rule: never paste API keys into chat/logs/tool output
+- SEC-01 — Deliverables View RLS Leak (✅)
+- DEPLOY-01 — Remote DB Migration Drift (✅)
+- TIME-01 — Remove Frontend Lifecycle Writes (✅)
+- SEC-02 — OpenAI API Key Rotation (✅)
