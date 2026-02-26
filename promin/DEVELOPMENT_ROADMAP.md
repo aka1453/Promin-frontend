@@ -388,7 +388,7 @@ This roadmap is organized by **product tracks**, not by chronological noise.
 - ✅ Deleted `ExplainButton.tsx` and `ExplainDrawer.tsx` component files
 - ✅ Removed `InsightContext` type (dead code after ExplainDrawer removal)
 - ✅ "Why?" / Supporting Evidence inline toggle is now the sole explanation surface
-- ✅ Verification (2026-02-26): `tsc --noEmit` passes; `next build` compiles successfully
+- ✅ Verification (2026-02-26): `tsc --noEmit` passes; Turbopack compilation succeeds (`next build` prerender fails due to missing env vars — pre-existing)
 
 ### K.1-B — Primary Focus Attention Anchor (✅ Complete)
 - ✅ Primary Focus block renders above ranked insight list
@@ -397,7 +397,7 @@ This roadmap is organized by **product tracks**, not by chronological noise.
 - ✅ Navigation supports milestones (direct) and tasks (via parent milestone)
 - ✅ Visually dominant (border-2, larger headline text, Target icon) relative to insight list cards
 - ✅ No new ranking logic, no new insight types, no AI reasoning
-- ✅ Verification (2026-02-26): `tsc --noEmit` passes; `next build` compiles successfully
+- ✅ Verification (2026-02-26): `tsc --noEmit` passes; Turbopack compilation succeeds (`next build` prerender fails due to missing env vars — pre-existing)
 
 ## Phase K.4 — Verification & Confidence Pass (⬜ Pending)
 
