@@ -183,6 +183,8 @@ Deterministic ECD forecasting complete and locked.
 
 > Make ProMin feel finished, predictable, and calm before any new feature work.
 
+> **Editorial Note (2026-02-26):** Roadmap structure compacted and reorganized for clarity. No execution state, scope, or freeze status changed.
+
 ### Hard Rules
 - ❌ No new features, no schema changes (unless approved), no reopening frozen phases
 - ❌ No AI behavior changes, no roadmap expansion outside this track
