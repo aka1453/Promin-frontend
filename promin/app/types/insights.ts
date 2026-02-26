@@ -22,11 +22,3 @@ export type InsightRow = {
   headline: string;
   evidence: Record<string, unknown>;
 };
-
-/** Context passed to ExplainDrawer when opened from an insight card */
-export type InsightContext = {
-  source: "insight";
-  insight_type: InsightType;
-  insight_severity: InsightSeverity;
-  top_reason_codes?: string[];
-};

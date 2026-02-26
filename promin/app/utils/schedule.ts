@@ -5,7 +5,7 @@
  * INVARIANT: `risk_state` (from canonical progress RPCs) is the PRIMARY
  * status authority.  Health-engine fields (is_delayed, status_health,
  * planned_end) are used ONLY as fallback when risk_state is absent.
- * This ensures TaskCard/TaskNode agree with ExplainDrawer and Reports.
+ * This ensures TaskCard/TaskNode agree with Reports.
  *
  * No new DB fetches or computations — pure UI helper.
  */

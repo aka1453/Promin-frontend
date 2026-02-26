@@ -217,7 +217,6 @@ export async function POST(req: NextRequest) {
   }
 
   // timezone is REQUIRED — no server-side UTC fallback to avoid as-of drift.
-  // Matches the Phase 4 hardening pattern where /api/explain rejects missing asof.
   if (
     !timezone ||
     typeof timezone !== "string" ||

@@ -1,4 +1,4 @@
-/** Phase 4.3 — Types for the /api/explain response */
+/** Entity status types shared by chat context and summary builders */
 
 export type ExplainSeverity = "HIGH" | "MEDIUM" | "LOW";
 export type ExplainStatus = "ON_TRACK" | "AT_RISK" | "DELAYED" | "UNKNOWN";

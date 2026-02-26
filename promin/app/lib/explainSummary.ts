@@ -1,7 +1,6 @@
 /**
- * Shared deterministic summary builder for explain_entity responses.
- * Used by both ExplainDrawer (client-side) and /api/explain (server-side).
- * Single source of truth — any change here applies to both surfaces.
+ * Shared deterministic summary builder for entity status responses.
+ * Used by chatContext (server-side) to build contextual briefings.
  *
  * Generates a contextual 1-2 sentence briefing based on progress position,
  * with attention items from reason codes. The badge already shows the

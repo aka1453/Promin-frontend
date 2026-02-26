@@ -2,8 +2,7 @@
  * Phase 5.2 — AI Draft Plan Generation.
  *
  * Generates a structured project plan from extracted document texts
- * and optional user instructions. Uses OpenAI SDK (same singleton
- * pattern as explainNarrate.ts).
+ * and optional user instructions. Uses OpenAI SDK.
  *
  * Feature-flagged via DRAFT_AI_ENABLED env var (default: OFF).
  * Model configurable via DRAFT_AI_MODEL env var (default: gpt-4o).

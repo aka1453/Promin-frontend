@@ -1,8 +1,8 @@
 /**
  * Phase 7.1 — Chat Button
  *
- * Opens the ChatDrawer for a given entity. Mirrors ExplainButton structure.
- * Uses MessageCircle icon + violet accent to distinguish from Explain.
+ * Opens the ChatDrawer for a given entity.
+ * Uses MessageCircle icon + violet accent.
  */
 "use client";
 
