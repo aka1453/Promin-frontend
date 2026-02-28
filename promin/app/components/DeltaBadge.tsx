@@ -17,13 +17,15 @@ export default function DeltaBadge({ actual, planned }: Props) {
 
   return (
     <span
-      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
         positive
-          ? "bg-emerald-100 text-emerald-700"
-          : "bg-amber-100 text-amber-700"
+          ? "bg-emerald-50 text-emerald-600"
+          : "bg-amber-50 text-amber-600"
       }`}
+      title="Progress variance: actual completion vs planned schedule"
     >
-      {positive ? "▲" : "▼"} {formatPercent(Math.abs(delta), 2)}
+      {positive ? "▲" : "▼"} {formatPercent(Math.abs(delta), 2)}{" "}
+      <span className="text-[9px] font-normal opacity-70">vs plan</span>
     </span>
   );
 }

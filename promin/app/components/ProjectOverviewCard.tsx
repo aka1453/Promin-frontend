@@ -83,6 +83,13 @@ export default function ProjectOverviewCard({
     : riskState === "ON_TRACK" ? "On Track"
     : "—"; // null/unknown — neutral
 
+  // Qualifier explains the reason behind AT_RISK / DELAYED status.
+  // No per-deliverable counts available from batch RPC — use safe fallback.
+  const statusQualifier =
+    riskState === "DELAYED"  ? "see details"
+    : riskState === "AT_RISK"  ? "see details"
+    : null;
+
   // Close menu on outside click or Escape
   useEffect(() => {
     if (!showMenu) return;
@@ -131,12 +138,20 @@ export default function ProjectOverviewCard({
         </h3>
       </div>
 
-      {/* RIGHT — DELTA + STATUS + ⋮ DROPDOWN */}
+      {/* RIGHT — STATUS (primary) + DELTA (secondary) + ⋮ DROPDOWN */}
       <div className="flex items-center gap-3">
-        <DeltaBadge actual={actual} planned={planned} />
-        <div className={`text-sm font-medium ${statusColor}`}>
+        <div
+          className={`text-sm font-medium ${statusColor}`}
+          title="Schedule health: worst-case status among active deliverables"
+        >
           {statusLabel}
+          {statusQualifier && (
+            <span className="text-[10px] font-normal text-slate-400 ml-1">
+              — {statusQualifier}
+            </span>
+          )}
         </div>
+        <DeltaBadge actual={actual} planned={planned} />
 
         {!hideSettings && (
           <div className="relative" ref={menuRef}>
