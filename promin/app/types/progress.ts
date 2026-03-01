@@ -26,6 +26,8 @@ export type EntityProgress = {
   planned: number;
   actual: number;
   risk_state: RiskState;
+  overdue_deliverables_count?: number;
+  near_deadline_deliverables_count?: number;
 };
 
 /** Row returned by get_projects_progress_asof (0-1 scale from DB) */
@@ -34,6 +36,8 @@ export type BatchProgressRow = {
   planned: number;
   actual: number;
   risk_state: string;
+  overdue_deliverables_count: number;
+  near_deadline_deliverables_count: number;
 };
 
 /** Row returned by get_project_progress_hierarchy (0-1 scale from DB) */
@@ -88,10 +92,14 @@ export function toEntityProgress(row: {
   planned?: number | null;
   actual?: number | null;
   risk_state?: string | null;
+  overdue_deliverables_count?: number | null;
+  near_deadline_deliverables_count?: number | null;
 }): EntityProgress {
   return {
     planned: Number(row.planned ?? 0) * 100,
     actual: Number(row.actual ?? 0) * 100,
     risk_state: (row.risk_state as RiskState) ?? "ON_TRACK",
+    overdue_deliverables_count: row.overdue_deliverables_count ?? undefined,
+    near_deadline_deliverables_count: row.near_deadline_deliverables_count ?? undefined,
   };
 }

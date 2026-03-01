@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useUserTimezone } from "../../context/UserTimezoneContext";
@@ -24,6 +24,13 @@ function normalizeSeverity(raw: string): InsightSeverity {
   return "LOW";
 }
 
+/** Types eligible for Primary Focus (LEVERAGE excluded — it's informational, not actionable). */
+const PRIMARY_FOCUS_TYPES: ReadonlySet<InsightType> = new Set<InsightType>([
+  "BOTTLENECK",
+  "ACCELERATION",
+  "RISK_DRIVER",
+]);
+
 const INSIGHT_TYPE_LABELS: Record<InsightType, string> = {
   BOTTLENECK: "Bottleneck",
   ACCELERATION: "Acceleration",
@@ -44,45 +51,14 @@ const SEVERITY_COLORS: Record<InsightSeverity, string> = {
   LOW: "bg-slate-100 text-slate-600",
 };
 
-/** Fixed allow-list per insight_type, in render order. Max 4 bullets. */
-const EVIDENCE_KEYS_BY_TYPE: Record<InsightType, readonly string[]> = {
-  BOTTLENECK: ["is_critical", "float_days", "blocking_count", "remaining_duration_days"],
-  ACCELERATION: ["is_critical", "float_days", "remaining_duration_days", "effective_weight"],
-  RISK_DRIVER: ["risk_state", "top_reason_codes", "baseline_slip_days", "planned_end"],
-  LEVERAGE: ["effective_weight", "is_critical", "float_days", "remaining_duration_days"],
-};
-
-function formatEvidenceKey(key: string): string {
-  return key
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function formatEvidenceValue(value: unknown): string {
-  if (value === null || value === undefined) return "—";
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  if (typeof value === "number") return String(value);
-  if (Array.isArray(value)) return value.join(", ");
-  return String(value);
-}
-
-function getEvidenceBullets(
-  insightType: InsightType,
-  evidence: Record<string, unknown>,
-): Array<{ label: string; value: string }> {
-  const allowList = EVIDENCE_KEYS_BY_TYPE[insightType];
-  const bullets: Array<{ label: string; value: string }> = [];
-
-  for (const key of allowList) {
-    if (key in evidence) {
-      bullets.push({
-        label: formatEvidenceKey(key),
-        value: formatEvidenceValue(evidence[key]),
-      });
-    }
+/** Humanize headlines containing raw DB codes (e.g. "Risk driven by: PLANNED_COMPLETE_BUT_NOT_DONE") */
+function humanizeHeadline(headline: string): string {
+  const prefix = "Risk driven by: ";
+  if (headline.startsWith(prefix)) {
+    const code = headline.slice(prefix.length);
+    return prefix + code.replace(/_/g, " ").toLowerCase();
   }
-
-  return bullets;
+  return headline;
 }
 
 /** Build entity_type:entity_id -> entity_name lookup from hierarchy rows */
@@ -90,6 +66,17 @@ function buildNameMap(rows: HierarchyRow[]): Map<string, string> {
   const map = new Map<string, string>();
   for (const row of rows) {
     map.set(`${row.entity_type}:${row.entity_id}`, row.entity_name);
+  }
+  return map;
+}
+
+/** Build entity_type:entity_id -> parent_id lookup (tasks → milestone) */
+function buildParentMap(rows: HierarchyRow[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    if (row.parent_id != null) {
+      map.set(`${row.entity_type}:${row.entity_id}`, row.parent_id);
+    }
   }
   return map;
 }
@@ -103,6 +90,23 @@ function resolveEntityLabel(
   const typeLabel = entityType.charAt(0).toUpperCase() + entityType.slice(1);
   if (name) return `${typeLabel}: ${name}`;
   return `${typeLabel} #${entityId}`;
+}
+
+/** Deep link for an insight entity. Returns null if no navigable route exists. */
+function resolveEntityHref(
+  projectId: number,
+  entityType: string,
+  entityId: number,
+  parentMap: Map<string, string>,
+): string | null {
+  if (entityType === "milestone") {
+    return `/projects/${projectId}/milestones/${entityId}`;
+  }
+  if (entityType === "task") {
+    const milestoneId = parentMap.get(`task:${entityId}`);
+    if (milestoneId) return `/projects/${projectId}/milestones/${milestoneId}`;
+  }
+  return null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -233,13 +237,19 @@ function InsightExplanation({
 
 export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
   const { timezone } = useUserTimezone();
-  const router = useRouter();
   const [insights, setInsights] = useState<InsightRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
 
   const nameMap = useMemo(() => buildNameMap(hierarchyRows), [hierarchyRows]);
+  const parentMap = useMemo(() => buildParentMap(hierarchyRows), [hierarchyRows]);
+
+  // Primary Focus: first eligible insight (already canon-ordered by DB)
+  const primaryFocus = useMemo(
+    () => insights.find((i) => PRIMARY_FOCUS_TYPES.has(i.insight_type)) ?? null,
+    [insights],
+  );
 
   // Load persisted collapse state once on mount
   useEffect(() => {
@@ -278,12 +288,6 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
   useEffect(() => {
     fetchInsights();
   }, [fetchInsights]);
-
-  function handleNavigate(insight: InsightRow) {
-    if (insight.entity_type === "milestone") {
-      router.push(`/projects/${projectId}/milestones/${insight.entity_id}`);
-    }
-  }
 
   function toggleCollapsed() {
     const next = !collapsed;
@@ -348,22 +352,45 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
       {header}
       {!collapsed && (
         <>
+          {/* Primary Focus — highlighted above ranked list */}
+          {primaryFocus && (() => {
+            const entityLabel = resolveEntityLabel(primaryFocus.entity_type, primaryFocus.entity_id, nameMap);
+            const href = resolveEntityHref(projectId, primaryFocus.entity_type, primaryFocus.entity_id, parentMap);
+            return (
+              <div className="mt-3 mb-4 rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-bold text-slate-900 mb-1">Primary Focus</p>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${INSIGHT_TYPE_COLORS[primaryFocus.insight_type]}`}>
+                    {INSIGHT_TYPE_LABELS[primaryFocus.insight_type]}
+                  </span>
+                  <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${SEVERITY_COLORS[primaryFocus.severity]}`}>
+                    {primaryFocus.severity}
+                  </span>
+                  {href ? (
+                    <Link href={href} className="text-xs text-blue-600 hover:underline ml-auto" onClick={(e) => e.stopPropagation()}>
+                      {entityLabel}
+                    </Link>
+                  ) : (
+                    <span className="text-xs text-slate-400 ml-auto">{entityLabel}</span>
+                  )}
+                </div>
+                <p className="text-sm font-medium text-slate-800 mb-1">
+                  {humanizeHeadline(primaryFocus.headline)}
+                </p>
+                <InsightExplanation insight={primaryFocus} entityLabel={entityLabel} />
+              </div>
+            );
+          })()}
+
           <div className="space-y-3 mt-3">
-            {insights.slice(0, 5).map((insight, idx) => {
-              const isClickable = insight.entity_type === "milestone";
+            {insights.filter((i) => i !== primaryFocus).slice(0, 5).map((insight, idx) => {
               const entityLabel = resolveEntityLabel(insight.entity_type, insight.entity_id, nameMap);
-              const bullets = getEvidenceBullets(insight.insight_type, insight.evidence);
+              const href = resolveEntityHref(projectId, insight.entity_type, insight.entity_id, parentMap);
 
               return (
                 <div
                   key={`${insight.insight_type}-${insight.entity_type}-${insight.entity_id}-${idx}`}
-                  className={`rounded-lg border border-slate-200 px-4 py-3 ${
-                    isClickable ? "cursor-pointer hover:bg-slate-50 transition-colors" : ""
-                  }`}
-                  onClick={isClickable ? () => handleNavigate(insight) : undefined}
-                  role={isClickable ? "button" : undefined}
-                  tabIndex={isClickable ? 0 : undefined}
-                  onKeyDown={isClickable ? (e) => { if (e.key === "Enter") handleNavigate(insight); } : undefined}
+                  className="rounded-lg border border-slate-200 px-4 py-3"
                 >
                   {/* Badges row */}
                   <div className="flex items-center gap-2 mb-1.5">
@@ -373,28 +400,22 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
                     <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${SEVERITY_COLORS[insight.severity]}`}>
                       {insight.severity}
                     </span>
-                    <span className="text-xs text-slate-400 ml-auto">
-                      {entityLabel}
-                    </span>
+                    {href ? (
+                      <Link href={href} className="text-xs text-blue-600 hover:underline ml-auto">
+                        {entityLabel}
+                      </Link>
+                    ) : (
+                      <span className="text-xs text-slate-400 ml-auto">
+                        {entityLabel}
+                      </span>
+                    )}
                   </div>
 
                   {/* Headline */}
                   <p className="text-sm font-medium text-slate-800 mb-1">
-                    {insight.headline}
+                    {humanizeHeadline(insight.headline)}
                   </p>
 
-                  {/* Evidence bullets */}
-                  {bullets.length > 0 && (
-                    <ul className="text-xs text-slate-500 space-y-0.5">
-                      {bullets.map((b, i) => (
-                        <li key={i}>
-                          <span className="text-slate-400">{b.label}:</span> {b.value}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-
-                  {/* Phase 4.6+: Per-insight explanation */}
                   <InsightExplanation insight={insight} entityLabel={entityLabel} />
                 </div>
               );

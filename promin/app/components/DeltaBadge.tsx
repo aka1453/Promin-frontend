@@ -17,10 +17,10 @@ export default function DeltaBadge({ actual, planned }: Props) {
 
   return (
     <span
-      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+      className={`rounded-full px-2 py-0.5 text-[13px] font-semibold ${
         positive
-          ? "bg-emerald-100 text-emerald-700"
-          : "bg-amber-100 text-amber-700"
+          ? "bg-emerald-50 text-emerald-700"
+          : "bg-amber-50 text-amber-700"
       }`}
     >
       {positive ? "▲" : "▼"} {formatPercent(Math.abs(delta), 2)}

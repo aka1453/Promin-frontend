@@ -17,6 +17,7 @@ import { todayForTimezone } from "../../utils/date";
 import type { EntityProgress, HierarchyRow, ForecastResult } from "../../types/progress";
 import { toEntityProgress } from "../../types/progress";
 import ChatButton from "../../components/chat/ChatButton";
+import { formatPercent } from "../../utils/format";
 import { completeProject } from "../../lib/lifecycle";
 import ProjectInsights from "../../components/insights/ProjectInsights";
 
@@ -324,13 +325,12 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
               {(() => {
                 const budget = project?.budgeted_cost ?? 0;
                 const actual = project?.actual_cost ?? 0;
-                const ratio = budget > 0 ? actual / budget : (actual > 0 ? 2 : 1);
-                const isOver = ratio > 1.05;
-                const isNear = ratio >= 0.95 && ratio <= 1.05;
-                const bg = isOver ? "bg-red-50" : isNear ? "bg-amber-50" : "bg-emerald-50";
-                const border = isOver ? "border-red-200" : isNear ? "border-amber-200" : "border-emerald-200";
-                const labelColor = isOver ? "text-red-600" : isNear ? "text-amber-600" : "text-emerald-600";
-                const valueColor = isOver ? "text-red-700" : isNear ? "text-amber-700" : "text-emerald-700";
+                const hasBudget = budget > 0;
+                const isOver = hasBudget && actual > budget;
+                const bg = !hasBudget ? "bg-slate-50" : isOver ? "bg-red-50" : "bg-emerald-50";
+                const border = !hasBudget ? "border-slate-200" : isOver ? "border-red-200" : "border-emerald-200";
+                const labelColor = !hasBudget ? "text-slate-500" : isOver ? "text-red-600" : "text-emerald-600";
+                const valueColor = !hasBudget ? "text-slate-800" : isOver ? "text-red-700" : "text-emerald-700";
                 return (
                   <div className={`${bg} rounded-xl px-5 py-3 border ${border}`}>
                     <p className={`text-xs font-medium ${labelColor} uppercase tracking-wide`}>
@@ -343,8 +343,8 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                 );
               })()}
 
-              {/* Action buttons — 3 rows x 2 columns */}
-              <div className="grid grid-cols-2 gap-2">
+              {/* Action buttons — 2 rows x 3 columns */}
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   onClick={() => router.push(`/projects/${projectId}/gantt`)}
                   className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
@@ -374,7 +374,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                   className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
                 >
                   <Sparkles size={18} />
-                  Drafts
+                  AI planner
                 </button>
 
                 {!isArchived && canEdit ? (
@@ -431,6 +431,25 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                 <div className="flex items-center justify-between mb-5">
                   <h2 className="text-lg font-semibold text-slate-700">Project Overview</h2>
                   <div className="flex items-center gap-2">
+                    {/* Delta badge — always visible, even at 0% */}
+                    {(() => {
+                      const delta = (canonicalProgress.actual ?? 0) - (canonicalProgress.planned ?? 0);
+                      const isPositive = delta > 0;
+                      const isZero = Number(delta.toFixed(2)) === 0;
+                      return (
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[13px] font-semibold ${
+                            isZero
+                              ? "bg-slate-100 text-slate-500"
+                              : isPositive
+                              ? "bg-emerald-50 text-emerald-700"
+                              : "bg-amber-50 text-amber-700"
+                          }`}
+                        >
+                          {isZero ? "" : isPositive ? "▲ " : "▼ "}{formatPercent(Math.abs(delta), 2)}
+                        </span>
+                      );
+                    })()}
                     <ChatButton entityType="project" entityId={projectId} entityName={project?.name || undefined} />
                   </div>
                 </div>
@@ -438,7 +457,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                 <div className="space-y-4 mb-6">
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-slate-600">Planned Progress</span>
+                      <span className="text-sm font-bold text-slate-900">Planned Progress</span>
                       <span className="text-sm font-semibold text-blue-600">
                         {canonicalProgress.planned != null ? `${canonicalProgress.planned.toFixed(1)}%` : "—"}
                       </span>
@@ -453,7 +472,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
 
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-slate-600">Actual Progress</span>
+                      <span className="text-sm font-bold text-slate-900">Actual Progress</span>
                       <span className="text-sm font-semibold text-emerald-600">
                         {canonicalProgress.actual != null ? `${canonicalProgress.actual.toFixed(1)}%` : "—"}
                       </span>
@@ -469,7 +488,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
 
                 {/* Forecast Section — always rendered; shows neutral state when unavailable */}
                 <div className="pt-4 border-t border-slate-200 mb-2">
-                  <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide mb-3">
                     Forecast
                   </h3>
                   {!forecastData ? (
@@ -497,7 +516,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                     <div className="space-y-3">
                       {/* ECD + Schedule Status */}
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-slate-600">Expected Completion</span>
+                        <span className="text-sm font-bold text-slate-900">Expected Completion</span>
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-semibold text-slate-800">
                             {forecastData.forecast_completion_date
@@ -518,7 +537,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                       {/* Best–worst range */}
                       {forecastData.best_case_date && forecastData.worst_case_date && (
                         <div className="flex items-center justify-between">
-                          <span className="text-sm text-slate-600">Range</span>
+                          <span className="text-sm font-bold text-slate-900">Range</span>
                           <span className="text-xs text-slate-500">
                             {new Date(forecastData.best_case_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                             {" — "}
@@ -529,7 +548,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
 
                       {/* Confidence + Velocity */}
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-slate-600">Confidence</span>
+                        <span className="text-sm font-bold text-slate-900">Confidence</span>
                         <div className="flex items-center gap-2">
                           <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
                             forecastData.confidence === "high"
@@ -554,7 +573,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                 {/* Date Information */}
                 <div className="grid grid-cols-2 gap-4 pt-6 border-t border-slate-200">
                   <div>
-                    <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">
+                    <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide mb-3">
                       Planned Timeline
                     </h3>
                     <div className="space-y-2">
@@ -586,7 +605,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                   </div>
 
                   <div>
-                    <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">
+                    <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide mb-3">
                       Actual Timeline
                     </h3>
                     <div className="space-y-2">

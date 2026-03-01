@@ -6,6 +6,7 @@ import { supabase } from "./lib/supabaseClient";
 import ProjectOverviewCard from "./components/ProjectOverviewCard";
 import ProjectSettingsModal from "./components/ProjectSettingsModal";
 import { motion } from "framer-motion";
+import { FolderOpen } from "lucide-react";
 import { useProjects } from "./context/ProjectsContext";
 import { useUserTimezone } from "./context/UserTimezoneContext";
 import { todayForTimezone } from "./utils/date";
@@ -203,6 +204,7 @@ export default function HomePage() {
             <select
               value={sortMode}
               onChange={(e) => setSortMode(e.target.value as SortMode)}
+              aria-label="Sort projects"
               className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm shadow-sm"
             >
               <option value="position">Manual order</option>
@@ -216,7 +218,15 @@ export default function HomePage() {
           </div>
 
           {visibleProjects.length === 0 && (
-            <p className="text-sm text-slate-500">No projects yet.</p>
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <FolderOpen size={36} className="text-slate-300 mb-3" />
+              <p className="text-sm text-slate-500 mb-1">
+                No projects yet.
+              </p>
+              <p className="text-xs text-slate-400">
+                Create your first project with the <span className="font-medium text-slate-500">+ Add Project</span> button in the sidebar.
+              </p>
+            </div>
           )}
 
           {visibleProjects.length > 0 && (
@@ -233,6 +243,8 @@ export default function HomePage() {
                       canonicalPlanned={canon?.planned ?? null}
                       canonicalActual={canon?.actual ?? null}
                       canonicalRiskState={canon?.risk_state ?? null}
+                      overdueCount={canon?.overdue_deliverables_count ?? null}
+                      nearDeadlineCount={canon?.near_deadline_deliverables_count ?? null}
                       onClick={() =>
                         router.push(`/projects/${project.id}`)
                       }

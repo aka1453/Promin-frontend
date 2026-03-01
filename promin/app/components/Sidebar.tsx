@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { supabase } from "../lib/supabaseClient";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import AddProjectButton from "./AddProjectButton";
 import NotificationCenter from "./NotificationCenter";
 import { usePathname, useRouter } from "next/navigation";
@@ -92,13 +92,52 @@ function SortableProjectItem({
 }
 
 export default function Sidebar() {
-  const { projects, reloadProjects } = useProjects();
+  const { projects, setProjects, reloadProjects } = useProjects();
   const { timezone, setTimezone } = useUserTimezone();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const router = useRouter();
 
   // Optimistic order for sidebar (prevents snap-back while DB saves)
   const [optimisticOrder, setOptimisticOrder] = useState<number[] | null>(null);
+
+  // Debounced persistence for reorder
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const snapshotRef = useRef<any[] | null>(null);
+  const [reorderError, setReorderError] = useState<string | null>(null);
+
+  // Clear error after 4 seconds
+  useEffect(() => {
+    if (!reorderError) return;
+    const t = setTimeout(() => setReorderError(null), 4000);
+    return () => clearTimeout(t);
+  }, [reorderError]);
+
+  const persistOrder = useCallback(
+    (orderedIds: number[]) => {
+      // Cancel any pending save
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+
+      saveTimerRef.current = setTimeout(async () => {
+        try {
+          await reorderProjects(orderedIds);
+          // Success: context already has correct data; no refetch needed.
+          snapshotRef.current = null;
+        } catch {
+          // Revert to pre-drag snapshot
+          if (snapshotRef.current) {
+            setProjects(snapshotRef.current);
+            snapshotRef.current = null;
+          } else {
+            await reloadProjects();
+          }
+          setReorderError("Failed to save order. Reverted.");
+        } finally {
+          setOptimisticOrder(null);
+        }
+      }, 300);
+    },
+    [reloadProjects, setProjects],
+  );
 
   // Get current user for display — use getSession() (local cache, no network call)
   useEffect(() => {
@@ -149,15 +188,27 @@ export default function Sidebar() {
     return m ? Number(m[1]) : null;
   })();
 
+  const getDisplayName = (): string | null => {
+    if (!currentUser) return null;
+    const meta = currentUser.user_metadata;
+    const fullName = meta?.full_name?.trim();
+    if (fullName) return fullName;
+    const name = meta?.name?.trim();
+    if (name) return name;
+    const email: string | undefined = currentUser.email;
+    if (email) return email.split("@")[0];
+    return "User";
+  };
+
+  const displayName = getDisplayName();
+
   const getUserInitial = () => {
-    if (!currentUser) return "U";
-    const name = currentUser.user_metadata?.full_name || currentUser.email || "User";
-    return name.charAt(0).toUpperCase();
+    if (!displayName) return "";
+    return displayName.charAt(0).toUpperCase();
   };
 
   const getUserName = () => {
-    if (!currentUser) return "User";
-    return currentUser.user_metadata?.full_name || currentUser.email || "User";
+    return displayName ?? "";
   };
 
   return (
@@ -166,6 +217,13 @@ export default function Sidebar() {
       <div className="px-6 py-6 border-b border-gray-200">
         <h1 className="text-2xl font-semibold text-gray-900">ProMin</h1>
       </div>
+
+      {/* REORDER ERROR TOAST */}
+      {reorderError && (
+        <div className="mx-4 mt-2 px-3 py-2 rounded-lg bg-red-50 text-red-700 text-xs font-medium">
+          {reorderError}
+        </div>
+      )}
 
       {/* ADD PROJECT (FULL WIDTH) */}
       <div className="px-4 py-4">
@@ -187,7 +245,7 @@ export default function Sidebar() {
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
-          onDragEnd={async (event) => {
+          onDragEnd={(event) => {
             const { active, over } = event;
             if (activeProjects.length < 2) return;
             if (!over || active.id === over.id) return;
@@ -204,16 +262,26 @@ export default function Sidebar() {
             const [moved] = reordered.splice(oldIndex, 1);
             reordered.splice(newIndex, 0, moved);
 
-            // Optimistic UI: render new order immediately (prevents snap-back)
-            setOptimisticOrder(reordered.map((p) => p.id));
+            const orderedIds = reordered.map((p) => p.id);
 
-            try {
-              await reorderProjects(reordered.map((p) => p.id));
-              await reloadProjects(); // converge to DB truth
-            } finally {
-              // Always clear optimistic state (even if DB fails)
-              setOptimisticOrder(null);
+            // Snapshot for revert (only capture first drag in a burst)
+            if (!snapshotRef.current) {
+              snapshotRef.current = projects;
             }
+
+            // Optimistic: update context projects with new positions
+            const positionMap = new Map(orderedIds.map((id, i) => [id, i]));
+            const updatedProjects = projects.map((p: any) => {
+              const newPos = positionMap.get(p.id);
+              return newPos !== undefined ? { ...p, position: newPos } : p;
+            });
+            setProjects(updatedProjects);
+
+            // Also set sidebar optimistic order for immediate visual
+            setOptimisticOrder(orderedIds);
+
+            // Debounced background persistence
+            persistOrder(orderedIds);
           }}
         >
           <SortableContext

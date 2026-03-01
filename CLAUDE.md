@@ -10,7 +10,7 @@ If any instruction here conflicts with generated suggestions, THIS FILE WINS.
 Claude Code may use different models depending on task type.
 
 ### Default
-- **Default model: SONNET**
+- **Default model: OPUS 4.6**
 
 ### Allowed Overrides (Explicit)
 Claude Code MAY use higher-capability models (e.g. Opus) **WITHOUT asking** when ALL of the following are true:
@@ -26,8 +26,8 @@ Claude Code MAY use higher-capability models (e.g. Opus) **WITHOUT asking** when
   - Cosmetic changes
 
 ### Behavior Rules
-- Prefer **Sonnet** for implementation
-- Prefer **Opus** for:
+- Prefer **Opus 4.6** for implementation
+- Prefer **Opus 4.6** for:
   - End-to-end system verification
   - Security audits
   - RLS testing
@@ -271,6 +271,7 @@ Safe commands allowed without asking:
 
 Additionally allowed without asking:
 - Supabase HTTP RPC calls for runtime testing (read-only or SECURITY INVOKER RPCs only)
+- `npx supabase db push` — apply pending migrations to the linked Supabase project
 
 ---
 

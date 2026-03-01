@@ -115,6 +115,8 @@ loadTrash();            // re-fetch Trash from DB
   canonicalPlanned={null}
   canonicalActual={null}
   canonicalRiskState={null}
+  overdueCount={null}
+  nearDeadlineCount={null}
 />
 
   {/* Restore */}
