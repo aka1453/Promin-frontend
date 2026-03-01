@@ -494,7 +494,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                     <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
                       Forecast
                     </h3>
-                    <InfoTip tip="Completion date is based on your recent pace, not just the overall average. The range reflects typical fast and slow days. Waiting periods with no planned work are excluded." />
+                    <InfoTip tip="Estimated based on how fast work has been completed recently. The range shows best and worst case. Idle periods like procurement are not counted." />
                   </div>
                   {!forecastData ? (
                     <div className="flex items-center gap-2 text-slate-400 bg-slate-50 rounded-lg px-4 py-2 text-sm">
