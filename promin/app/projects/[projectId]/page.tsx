@@ -18,6 +18,7 @@ import type { EntityProgress, HierarchyRow, ForecastResult } from "../../types/p
 import { toEntityProgress } from "../../types/progress";
 import ChatButton from "../../components/chat/ChatButton";
 import { formatPercent } from "../../utils/format";
+import InfoTip from "../../components/InfoTip";
 import { completeProject } from "../../lib/lifecycle";
 import ProjectInsights from "../../components/insights/ProjectInsights";
 
@@ -432,6 +433,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                   <h2 className="text-lg font-semibold text-slate-700">Project Overview</h2>
                   <div className="flex items-center gap-2">
                     {/* Delta badge — always visible, even at 0% */}
+                    <InfoTip tip="Difference between actual and planned progress. Green means ahead of plan, amber means behind." />
                     {(() => {
                       const delta = (canonicalProgress.actual ?? 0) - (canonicalProgress.planned ?? 0);
                       const isPositive = delta > 0;

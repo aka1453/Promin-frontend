@@ -7,6 +7,7 @@ import { supabase } from "../../lib/supabaseClient";
 import { useUserTimezone } from "../../context/UserTimezoneContext";
 import { todayForTimezone } from "../../utils/date";
 import { buildInsightExplanation } from "../../lib/insightExplanation";
+import InfoTip from "../InfoTip";
 import type { InsightRow, InsightType, InsightSeverity } from "../../types/insights";
 import type { HierarchyRow } from "../../types/progress";
 
@@ -311,6 +312,7 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
       <h3 className="text-sm font-semibold text-slate-700">
         Insights{!loading && !error ? ` (${insightCount})` : ""}
       </h3>
+      <InfoTip tip="Automated analysis of schedule risks, bottlenecks, and opportunities based on your project data." />
     </button>
   );
 
@@ -358,7 +360,10 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
             const href = resolveEntityHref(projectId, primaryFocus.entity_type, primaryFocus.entity_id, parentMap);
             return (
               <div className="mt-3 mb-4 rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3">
-                <p className="text-xs font-bold text-slate-900 mb-1">Primary Focus</p>
+                <div className="flex items-center gap-1 mb-1">
+                  <p className="text-xs font-bold text-slate-900">Primary Focus</p>
+                  <InfoTip tip="The highest-priority actionable insight for this project right now." />
+                </div>
                 <div className="flex items-center gap-2 mb-1.5">
                   <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${INSIGHT_TYPE_COLORS[primaryFocus.insight_type]}`}>
                     {INSIGHT_TYPE_LABELS[primaryFocus.insight_type]}
