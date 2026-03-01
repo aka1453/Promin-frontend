@@ -216,14 +216,14 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
       <div
         className={`bg-white shadow-sm rounded-xl p-4 w-full hover:shadow-md transition-all relative cursor-pointer ${
           scheduleBorder ? `border-2 ${scheduleBorder}` : "border border-slate-200"
-        } ${isCompleted ? "opacity-70" : ""}`}
+        }`}
         onClick={() => !menuOpen && onClick?.(task)}
       >
         {/* HEADER ROW */}
         <div className="flex items-start justify-between mb-2">
           <div className="flex-1 pr-2">
             {task.task_number != null && (
-              <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">{formatTaskNumber(task.task_number)}</span>
+              <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">Task ID: {formatTaskNumber(task.task_number)}</span>
             )}
             <h3 className="font-bold text-sm text-slate-800 leading-snug line-clamp-2">
               {task.title}

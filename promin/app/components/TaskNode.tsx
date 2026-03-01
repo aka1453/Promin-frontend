@@ -5,7 +5,7 @@ import { Handle, Position } from "reactflow";
 import type { NodeProps } from "reactflow";
 import type { TaskNodeData } from "../types/taskDependency";
 import { getTaskScheduleState } from "../utils/schedule";
-import { formatTaskNumber } from "../utils/format";
+import { formatPercent, formatTaskNumber } from "../utils/format";
 import EditTaskModal from "./EditTaskModal";
 import Tooltip from "./Tooltip";
 
@@ -28,24 +28,14 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
   const deliverablesDone = task.deliverables_done ?? 0;
   const deliverablesTotal = task.deliverables_total ?? 0;
 
-  // Format dates
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return "\u2014";
-    const date = new Date(dateStr);
-    return date.toISOString().split("T")[0];
-  };
-
   // Calculate normalized weight percentage
-  const normalizedWeight = Math.round((task.weight || 0) * 100);
-
-  // Get task duration
-  const taskDuration = task.duration_days || 0;
+  const weight = Number(task.weight ?? 0);
 
   // Use DB-authoritative health fields (computed by triggers)
   const status = task.status || "unknown";
   // Canonical progress from hierarchy RPC (already 0-100 scale)
-  const actualProgress = canonicalActual ?? task.progress ?? 0;
-  const plannedProgress = canonicalPlanned ?? 0;
+  const actual = canonicalActual ?? task.progress ?? 0;
+  const planned = canonicalPlanned ?? 0;
   // Shared schedule-state helper — canonical risk_state is primary authority
   const scheduleState = getTaskScheduleState(
     canonicalRiskState != null ? { ...task, risk_state: canonicalRiskState } : task,
@@ -58,48 +48,40 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
   const isCritical = task.is_critical ?? false;
   const isNearCritical = task.is_near_critical ?? false;
 
-  // Get colors based on status + schedule warning overrides
-  const getStatusColors = () => {
-    if (status === "completed") {
-      return {
-        bg: "bg-green-50",
-        border: "border-green-500",
-        hoverBorder: "hover:border-green-600",
-      };
-    }
-    if (isDelayed) {
-      return {
-        bg: status === "in_progress" ? "bg-blue-50" : "bg-gray-50",
-        border: "border-red-500",
-        hoverBorder: "hover:border-red-600",
-      };
-    }
-    if (isBehind) {
-      return {
-        bg: status === "in_progress" ? "bg-blue-50" : "bg-gray-50",
-        border: "border-amber-500",
-        hoverBorder: "hover:border-amber-600",
-      };
-    }
-    if (status === "in_progress") {
-      return {
-        bg: "bg-blue-50",
-        border: "border-blue-500",
-        hoverBorder: "hover:border-blue-600",
-      };
-    }
-    // Not started
-    return {
-      bg: "bg-gray-50",
-      border: "border-gray-400",
-      hoverBorder: "hover:border-gray-500",
-    };
+  // Get task duration
+  const taskDuration = task.duration_days || 0;
+
+  // Dates
+  const plannedStart = task.planned_start || "—";
+  const plannedEnd = task.planned_end || "—";
+  const actualStart = task.actual_start || "—";
+  const actualEnd = task.actual_end || "—";
+
+  // Format currency compactly
+  const fmtCost = (val: number | null | undefined) => {
+    if (val == null || val === 0) return "$0";
+    return `$${val.toLocaleString()}`;
   };
 
-  const colors = getStatusColors();
+  // Get border color based on schedule state (matching TaskCard)
+  const getBorderClass = () => {
+    if (isDelayed) return "border-red-500";
+    if (isBehind) return "border-amber-500";
+    if (status === "completed") return "border-emerald-400";
+    if (status === "in_progress") return "border-blue-400";
+    return "border-slate-200";
+  };
+
+  // Critical path ring (subtle purple glow)
+  const criticalRing = isCritical
+    ? "ring-2 ring-purple-500/40"
+    : isNearCritical
+      ? "ring-1 ring-purple-300/40 ring-offset-1"
+      : "";
+
+  const isCompletedTask = status === "completed";
 
   const handleClick = (e: React.MouseEvent) => {
-    // Don't trigger if clicking the expand/collapse button or menu
     if ((e.target as HTMLElement).closest(".toggle-button") ||
         (e.target as HTMLElement).closest(".node-menu")) {
       return;
@@ -129,24 +111,17 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
     onAskChat?.(`Tell me about task "${task.title}"`);
   };
 
-  // Critical path ring (subtle purple glow, stacks on top of status border)
-  const criticalRing = isCritical
-    ? "ring-2 ring-purple-500/40"
-    : isNearCritical
-      ? "ring-1 ring-purple-300/40 ring-offset-1"
-      : "";
-
-  // Shared menu dropdown rendered in both collapsed and expanded views
+  // Shared action menu dropdown
   const actionMenu = menuOpen && (
     <div
-      className="node-menu absolute right-2 top-8 bg-white shadow-lg border rounded-lg w-36 z-[60]"
+      className="node-menu absolute right-3 top-10 bg-white shadow-lg border rounded-lg w-32 z-[60]"
       onClick={(e) => e.stopPropagation()}
     >
       <button
         className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded-t-lg"
         onClick={handleEditClick}
       >
-        Edit task
+        Edit
       </button>
       <button
         className="w-full text-left px-3 py-2 text-sm hover:bg-violet-50 text-violet-700 rounded-b-lg"
@@ -157,23 +132,7 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
     </div>
   );
 
-  // Shared menu button (⋮)
-  const menuButton = (
-    <Tooltip content="Actions">
-      <button
-        onClick={handleMenuToggle}
-        className="node-menu p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 flex-shrink-0 transition-colors"
-      >
-        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-          <circle cx="12" cy="5" r="1.5" />
-          <circle cx="12" cy="12" r="1.5" />
-          <circle cx="12" cy="19" r="1.5" />
-        </svg>
-      </button>
-    </Tooltip>
-  );
-
-  // Shared modals/drawers rendered once at the end
+  // Shared modals
   const modals = editOpen ? (
     <EditTaskModal
       taskId={task.id}
@@ -185,302 +144,301 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
     />
   ) : null;
 
+  // ReactFlow handles (shared between collapsed and expanded)
+  const leftHandle = (
+    <Handle
+      type="target"
+      position={Position.Left}
+      id="left"
+      className="w-3 h-3 !bg-gray-500 border-2 border-white"
+      style={{ left: -6 }}
+    />
+  );
+
+  const rightHandle = (
+    <Handle
+      type="source"
+      position={Position.Right}
+      id="right"
+      className="w-3 h-3 !bg-gray-500 border-2 border-white"
+      style={{ right: -6 }}
+    />
+  );
+
+  // Schedule/CPM badges (diagram-specific, shown after title)
+  const scheduleBadges = (
+    <>
+      {isDelayed && (
+        <Tooltip content="Delayed (past planned finish)">
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800 mt-1">
+            Delayed
+          </span>
+        </Tooltip>
+      )}
+      {isBehind && (
+        <Tooltip content="Behind schedule">
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 mt-1">
+            Behind
+          </span>
+        </Tooltip>
+      )}
+      {isCritical && (
+        <Tooltip content="Critical path — zero float">
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-100 text-purple-800 mt-1">
+            Critical
+          </span>
+        </Tooltip>
+      )}
+      {isNearCritical && (
+        <Tooltip content={`Near-critical — ${task.cpm_total_float_days ?? 0}d float`}>
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-600 border border-purple-200 border-dashed mt-1">
+            Float {task.cpm_total_float_days ?? 0}d
+          </span>
+        </Tooltip>
+      )}
+    </>
+  );
+
   if (collapsed) {
-    // Minimized view - title + duration badge
+    // Minimized view — matches TaskCard collapsed style
     return (
       <>
         <div
           onClick={handleClick}
-          className={`
-            ${colors.bg} rounded-lg shadow-md border-2 transition-all cursor-pointer
-            ${colors.border} ${colors.hoverBorder} ${criticalRing}
-            w-[240px] min-h-[60px] flex flex-col justify-center px-4 py-2 relative
+          className={`bg-white shadow-sm rounded-xl p-4 w-[260px] cursor-pointer transition-all relative
+            border-2 ${getBorderClass()} ${criticalRing}
           `}
           style={{ zIndex: 1 }}
         >
-          {/* LEFT HANDLE - Sequential dependency input */}
-          <Handle
-            type="target"
-            position={Position.Left}
-            id="left"
-            className="w-3 h-3 !bg-gray-500 border-2 border-white"
-            style={{ left: -6 }}
-          />
+          {leftHandle}
 
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex-1 min-w-0">
-              <div className="font-medium text-gray-900 text-sm truncate">
-                {task.task_number != null && (
-                  <span className="text-[10px] font-medium text-gray-400 mr-1">{formatTaskNumber(task.task_number)}</span>
-                )}
+          <div className="flex items-start justify-between mb-2">
+            <div className="flex-1 pr-2">
+              {task.task_number != null && (
+                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">Task ID: {formatTaskNumber(task.task_number)}</span>
+              )}
+              <h3 className="font-bold text-sm text-slate-800 leading-snug truncate">
                 {task.title}
-              </div>
-              {isDelayed && (
-                <Tooltip content="Delayed (past planned finish)">
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800">
-                    Delayed
-                  </span>
-                </Tooltip>
-              )}
-              {isBehind && (
-                <Tooltip content={`Behind plan by ${Math.round(plannedProgress - actualProgress)}%`}>
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800">
-                    Behind by {Math.round(plannedProgress - actualProgress)}%
-                  </span>
-                </Tooltip>
-              )}
-              {isCritical && (
-                <Tooltip content="Critical path \u2014 zero float">
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-100 text-purple-800">
-                    Critical
-                  </span>
-                </Tooltip>
-              )}
-              {isNearCritical && (
-                <Tooltip content={`Near-critical \u2014 ${task.cpm_total_float_days ?? 0}d float`}>
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-600 border border-purple-200 border-dashed">
-                    Float {task.cpm_total_float_days ?? 0}d
-                  </span>
-                </Tooltip>
-              )}
+              </h3>
+              {scheduleBadges}
             </div>
 
-            <div className="flex items-center gap-0.5 flex-shrink-0">
-              {menuButton}
-              <Tooltip content="Expand">
-                <button
-                  onClick={handleToggle}
-                  className="toggle-button text-gray-400 hover:text-gray-600"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
+            <div className="flex flex-col items-end flex-shrink-0">
+              <div className="flex items-center gap-0.5">
+                <Tooltip content="Actions">
+                  <button
+                    onClick={handleMenuToggle}
+                    className="node-menu p-1 rounded-full hover:bg-slate-100 transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5 text-slate-400" viewBox="0 0 24 24" fill="currentColor">
+                      <circle cx="12" cy="5" r="1.5" />
+                      <circle cx="12" cy="12" r="1.5" />
+                      <circle cx="12" cy="19" r="1.5" />
+                    </svg>
+                  </button>
+                </Tooltip>
+                <Tooltip content="Expand">
+                  <button
+                    onClick={handleToggle}
+                    className="toggle-button p-1 rounded-full hover:bg-slate-100 transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </Tooltip>
+              </div>
+              <Tooltip content={`Weight: ${(weight * 100).toFixed(1)}%`}>
+                <span className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                  W: {(weight * 100).toFixed(0)}%
+                </span>
               </Tooltip>
             </div>
           </div>
 
-          {/* Duration & Offset Badges */}
+          <div className="text-xs text-gray-600">
+            {formatPercent(actual)} complete • {deliverablesDone}/{deliverablesTotal} deliverables
+          </div>
+
+          {/* Duration badge */}
           {taskDuration > 0 && (
-            <div className="mt-1 flex items-center gap-1 flex-wrap">
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
+            <div className="mt-1.5 flex items-center gap-1 flex-wrap">
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-indigo-100 text-indigo-800">
                 {taskDuration}d
               </span>
               {task.offset_days > 0 && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
                   +{task.offset_days}d
                 </span>
               )}
             </div>
           )}
 
-          {/* Action menu dropdown */}
           {actionMenu}
-
-          {/* RIGHT HANDLE - Sequential dependency output */}
-          <Handle
-            type="source"
-            position={Position.Right}
-            id="right"
-            className="w-3 h-3 !bg-gray-500 border-2 border-white"
-            style={{ right: -6 }}
-          />
+          {rightHandle}
         </div>
         {modals}
       </>
     );
   }
 
-  // Expanded view - with duration display
+  // Expanded view — matches TaskCard expanded layout
   return (
     <>
       <div
         onClick={handleClick}
-        className={`
-          bg-white rounded-lg shadow-lg border-2 transition-all cursor-pointer
-          ${colors.border} ${colors.hoverBorder} ${criticalRing}
-          w-[280px] relative
+        className={`bg-white shadow-sm rounded-xl p-4 w-[280px] cursor-pointer hover:shadow-md transition-all relative
+          border-2 ${getBorderClass()} ${criticalRing}
+          ${isCompletedTask ? "opacity-70" : ""}
         `}
         style={{ zIndex: 1000 }}
       >
-        {/* LEFT HANDLE - Sequential dependency input */}
-        <Handle
-          type="target"
-          position={Position.Left}
-          id="left"
-          className="w-3 h-3 !bg-gray-500 border-2 border-white"
-          style={{ left: -6, zIndex: 1001 }}
-        />
+        {leftHandle}
 
-        {/* Header with title, schedule badge, menu, and collapse button */}
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+        {/* HEADER ROW — identical to TaskCard */}
+        <div className="flex items-start justify-between mb-2">
           <div className="flex-1 pr-2">
-            <h3 className="font-semibold text-gray-900 text-sm">
-              {task.task_number != null && (
-                <span className="text-[10px] font-medium text-gray-400 mr-1">{formatTaskNumber(task.task_number)}</span>
-              )}
+            {task.task_number != null && (
+              <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">{formatTaskNumber(task.task_number)}</span>
+            )}
+            <h3 className="font-bold text-sm text-slate-800 leading-snug line-clamp-2">
               {task.title}
             </h3>
-            {isDelayed && (
-              <Tooltip content="Delayed (past planned finish)">
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800 mt-1">
-                  Delayed
-                </span>
-              </Tooltip>
-            )}
-            {isBehind && (
-              <Tooltip content={`Behind plan by ${Math.round(plannedProgress - actualProgress)}%`}>
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 mt-1">
-                  Behind by {Math.round(plannedProgress - actualProgress)}%
-                </span>
-              </Tooltip>
-            )}
-            {isCritical && (
-              <Tooltip content="Critical path \u2014 zero float">
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-100 text-purple-800 mt-1">
-                  Critical
-                </span>
-              </Tooltip>
-            )}
-            {isNearCritical && (
-              <Tooltip content={`Near-critical \u2014 ${task.cpm_total_float_days ?? 0}d float`}>
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-600 border border-purple-200 border-dashed mt-1">
-                  Float {task.cpm_total_float_days ?? 0}d
-                </span>
-              </Tooltip>
-            )}
+            {scheduleBadges}
           </div>
-          <div className="flex items-center gap-0.5 flex-shrink-0">
-            {menuButton}
-            <Tooltip content="Minimize">
-              <button
-                onClick={handleToggle}
-                className="toggle-button text-gray-400 hover:text-gray-600"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                </svg>
-              </button>
+
+          {/* BUTTONS + WEIGHT */}
+          <div className="flex flex-col items-end flex-shrink-0">
+            <div className="flex items-center gap-0.5">
+              <Tooltip content="Actions">
+                <button
+                  onClick={handleMenuToggle}
+                  className="node-menu p-1 rounded-full hover:bg-slate-100 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5 text-slate-400" viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="12" cy="5" r="1.5" />
+                    <circle cx="12" cy="12" r="1.5" />
+                    <circle cx="12" cy="19" r="1.5" />
+                  </svg>
+                </button>
+              </Tooltip>
+              <Tooltip content="Minimize">
+                <button
+                  onClick={handleToggle}
+                  className="toggle-button p-1 rounded-full hover:bg-slate-100 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                  </svg>
+                </button>
+              </Tooltip>
+            </div>
+            {/* Weight badge */}
+            <Tooltip content={`Weight: ${(weight * 100).toFixed(1)}%`}>
+              <span className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                W: {(weight * 100).toFixed(0)}%
+              </span>
             </Tooltip>
           </div>
         </div>
 
-        {/* Content */}
-        <div className="px-4 py-3 space-y-3 text-xs">
-          {/* Duration & Offset Info */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
+        {/* Duration & Offset badges (diagram-specific) */}
+        {taskDuration > 0 && (
+          <div className="mb-3 flex items-center gap-1 flex-wrap">
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-indigo-100 text-indigo-800">
               {taskDuration} {taskDuration === 1 ? 'day' : 'days'}
             </span>
             {task.offset_days > 0 && (
-              <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800">
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
                 +{task.offset_days}d buffer
               </span>
             )}
           </div>
+        )}
 
-          {/* Deliverables status */}
-          <div className="bg-orange-50 border border-orange-200 rounded px-2 py-1 text-orange-700 text-xs">
+        {/* Deliverable completion status */}
+        {status !== "completed" && deliverablesTotal > 0 && deliverablesDone < deliverablesTotal && (
+          <div className="mb-3 text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-200">
             {deliverablesDone}/{deliverablesTotal} deliverables done
           </div>
+        )}
 
-          {/* Weight */}
-          <div className="flex justify-between items-center">
-            <span className="text-gray-600">
-              Weight: <span className="font-semibold text-gray-900">{normalizedWeight}%</span>
-            </span>
-          </div>
-
-          {/* Planned Progress */}
+        {/* Combined Progress Section — identical to TaskCard */}
+        <div className="mb-3 space-y-2">
           <div>
-            <div className="flex justify-between text-gray-600 mb-1">
-              <span>Planned Progress</span>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-bold text-slate-900 uppercase tracking-wide">Planned</span>
+              <span className="text-[11px] font-semibold text-blue-600">{formatPercent(planned)}</span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="w-full bg-slate-100 h-1.5 rounded-full">
               <div
-                className="bg-blue-500 h-2 rounded-full transition-all"
-                style={{ width: `${plannedProgress}%` }}
+                className="h-1.5 rounded-full bg-blue-500 transition-all"
+                style={{ width: `${Math.max(0, Math.min(100, planned))}%` }}
               />
             </div>
-            <div className="text-gray-700 font-medium mt-1">
-              {plannedProgress.toFixed(2)}%
-            </div>
           </div>
-
-          {/* Actual Progress */}
           <div>
-            <div className="flex justify-between text-gray-600 mb-1">
-              <span>Actual Progress</span>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-bold text-slate-900 uppercase tracking-wide">Actual</span>
+              <span className="text-[11px] font-semibold text-emerald-600">{formatPercent(actual)}</span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="w-full bg-slate-100 h-1.5 rounded-full">
               <div
-                className="bg-green-500 h-2 rounded-full transition-all"
-                style={{ width: `${actualProgress}%` }}
+                className="h-1.5 rounded-full bg-emerald-500 transition-all"
+                style={{ width: `${Math.max(0, Math.min(100, actual))}%` }}
               />
             </div>
-            <div className="text-gray-700 font-medium mt-1">
-              {actualProgress.toFixed(2)}%
-            </div>
           </div>
+        </div>
 
-          {/* Dates */}
-          <div className="space-y-1 text-gray-600">
-            <div className="flex justify-between">
-              <span>Planned Start:</span>
-              <span className="text-gray-900">{formatDate(task.planned_start)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Planned End:</span>
-              <span className="text-gray-900">{formatDate(task.planned_end)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Actual Start:</span>
-              <span className="text-gray-900">{formatDate(task.actual_start)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Actual End:</span>
-              <span className="text-gray-900">{formatDate(task.actual_end)}</span>
-            </div>
+        {/* Compact info grid — identical to TaskCard */}
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] mb-3 pt-2 border-t border-slate-100">
+          <div className="flex justify-between">
+            <span className="font-bold text-slate-900">Plan Start</span>
+            <span className="font-medium text-slate-600">{plannedStart}</span>
           </div>
-
-          {/* Budget */}
-          <div className="pt-2 border-t border-gray-100">
-            <div className="flex justify-between text-gray-600">
-              <span>Budget</span>
-              <span className="text-gray-900">$0</span>
-            </div>
-            <div className="flex justify-between text-gray-600">
-              <span>Actual</span>
-              <span className="text-green-600 font-medium">$0</span>
-            </div>
+          <div className="flex justify-between">
+            <span className="font-bold text-slate-900">Plan End</span>
+            <span className="font-medium text-slate-600">{plannedEnd}</span>
           </div>
+          <div className="flex justify-between">
+            <span className="font-bold text-slate-900">Actual Start</span>
+            <span className="font-medium text-slate-600">{actualStart}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="font-bold text-slate-900">Actual End</span>
+            <span className="font-medium text-slate-600">{actualEnd}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="font-bold text-slate-900">Budget</span>
+            <span className="font-medium text-slate-600">{fmtCost((task as any).budgeted_cost)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="font-bold text-slate-900">Actual</span>
+            <span className={`font-medium ${
+              (task as any).actual_cost && (task as any).budgeted_cost && (task as any).actual_cost > (task as any).budgeted_cost
+                ? "text-amber-600" : "text-emerald-600"
+            }`}>{fmtCost((task as any).actual_cost)}</span>
+          </div>
+        </div>
 
-          {/* View Deliverables button */}
+        {/* VIEW DELIVERABLES BUTTON — identical to TaskCard */}
+        <div className="mt-3 pt-2 border-t border-slate-100">
           <button
-            className="w-full mt-2 py-2 px-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded text-gray-700 text-xs font-medium transition-colors flex items-center justify-center gap-2"
             onClick={(e) => {
               e.stopPropagation();
               onClick(task);
             }}
+            className="w-full px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 transition-colors"
           >
-            <svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            View Deliverables
+            View Deliverables ({deliverablesDone}/{deliverablesTotal})
           </button>
         </div>
 
         {/* Action menu dropdown */}
         {actionMenu}
 
-        {/* RIGHT HANDLE - Sequential dependency output */}
-        <Handle
-          type="source"
-          position={Position.Right}
-          id="right"
-          className="w-3 h-3 !bg-gray-500 border-2 border-white"
-          style={{ right: -6, zIndex: 1001 }}
-        />
+        {rightHandle}
       </div>
       {modals}
     </>
