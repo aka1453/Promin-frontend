@@ -1,13 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { MoreVertical, Edit, Trash, CheckCircle2, Clock, Circle } from "lucide-react";
 import type { Milestone } from "../types/milestone";
-import { completeMilestone } from "../lib/lifecycle";
 import { supabase } from "../lib/supabaseClient";
-import { useUserTimezone } from "../context/UserTimezoneContext";
-import { todayForTimezone } from "../utils/date";
 import EditMilestoneModal from "./EditMilestoneModal";
 import { useToast } from "./ToastProvider";
 import ChatButton from "./chat/ChatButton";
@@ -36,65 +33,8 @@ export default function MilestoneCard({
 }: Props) {
   const router = useRouter();
   const { pushToast } = useToast();
-  const { timezone } = useUserTimezone();
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [completing, setCompleting] = useState(false);
-  const [allTasksComplete, setAllTasksComplete] = useState(false);
-  const [loadingTaskStatus, setLoadingTaskStatus] = useState(true);
-
-  async function checkTaskCompletion() {
-    setLoadingTaskStatus(true);
-    try {
-      const { data, error } = await supabase
-        .from("tasks")
-        .select("actual_end")
-        .eq("milestone_id", milestone.id);
-
-      if (error) {
-        console.error("Failed to check task status:", error);
-        setAllTasksComplete(false);
-        return;
-      }
-
-      if (!data || data.length === 0) {
-        setAllTasksComplete(false);
-      } else {
-        const allComplete = data.every((task) => task.actual_end !== null);
-        setAllTasksComplete(allComplete);
-      }
-    } catch (err) {
-      console.error("Error checking tasks:", err);
-      setAllTasksComplete(false);
-    } finally {
-      setLoadingTaskStatus(false);
-    }
-  }
-
-  useEffect(() => {
-    checkTaskCompletion();
-  }, [milestone.id, milestone.status]);
-
-  // Realtime on tasks for this milestone — updates allTasksComplete when tasks are completed
-  useEffect(() => {
-    const ch = supabase
-      .channel("milestone-card-tasks-" + milestone.id)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "tasks",
-          filter: `milestone_id=eq.${milestone.id}`,
-        },
-        () => {
-          checkTaskCompletion();
-        }
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(ch); };
-  }, [milestone.id]);
 
   React.useEffect(() => {
     if (!canEdit && !canDelete && menuOpen) {
@@ -144,42 +84,10 @@ export default function MilestoneCard({
     onUpdated?.();
   };
 
-  const handleCompleteMilestone = async (
-    e: React.MouseEvent<HTMLButtonElement>
-  ) => {
-    e.stopPropagation();
-
-    if (!allTasksComplete) {
-      alert("Cannot complete milestone: Not all tasks are completed yet.");
-      return;
-    }
-
-    const confirmed = confirm(
-      "Complete this milestone? This action cannot be undone."
-    );
-    if (!confirmed) return;
-
-    setCompleting(true);
-    try {
-      await completeMilestone(milestone.id, todayForTimezone(timezone));
-      onUpdated?.();
-    } catch (error: any) {
-      console.error("Failed to complete milestone:", error);
-      alert(error.message || "Failed to complete milestone");
-    } finally {
-      setCompleting(false);
-    }
-  };
-
-  const canComplete = canEdit && milestone.status !== "completed" && !completing;
-  const buttonDisabled = !canComplete || !allTasksComplete || loadingTaskStatus;
 
   const plannedProgress = canonicalPlanned ?? 0;
   const actualProgress = canonicalActual ?? 0;
 
-  // Status badge reads ONLY milestone.status.
-  // Canonical progress reaching 100 via rollup does NOT mean completed —
-  // user must explicitly click "Complete Milestone" to set status + actual_end.
   const getStatusBadge = () => {
     if (milestone.status === "completed") {
       return (
@@ -360,29 +268,6 @@ export default function MilestoneCard({
             </div>
           </div>
 
-          {canComplete && (
-            <button
-              onClick={handleCompleteMilestone}
-              disabled={buttonDisabled}
-              className={`
-                w-full py-2.5 px-4 rounded-lg font-medium text-sm transition-all
-                ${
-                  buttonDisabled
-                    ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                    : "bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.98]"
-                }
-              `}
-              title={
-                !allTasksComplete
-                  ? "Complete all tasks before completing the milestone"
-                  : completing
-                  ? "Completing..."
-                  : "Mark milestone as complete"
-              }
-            >
-              {completing ? "Completing..." : "Complete Milestone"}
-            </button>
-          )}
         </div>
       </div>
 
