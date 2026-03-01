@@ -490,10 +490,12 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
 
                 {/* Forecast Section — always rendered; shows neutral state when unavailable */}
                 <div className="pt-4 border-t border-slate-200 mb-2">
-                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide mb-3 flex items-center gap-1">
-                    Forecast
+                  <div className="flex items-center gap-1 mb-3">
+                    <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+                      Forecast
+                    </h3>
                     <InfoTip tip="Completion date is based on your recent pace, not just the overall average. The range reflects typical fast and slow days. Waiting periods with no planned work are excluded." />
-                  </h3>
+                  </div>
                   {!forecastData ? (
                     <div className="flex items-center gap-2 text-slate-400 bg-slate-50 rounded-lg px-4 py-2 text-sm">
                       Forecast data unavailable
