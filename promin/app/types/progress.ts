@@ -67,6 +67,7 @@ export type ForecastConfidence = "high" | "medium" | "low";
 
 /** Forecast computation method */
 export type ForecastMethod =
+  | "ewma_velocity"
   | "linear_velocity"
   | "completed"
   | "not_started"
