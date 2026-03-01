@@ -6,6 +6,7 @@ import { BarChart2, Settings } from "lucide-react";
 import ProgressBar from "./ProgressBar";
 import DeltaBadge from "./DeltaBadge";
 import { formatPercent } from "../utils/format";
+import Tooltip from "./Tooltip";
 
 type Props = {
   project: any;
@@ -154,13 +155,14 @@ export default function ProjectOverviewCard({
     <div className="flex items-start justify-between">
       {/* LEFT — PM + NAME */}
       <div className="flex items-center gap-3 pointer-events-auto">
-        <div
-          className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-semibold text-white"
-          style={{ backgroundColor: getAvatarColor(pmId ?? pmName ?? pmEmail) }}
-          title={pmName ?? pmEmail ?? "Project Manager"}
-        >
+        <Tooltip content={pmName ?? pmEmail ?? "Project Manager"}>
+          <div
+            className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-semibold text-white"
+            style={{ backgroundColor: getAvatarColor(pmId ?? pmName ?? pmEmail) }}
+          >
           {getInitials(pmName, pmEmail)}
         </div>
+        </Tooltip>
 
         <h3 className="text-lg font-semibold text-slate-900 leading-tight">
           {project.name ?? "Untitled Project"}
@@ -191,7 +193,6 @@ export default function ProjectOverviewCard({
               hover:bg-slate-100
               transition
             "
-            title="More options"
           >
             ⋮
           </button>
@@ -237,18 +238,19 @@ export default function ProjectOverviewCard({
     {/* ===== STATUS PILL + EXPLANATION ===== */}
     {riskState && (
       <div className="flex items-center gap-2 mt-1.5">
-        <span
-          className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-            riskState === "COMPLETED" ? "bg-emerald-200 text-emerald-800"
-            : riskState === "DELAYED"  ? "bg-red-100 text-red-700"
-            : riskState === "AT_RISK"  ? "bg-amber-100 text-amber-700"
-            : riskState === "ON_TRACK" ? "bg-emerald-100 text-emerald-700"
-            : ""
-          }`}
-          title="Schedule health: worst-case deliverable status (near deadline/overdue)"
-        >
-          {statusLabel}
-        </span>
+        <Tooltip content="Schedule health: worst-case deliverable status (near deadline/overdue)">
+          <span
+            className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+              riskState === "COMPLETED" ? "bg-emerald-200 text-emerald-800"
+              : riskState === "DELAYED"  ? "bg-red-100 text-red-700"
+              : riskState === "AT_RISK"  ? "bg-amber-100 text-amber-700"
+              : riskState === "ON_TRACK" ? "bg-emerald-100 text-emerald-700"
+              : ""
+            }`}
+          >
+            {statusLabel}
+          </span>
+        </Tooltip>
         {riskState === "DELAYED" && (
           <span className="text-sm text-slate-900">
             {overdueCount != null && overdueCount >= 1

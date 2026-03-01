@@ -1,22 +1,35 @@
-/** Phase 7.1 + 7.2B — Types for the /api/chat conversational guidance endpoint */
+/** Chat types — global project-level conversational guidance */
 
-import type { ExplainEntityType } from "./explain";
+/** Database conversation record */
+export type Conversation = {
+  id: number;
+  project_id: number;
+  user_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+};
 
-/** A single history entry sent to the server for conversational continuity. */
-export type ChatHistoryEntry = {
+/** Database message record */
+export type DbChatMessage = {
+  id: number;
+  conversation_id: number;
   role: "user" | "assistant";
   content: string;
+  entity_name?: string | null;
+  status?: string | null;
+  created_at: string;
 };
 
+/** Request payload for POST /api/chat */
 export type ChatRequest = {
   message: string;
-  entityType: ExplainEntityType;
-  entityId: number;
+  projectId: number;
+  conversationId: number;
   timezone: string;
-  /** Phase 7.2B: bounded conversation history (max 12 messages, 4000 chars). */
-  history?: ChatHistoryEntry[];
 };
 
+/** Local UI message (superset of DB fields) */
 export type ChatMessage = {
   role: "user" | "assistant";
   content: string;

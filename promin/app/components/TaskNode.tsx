@@ -5,15 +5,15 @@ import { Handle, Position } from "reactflow";
 import type { NodeProps } from "reactflow";
 import type { TaskNodeData } from "../types/taskDependency";
 import { getTaskScheduleState } from "../utils/schedule";
+import { formatTaskNumber } from "../utils/format";
 import EditTaskModal from "./EditTaskModal";
-import ChatDrawer from "./chat/ChatDrawer";
+import Tooltip from "./Tooltip";
 
 function TaskNode({ data }: NodeProps<TaskNodeData>) {
-  const { task, collapsed, onToggleCollapse, onClick, onDelete, onTaskUpdated, canonicalPlanned, canonicalActual, canonicalRiskState, asOfDate } = data;
+  const { task, collapsed, onToggleCollapse, onClick, onDelete, onTaskUpdated, canonicalPlanned, canonicalActual, canonicalRiskState, asOfDate, onAskChat } = data;
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -126,7 +126,7 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
   const handleChatClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     setMenuOpen(false);
-    setChatOpen(true);
+    onAskChat?.(`Tell me about task "${task.title}"`);
   };
 
   // Critical path ring (subtle purple glow, stacks on top of status border)
@@ -159,41 +159,31 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
 
   // Shared menu button (⋮)
   const menuButton = (
-    <button
-      onClick={handleMenuToggle}
-      className="node-menu p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 flex-shrink-0 transition-colors"
-      title="Actions"
-    >
-      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-        <circle cx="12" cy="5" r="1.5" />
-        <circle cx="12" cy="12" r="1.5" />
-        <circle cx="12" cy="19" r="1.5" />
-      </svg>
-    </button>
+    <Tooltip content="Actions">
+      <button
+        onClick={handleMenuToggle}
+        className="node-menu p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 flex-shrink-0 transition-colors"
+      >
+        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="12" cy="5" r="1.5" />
+          <circle cx="12" cy="12" r="1.5" />
+          <circle cx="12" cy="19" r="1.5" />
+        </svg>
+      </button>
+    </Tooltip>
   );
 
   // Shared modals/drawers rendered once at the end
-  const modals = (
-    <>
-      {editOpen && (
-        <EditTaskModal
-          taskId={task.id}
-          onClose={() => setEditOpen(false)}
-          onSuccess={() => {
-            setEditOpen(false);
-            onTaskUpdated?.();
-          }}
-        />
-      )}
-      <ChatDrawer
-        open={chatOpen}
-        onOpenChange={setChatOpen}
-        entityType="task"
-        entityId={task.id}
-        entityName={task.title || undefined}
-      />
-    </>
-  );
+  const modals = editOpen ? (
+    <EditTaskModal
+      taskId={task.id}
+      onClose={() => setEditOpen(false)}
+      onSuccess={() => {
+        setEditOpen(false);
+        onTaskUpdated?.();
+      }}
+    />
+  ) : null;
 
   if (collapsed) {
     // Minimized view - title + duration badge
@@ -220,53 +210,53 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
           <div className="flex items-center justify-between gap-2">
             <div className="flex-1 min-w-0">
               <div className="font-medium text-gray-900 text-sm truncate">
+                {task.task_number != null && (
+                  <span className="text-[10px] font-medium text-gray-400 mr-1">{formatTaskNumber(task.task_number)}</span>
+                )}
                 {task.title}
               </div>
               {isDelayed && (
-                <span
-                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800"
-                  title="Delayed (past planned finish)"
-                >
-                  Delayed
-                </span>
+                <Tooltip content="Delayed (past planned finish)">
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800">
+                    Delayed
+                  </span>
+                </Tooltip>
               )}
               {isBehind && (
-                <span
-                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800"
-                  title={`Behind plan by ${Math.round(plannedProgress - actualProgress)}%`}
-                >
-                  Behind by {Math.round(plannedProgress - actualProgress)}%
-                </span>
+                <Tooltip content={`Behind plan by ${Math.round(plannedProgress - actualProgress)}%`}>
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800">
+                    Behind by {Math.round(plannedProgress - actualProgress)}%
+                  </span>
+                </Tooltip>
               )}
               {isCritical && (
-                <span
-                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-100 text-purple-800"
-                  title="Critical path \u2014 zero float"
-                >
-                  Critical
-                </span>
+                <Tooltip content="Critical path \u2014 zero float">
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-100 text-purple-800">
+                    Critical
+                  </span>
+                </Tooltip>
               )}
               {isNearCritical && (
-                <span
-                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-600 border border-purple-200 border-dashed"
-                  title={`Near-critical \u2014 ${task.cpm_total_float_days ?? 0}d float`}
-                >
-                  Float {task.cpm_total_float_days ?? 0}d
-                </span>
+                <Tooltip content={`Near-critical \u2014 ${task.cpm_total_float_days ?? 0}d float`}>
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-600 border border-purple-200 border-dashed">
+                    Float {task.cpm_total_float_days ?? 0}d
+                  </span>
+                </Tooltip>
               )}
             </div>
 
             <div className="flex items-center gap-0.5 flex-shrink-0">
               {menuButton}
-              <button
-                onClick={handleToggle}
-                className="toggle-button text-gray-400 hover:text-gray-600"
-                title="Expand"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
+              <Tooltip content="Expand">
+                <button
+                  onClick={handleToggle}
+                  className="toggle-button text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              </Tooltip>
             </div>
           </div>
 
@@ -326,52 +316,52 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <div className="flex-1 pr-2">
             <h3 className="font-semibold text-gray-900 text-sm">
+              {task.task_number != null && (
+                <span className="text-[10px] font-medium text-gray-400 mr-1">{formatTaskNumber(task.task_number)}</span>
+              )}
               {task.title}
             </h3>
             {isDelayed && (
-              <span
-                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800 mt-1"
-                title="Delayed (past planned finish)"
-              >
-                Delayed
-              </span>
+              <Tooltip content="Delayed (past planned finish)">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800 mt-1">
+                  Delayed
+                </span>
+              </Tooltip>
             )}
             {isBehind && (
-              <span
-                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 mt-1"
-                title={`Behind plan by ${Math.round(plannedProgress - actualProgress)}%`}
-              >
-                Behind by {Math.round(plannedProgress - actualProgress)}%
-              </span>
+              <Tooltip content={`Behind plan by ${Math.round(plannedProgress - actualProgress)}%`}>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 mt-1">
+                  Behind by {Math.round(plannedProgress - actualProgress)}%
+                </span>
+              </Tooltip>
             )}
             {isCritical && (
-              <span
-                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-100 text-purple-800 mt-1"
-                title="Critical path \u2014 zero float"
-              >
-                Critical
-              </span>
+              <Tooltip content="Critical path \u2014 zero float">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-100 text-purple-800 mt-1">
+                  Critical
+                </span>
+              </Tooltip>
             )}
             {isNearCritical && (
-              <span
-                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-600 border border-purple-200 border-dashed mt-1"
-                title={`Near-critical \u2014 ${task.cpm_total_float_days ?? 0}d float`}
-              >
-                Float {task.cpm_total_float_days ?? 0}d
-              </span>
+              <Tooltip content={`Near-critical \u2014 ${task.cpm_total_float_days ?? 0}d float`}>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-600 border border-purple-200 border-dashed mt-1">
+                  Float {task.cpm_total_float_days ?? 0}d
+                </span>
+              </Tooltip>
             )}
           </div>
           <div className="flex items-center gap-0.5 flex-shrink-0">
             {menuButton}
-            <button
-              onClick={handleToggle}
-              className="toggle-button text-gray-400 hover:text-gray-600"
-              title="Minimize"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-              </svg>
-            </button>
+            <Tooltip content="Minimize">
+              <button
+                onClick={handleToggle}
+                className="toggle-button text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                </svg>
+              </button>
+            </Tooltip>
           </div>
         </div>
 

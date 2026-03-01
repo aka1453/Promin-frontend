@@ -7,17 +7,18 @@ import { ProjectRoleProvider } from "../../../context/ProjectRoleContext";
 import { useUserTimezone } from "../../../context/UserTimezoneContext";
 import { todayForTimezone } from "../../../utils/date";
 import {
-  ArrowLeft,
-  Settings,
-  Clock,
   BarChart2,
   Flag,
   CheckSquare,
+  Clock,
   Download,
   TrendingUp,
   CheckCircle2,
   DollarSign,
 } from "lucide-react";
+import ProjectHeader from "../../../components/ProjectHeader";
+import { ChatProvider } from "../../../context/ChatContext";
+import ChatDrawer from "../../../components/chat/ChatDrawer";
 import type { Milestone } from "../../../types/milestone";
 import type { Task } from "../../../types/task";
 
@@ -1826,15 +1827,6 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
     load();
   }, [load]);
 
-  const formatCurrencyLocal = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
-
   if (loading || !project) {
     return (
       <div className="flex items-center justify-center h-screen bg-slate-50">
@@ -1852,82 +1844,12 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* HEADER — mirrors project detail but without Reports button */}
-      <div className="bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => router.push(`/projects/${projectId}`)}
-                className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800 transition-colors"
-              >
-                <ArrowLeft size={18} />
-                Back
-              </button>
-              <h1 className="text-2xl font-bold text-slate-800">
-                {project.name || "Untitled Project"}
-              </h1>
-            </div>
-
-            <div className="flex items-center gap-4">
-              {/* Budgeted Cost */}
-              <div className="bg-slate-50 rounded-xl px-5 py-3 border border-slate-200">
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
-                  Budgeted Cost
-                </p>
-                <p className="text-xl font-bold text-slate-800 mt-0.5">
-                  {formatCurrencyLocal(project.budgeted_cost ?? 0)}
-                </p>
-              </div>
-
-              {/* Actual Cost */}
-              {(() => {
-                const budget = project.budgeted_cost ?? 0;
-                const actual = project.actual_cost ?? 0;
-                const ratio = budget > 0 ? actual / budget : (actual > 0 ? 2 : 1);
-                const isOver = ratio > 1.05;
-                const isNear = ratio >= 0.95 && ratio <= 1.05;
-                const bg = isOver ? "bg-red-50" : isNear ? "bg-amber-50" : "bg-emerald-50";
-                const border = isOver ? "border-red-200" : isNear ? "border-amber-200" : "border-emerald-200";
-                const labelColor = isOver ? "text-red-600" : isNear ? "text-amber-600" : "text-emerald-600";
-                const valueColor = isOver ? "text-red-700" : isNear ? "text-amber-700" : "text-emerald-700";
-                return (
-                  <div className={`${bg} rounded-xl px-5 py-3 border ${border}`}>
-                    <p className={`text-xs font-medium ${labelColor} uppercase tracking-wide`}>
-                      Actual Cost
-                    </p>
-                    <p className={`text-xl font-bold ${valueColor} mt-0.5`}>
-                      {formatCurrencyLocal(actual)}
-                    </p>
-                  </div>
-                );
-              })()}
-
-              {/* Activity Toggle — same as project detail */}
-              <button
-                onClick={() => setShowActivitySidebar(!showActivitySidebar)}
-                className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
-                  showActivitySidebar
-                    ? "bg-blue-600 text-white"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                }`}
-              >
-                <Clock size={18} />
-                Activity
-              </button>
-
-              {/* Settings Gear */}
-              <button
-                onClick={() => {}}
-                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
-                title="Project settings"
-              >
-                <Settings size={20} />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <ProjectHeader
+        projectId={projectId}
+        project={project}
+        showActivity={showActivitySidebar}
+        onToggleActivity={() => setShowActivitySidebar(!showActivitySidebar)}
+      />
 
       {/* MAIN CONTENT */}
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8" style={{ maxWidth: "1400px" }}>
@@ -2033,7 +1955,10 @@ export default function ReportsPage() {
 
   return (
     <ProjectRoleProvider projectId={projectId}>
-      <ReportsPageContent projectId={projectId} />
+      <ChatProvider projectId={projectId}>
+        <ReportsPageContent projectId={projectId} />
+        <ChatDrawer />
+      </ChatProvider>
     </ProjectRoleProvider>
   );
 }

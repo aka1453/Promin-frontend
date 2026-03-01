@@ -1,34 +1,14 @@
 /**
- * Phase 7.1 + 7.2A + 7.2B — Conversational Guidance API route (/api/chat)
+ * Global Project Chat API route (/api/chat)
  *
- * POST endpoint. Read-only — fetches deterministic data from existing RPCs,
- * builds a grounding context, and uses AI to phrase a natural-language answer.
- *
- * No DB writes. No new SQL. SECURITY INVOKER only (via user session).
+ * POST endpoint. Always project-scoped — receives projectId + conversationId.
+ * Persists user and assistant messages to chat_messages table.
+ * Loads conversation history from DB (server-authoritative).
  *
  * Feature flags:
- *   CHAT_AI_ENABLED        (default: "true" — safe since read-only).
- *   CHAT_STREAMING_ENABLED (default: "false"). When "true", streams the
- *     response as SSE events instead of returning a single JSON payload.
+ *   CHAT_AI_ENABLED        (default: "true").
+ *   CHAT_STREAMING_ENABLED (default: "false").
  * Model: CHAT_AI_MODEL (default: "gpt-4o-mini").
- *
- * Phase 7.2B — Session memory:
- *   Client may include `history` (array of {role, content}) for conversational
- *   continuity. Server validates and enforces caps (12 msgs, 4000 chars).
- *   History is inserted between grounding context and current user question.
- *   History is for conversational continuity only — deterministic context
- *   remains authoritative and is never overridden by history.
- *
- * Streaming protocol (text/event-stream):
- *   event: meta   — { entityName, status, asof }
- *   event: delta  — { text: "..." }
- *   event: done   — {}
- *   event: error  — { error: "..." }
- *
- * Verification:
- *   POST /api/chat  { message: "Why is this delayed?", entityType: "project", entityId: 1, timezone: "Asia/Dubai" }
- *   Non-streaming: { ok: true, response: "...", entityName: "...", status: "...", asof: "..." }
- *   Streaming: SSE stream with meta → delta* → done events.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -44,7 +24,6 @@ import type { HierarchyRow } from "../../types/progress";
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/+$/, "");
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
-const VALID_TYPES = new Set(["project", "milestone", "task"]);
 const MAX_MESSAGE_LENGTH = 500;
 const MAX_HISTORY_MESSAGES = 12;
 const MAX_HISTORY_CHARS = 4000;
@@ -53,48 +32,6 @@ let _client: OpenAI | null = null;
 function getClient(): OpenAI {
   if (!_client) _client = new OpenAI();
   return _client;
-}
-
-/**
- * Resolve the containing project ID for a milestone or task.
- * Required because get_project_progress_hierarchy takes a project ID.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function resolveProjectId(
-  sb: any,
-  entityType: string,
-  entityId: number,
-): Promise<number> {
-  if (entityType === "project") return entityId;
-
-  if (entityType === "milestone") {
-    const { data } = await sb
-      .from("milestones")
-      .select("project_id")
-      .eq("id", entityId)
-      .single();
-    if (data?.project_id) return data.project_id;
-    throw new Error("Milestone not found");
-  }
-
-  if (entityType === "task") {
-    const { data: task } = await sb
-      .from("tasks")
-      .select("milestone_id")
-      .eq("id", entityId)
-      .single();
-    if (!task?.milestone_id) throw new Error("Task not found");
-
-    const { data: ms } = await sb
-      .from("milestones")
-      .select("project_id")
-      .eq("id", task.milestone_id)
-      .single();
-    if (ms?.project_id) return ms.project_id;
-    throw new Error("Milestone for task not found");
-  }
-
-  throw new Error("Invalid entity type");
 }
 
 export async function POST(req: NextRequest) {
@@ -124,8 +61,6 @@ export async function POST(req: NextRequest) {
   }
 
   // --- Auth via Bearer token ---
-  // The client sends the Supabase access_token in the Authorization header.
-  // We create a Supabase client scoped to that JWT so all RPC calls respect RLS.
   const authHeader = req.headers.get("authorization") ?? "";
   const match = authHeader.match(/^Bearer\s+(\S+)$/i);
   if (!match) {
@@ -141,7 +76,6 @@ export async function POST(req: NextRequest) {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  // Verify the JWT is valid by fetching the user
   const { data: { user }, error: userErr } = await supabase.auth.getUser(jwt);
   if (userErr || !user) {
     return NextResponse.json(
@@ -160,8 +94,7 @@ export async function POST(req: NextRequest) {
   }
 
   // --- Parse & validate body ---
-  // Increased from 2000 to 8000 in Phase 7.2B to accommodate history payload
-  const MAX_BODY_BYTES = 8000;
+  const MAX_BODY_BYTES = 4000;
   let rawBody: string;
   let body: Record<string, unknown>;
   try {
@@ -189,7 +122,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { message, entityType, entityId, timezone, history: rawHistory } = body;
+  const { message, projectId, conversationId, timezone } = body;
 
   if (!message || typeof message !== "string" || message.trim().length === 0) {
     return NextResponse.json(
@@ -197,26 +130,25 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
-  if (message.length > MAX_MESSAGE_LENGTH) {
+  if ((message as string).length > MAX_MESSAGE_LENGTH) {
     return NextResponse.json(
       { ok: false, error: `Message too long (max ${MAX_MESSAGE_LENGTH} chars).` },
       { status: 400 },
     );
   }
-  if (!entityType || !VALID_TYPES.has(entityType as string)) {
+  if (!projectId || typeof projectId !== "number") {
     return NextResponse.json(
-      { ok: false, error: 'Invalid entityType. Must be "project", "milestone", or "task".' },
+      { ok: false, error: "Invalid projectId. Must be a number." },
       { status: 400 },
     );
   }
-  if (!entityId || typeof entityId !== "number") {
+  if (!conversationId || typeof conversationId !== "number") {
     return NextResponse.json(
-      { ok: false, error: "Invalid entityId. Must be a number." },
+      { ok: false, error: "Invalid conversationId. Must be a number." },
       { status: 400 },
     );
   }
 
-  // timezone is REQUIRED — no server-side UTC fallback to avoid as-of drift.
   if (
     !timezone ||
     typeof timezone !== "string" ||
@@ -227,80 +159,88 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        error:
-          'Missing or invalid "timezone". Must be a non-empty IANA timezone string (e.g. "Asia/Dubai").',
+        error: 'Missing or invalid "timezone". Must be a non-empty IANA timezone string (e.g. "Asia/Dubai").',
       },
       { status: 400 },
     );
   }
 
-  // --- Validate & enforce history caps (Phase 7.2B) ---
-  type HistoryEntry = { role: "user" | "assistant"; content: string };
-  let history: HistoryEntry[] = [];
-  if (rawHistory !== undefined) {
-    if (!Array.isArray(rawHistory)) {
-      return NextResponse.json(
-        { ok: false, error: "history must be an array." },
-        { status: 400 },
-      );
-    }
-    // Validate each entry and enforce caps
-    const validRoles = new Set(["user", "assistant"]);
-    const validated: HistoryEntry[] = [];
-    let totalChars = 0;
-    // Take last MAX_HISTORY_MESSAGES entries, enforce char cap (oldest trimmed first)
-    const trimmed = (rawHistory as unknown[]).slice(-MAX_HISTORY_MESSAGES);
-    for (const entry of trimmed) {
-      if (
-        !entry ||
-        typeof entry !== "object" ||
-        !("role" in entry) ||
-        !("content" in entry) ||
-        typeof (entry as HistoryEntry).role !== "string" ||
-        !validRoles.has((entry as HistoryEntry).role) ||
-        typeof (entry as HistoryEntry).content !== "string"
-      ) {
-        return NextResponse.json(
-          { ok: false, error: "Each history entry must have role (user/assistant) and content (string)." },
-          { status: 400 },
-        );
-      }
-      const e = entry as HistoryEntry;
-      if (totalChars + e.content.length > MAX_HISTORY_CHARS) break;
-      totalChars += e.content.length;
-      validated.push({ role: e.role, content: e.content });
-    }
-    history = validated;
-  }
-
   const asof = todayForTimezone(timezone as string);
 
   try {
-    // --- Resolve project ID for hierarchy RPC ---
-    const projectId = await resolveProjectId(
-      supabase,
-      entityType as string,
-      entityId as number,
-    );
+    // --- Verify conversation belongs to user (RLS enforced) ---
+    const { data: conv, error: convErr } = await supabase
+      .from("chat_conversations")
+      .select("id, project_id")
+      .eq("id", conversationId as number)
+      .single();
 
-    // --- Fetch grounding data in parallel ---
+    if (convErr || !conv) {
+      return NextResponse.json(
+        { ok: false, error: "Conversation not found." },
+        { status: 404 },
+      );
+    }
+    if (conv.project_id !== projectId) {
+      return NextResponse.json(
+        { ok: false, error: "Conversation does not belong to this project." },
+        { status: 403 },
+      );
+    }
+
+    // --- Persist user message ---
+    const { error: insertErr } = await supabase
+      .from("chat_messages")
+      .insert({
+        conversation_id: conversationId as number,
+        role: "user",
+        content: (message as string).trim(),
+      });
+    if (insertErr) {
+      return NextResponse.json(
+        { ok: false, error: "Failed to save message." },
+        { status: 500 },
+      );
+    }
+
+    // --- Load history from DB (server-authoritative) ---
+    const { data: historyRows } = await supabase
+      .from("chat_messages")
+      .select("role, content")
+      .eq("conversation_id", conversationId as number)
+      .order("created_at", { ascending: true });
+
+    type HistoryEntry = { role: "user" | "assistant"; content: string };
+    const allMessages = (historyRows || []) as HistoryEntry[];
+    // Exclude the current user message (last in list) from history context
+    const historyForContext = allMessages.slice(0, -1);
+    const bounded: HistoryEntry[] = [];
+    let totalChars = 0;
+    const recent = historyForContext.slice(-MAX_HISTORY_MESSAGES);
+    for (const entry of recent) {
+      if (totalChars + entry.content.length > MAX_HISTORY_CHARS) break;
+      totalChars += entry.content.length;
+      bounded.push({ role: entry.role, content: entry.content });
+    }
+
+    // --- Fetch grounding data (always project-level) ---
+    const pid = projectId as number;
+
     const [explainResult, hierarchyResult, criticalPathResult] = await Promise.all([
       supabase.rpc("explain_entity", {
-        p_entity_type: entityType as string,
-        p_entity_id: entityId as number,
+        p_entity_type: "project",
+        p_entity_id: pid,
         p_asof: asof,
       }),
       supabase.rpc("get_project_progress_hierarchy", {
-        p_project_id: projectId,
+        p_project_id: pid,
         p_asof: asof,
       }),
-      // Fetch critical path data for tasks in this project
       supabase
         .from("tasks")
-        .select("id, title, milestone_id, is_critical, cpm_total_float_days, planned_start, planned_end, actual_start, actual_end, status")
+        .select("id, task_number, title, milestone_id, is_critical, cpm_total_float_days, planned_start, planned_end, actual_start, actual_end, status")
         .in("milestone_id",
-          // Get milestone IDs for this project
-          (await supabase.from("milestones").select("id").eq("project_id", projectId)).data?.map((m: { id: number }) => m.id) ?? []
+          (await supabase.from("milestones").select("id").eq("project_id", pid)).data?.map((m: { id: number }) => m.id) ?? []
         )
         .order("planned_start", { ascending: true }),
     ]);
@@ -321,38 +261,37 @@ export async function POST(req: NextRequest) {
     const explainData = explainResult.data as ExplainData;
     const hierarchy = (hierarchyResult.data || []) as HierarchyRow[];
     const criticalPathTasks = (criticalPathResult.data || []) as Array<{
-      id: number; title: string; milestone_id: number; is_critical: boolean;
-      cpm_total_float_days: number | null; planned_start: string | null;
-      planned_end: string | null; actual_start: string | null;
-      actual_end: string | null; status: string;
+      id: number; task_number: number; title: string; milestone_id: number;
+      is_critical: boolean; cpm_total_float_days: number | null;
+      planned_start: string | null; planned_end: string | null;
+      actual_start: string | null; actual_end: string | null; status: string;
     }>;
 
-    // --- Build grounding context ---
-    const ctx = createGroundingContext(
-      explainData,
-      hierarchy,
-      entityType as string,
-      entityId as number,
-    );
+    // --- Build grounding context (always project-level) ---
+    const ctx = createGroundingContext(explainData, hierarchy, "project", pid);
     const contextDoc = buildContextDocument(ctx, criticalPathTasks);
 
-    // Build OpenAI message array:
-    // 1. System prompt (unchanged)
-    // 2. Deterministic grounding context (unchanged, authoritative)
-    // 3. Conversation history (Phase 7.2B — continuity only, not source of truth)
-    // 4. Current user question (always last)
     const chatMessages: OpenAI.ChatCompletionMessageParam[] = [
       { role: "system", content: CHAT_SYSTEM_PROMPT },
       { role: "system", content: `## Context Document:\n${contextDoc}` },
-      ...history.map((h) => ({
+      ...bounded.map((h) => ({
         role: h.role as "user" | "assistant",
         content: h.content,
       })),
       { role: "user", content: (message as string).trim() },
     ];
 
-    const streamingEnabled =
-      process.env.CHAT_STREAMING_ENABLED === "true";
+    const streamingEnabled = process.env.CHAT_STREAMING_ENABLED === "true";
+
+    // --- Auto-title: set title from first user message ---
+    const isFirstMessage = allMessages.length <= 1;
+    if (isFirstMessage) {
+      const title = (message as string).trim().slice(0, 60);
+      await supabase
+        .from("chat_conversations")
+        .update({ title })
+        .eq("id", conversationId as number);
+    }
 
     // --- Streaming mode ---
     if (streamingEnabled) {
@@ -361,10 +300,12 @@ export async function POST(req: NextRequest) {
         ctx.entityName,
         explainData.status,
         asof,
+        supabase,
+        conversationId as number,
       );
     }
 
-    // --- Non-streaming mode (original behavior) ---
+    // --- Non-streaming mode ---
     const client = getClient();
     const completion = await client.chat.completions.create({
       model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
@@ -381,6 +322,15 @@ export async function POST(req: NextRequest) {
         { status: 500 },
       );
     }
+
+    // --- Persist assistant message ---
+    await supabase.from("chat_messages").insert({
+      conversation_id: conversationId as number,
+      role: "assistant",
+      content: aiResponse,
+      entity_name: ctx.entityName,
+      status: explainData.status,
+    });
 
     return NextResponse.json(
       {
@@ -401,21 +351,16 @@ export async function POST(req: NextRequest) {
 
 /**
  * Handle streaming response using OpenAI SDK streaming and SSE.
- *
- * All deterministic data (context, hierarchy, explain) is fetched BEFORE
- * this function is called. Only the AI text generation is streamed.
- *
- * Protocol:
- *   event: meta  → { entityName, status, asof }
- *   event: delta → { text: "..." }
- *   event: done  → {}
- *   event: error → { error: "..." }
+ * Persists assistant message to DB after stream completes.
  */
 function handleStreamingResponse(
   messages: OpenAI.ChatCompletionMessageParam[],
   entityName: string,
   status: string,
   asof: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  conversationId: number,
 ): Response {
   const encoder = new TextEncoder();
 
@@ -425,7 +370,6 @@ function handleStreamingResponse(
 
   const stream = new ReadableStream({
     async start(controller) {
-      // Send metadata first so the client can render context immediately
       controller.enqueue(formatSSE("meta", { entityName, status, asof }));
 
       try {
@@ -452,6 +396,14 @@ function handleStreamingResponse(
             formatSSE("error", { error: "AI returned an empty response." }),
           );
         } else {
+          // Persist assistant message
+          await supabase.from("chat_messages").insert({
+            conversation_id: conversationId,
+            role: "assistant",
+            content: fullText.trim(),
+            entity_name: entityName,
+            status,
+          });
           controller.enqueue(formatSSE("done", {}));
         }
       } catch (err: unknown) {

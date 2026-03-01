@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState } from "react";
 import { MoreVertical, ChevronDown, ChevronUp } from "lucide-react";
-import { formatPercent } from "../utils/format";
+import { formatPercent, formatTaskNumber } from "../utils/format";
 import { getTaskScheduleState, getScheduleBorderClass } from "../utils/schedule";
 import { startTask, completeTask } from "../lib/lifecycle";
 import TaskCardMenu from "./TaskCardMenu";
@@ -12,6 +12,7 @@ import { useUserTimezone } from "../context/UserTimezoneContext";
 import { todayForTimezone } from "../utils/date";
 import EditTaskModal from "./EditTaskModal";
 import ChatButton from "./chat/ChatButton";
+import Tooltip from "./Tooltip";
 
 type Props = {
   task: any;
@@ -23,9 +24,11 @@ type Props = {
   canonicalRiskState?: string | null;
   /** Timezone-aware YYYY-MM-DD "today" for schedule state comparison. */
   asOfDate: string;
+  /** When true, card is visually de-emphasized (completed column). */
+  isCompleted?: boolean;
 };
 
-export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanned, canonicalActual, canonicalRiskState, asOfDate }: Props) {
+export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanned, canonicalActual, canonicalRiskState, asOfDate, isCompleted = false }: Props) {
   const { timezone } = useUserTimezone();
   const [allDeliverablesComplete, setAllDeliverablesComplete] = useState(false);
   const [deliverablesCount, setDeliverablesCount] = useState(0);
@@ -33,7 +36,7 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [normalizedWeight, setNormalizedWeight] = useState<number | null>(null);
-  
+
   // ADDED: Collapse state with localStorage persistence (Issue #4)
   const [isCollapsed, setIsCollapsed] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -68,7 +71,7 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
       const deliverables = data || [];
       const total = deliverables.length;
       const completed = deliverables.filter((d) => d.is_done === true).length;
-      
+
       setDeliverablesCount(total);
       setCompletedCount(completed);
       setAllDeliverablesComplete(total > 0 && total === completed);
@@ -154,7 +157,7 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
     const confirmed = window.confirm(
       `Delete task "${task.title}"? This will also delete all deliverables.`
     );
-    
+
     if (!confirmed) return;
 
     try {
@@ -176,14 +179,6 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
     }
   };
 
-  const initials = task.assigned_to
-    ? task.assigned_to
-        .split(" ")
-        .map((n: string) => n[0])
-        .join("")
-        .toUpperCase()
-    : "—";
-
   const planned = canonicalPlanned ?? 0;
   const actual = canonicalActual ?? 0;
 
@@ -202,6 +197,12 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
   );
   const scheduleBorder = getScheduleBorderClass(scheduleState);
 
+  // Format currency compactly
+  const fmtCost = (val: number | null | undefined) => {
+    if (val == null || val === 0) return "$0";
+    return `$${val.toLocaleString()}`;
+  };
+
   return (
     <>
       {/* BACKDROP - Close menu when clicking outside */}
@@ -213,59 +214,69 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
       )}
 
       <div
-        className={`bg-white shadow rounded-xl p-4 w-[260px] min-w-[260px] hover:shadow-md transition-all relative ${
-          scheduleBorder ? `border-2 ${scheduleBorder}` : ""
-        }`}
+        className={`bg-white shadow-sm rounded-xl p-4 w-full hover:shadow-md transition-all relative cursor-pointer ${
+          scheduleBorder ? `border-2 ${scheduleBorder}` : "border border-slate-200"
+        } ${isCompleted ? "opacity-70" : ""}`}
         onClick={() => !menuOpen && onClick?.(task)}
       >
         {/* HEADER ROW */}
-        <div className="flex items-start justify-between mb-3">
+        <div className="flex items-start justify-between mb-2">
           <div className="flex-1 pr-2">
-            <h3 className="font-semibold text-sm text-slate-800 line-clamp-2">
+            {task.task_number != null && (
+              <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">{formatTaskNumber(task.task_number)}</span>
+            )}
+            <h3 className="font-bold text-sm text-slate-800 leading-snug line-clamp-2">
               {task.title}
             </h3>
             {scheduleState === "DELAYED" && (
-              <span
-                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800 mt-1"
-                title="Delayed (past planned finish)"
-              >
-                Delayed
-              </span>
+              <Tooltip content="Delayed (past planned finish)">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800 mt-1">
+                  Delayed
+                </span>
+              </Tooltip>
             )}
             {scheduleState === "BEHIND" && (
-              <span
-                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 mt-1"
-                title="Behind schedule"
-              >
-                Behind
-              </span>
+              <Tooltip content="Behind schedule">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 mt-1">
+                  Behind
+                </span>
+              </Tooltip>
             )}
           </div>
-          
-          {/* BUTTONS */}
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <ChatButton entityType="task" entityId={task.id} entityName={task.name || undefined} compact />
 
-            {/* Collapse button */}
-            <button
-              onClick={toggleCollapse}
-              className="p-1 rounded-full hover:bg-slate-100 transition-colors"
-              title={isCollapsed ? "Expand" : "Collapse"}
-            >
-              {isCollapsed ? (
-                <ChevronDown size={16} className="text-slate-400" />
-              ) : (
-                <ChevronUp size={16} className="text-slate-400" />
-              )}
-            </button>
+          {/* BUTTONS + WEIGHT */}
+          <div className="flex flex-col items-end flex-shrink-0">
+            <div className="flex items-center gap-0.5">
+              <ChatButton entityType="task" entityId={task.id} entityName={task.name || undefined} compact />
 
-            {/* 3-dot menu button */}
-            <button
-              onClick={handleMenuClick}
-              className="p-1 rounded-full hover:bg-slate-100 transition-colors"
-            >
-              <MoreVertical size={16} className="text-slate-400" />
-            </button>
+              {/* Collapse button */}
+              <Tooltip content={isCollapsed ? "Expand" : "Collapse"}>
+                <button
+                  onClick={toggleCollapse}
+                  className="p-1 rounded-full hover:bg-slate-100 transition-colors"
+                >
+                {isCollapsed ? (
+                  <ChevronDown size={14} className="text-slate-400" />
+                ) : (
+                  <ChevronUp size={14} className="text-slate-400" />
+                )}
+                </button>
+              </Tooltip>
+
+              {/* 3-dot menu button */}
+              <button
+                onClick={handleMenuClick}
+                className="p-1 rounded-full hover:bg-slate-100 transition-colors"
+              >
+                <MoreVertical size={14} className="text-slate-400" />
+              </button>
+            </div>
+            {/* Weight badge */}
+            <Tooltip content={`Weight: ${(weight * 100).toFixed(1)}%${normalizedWeight !== null ? ` (Normalized: ${normalizedWeight.toFixed(1)}%)` : ''}`}>
+              <span className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                W: {(weight * 100).toFixed(0)}%
+              </span>
+            </Tooltip>
           </div>
         </div>
 
@@ -285,7 +296,7 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
                 {!task.actual_start && (
                   <button
                     onClick={handleStartTask}
-                    className="px-2 py-1 text-[10px] font-semibold rounded bg-blue-600 text-white hover:bg-blue-700"
+                    className="px-2.5 py-1 text-[10px] font-semibold rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
                   >
                     Start
                   </button>
@@ -294,7 +305,7 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
                 {task.actual_start && !task.actual_end && allDeliverablesComplete && (
                   <button
                     onClick={handleCompleteTask}
-                    className="px-2 py-1 text-[10px] font-semibold rounded bg-emerald-600 text-white hover:bg-emerald-700"
+                    className="px-2.5 py-1 text-[10px] font-semibold rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
                   >
                     Complete
                   </button>
@@ -309,93 +320,72 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
               </div>
             )}
 
-            {/* Weight */}
-            <div className="mb-3 text-[11px] text-slate-500">
-              Weight:{" "}
-              <span className="font-semibold text-slate-700">
-                {(weight * 100).toFixed(1)}%
-              </span>
-              {normalizedWeight !== null && (
-                <span className="text-slate-400 ml-1">
-                  (Normalized: {normalizedWeight.toFixed(1)}%)
-                </span>
-              )}
-            </div>
-
-            {/* Planned Progress */}
-            <div className="mb-3">
-              <p className="text-xs text-gray-600">Planned Progress</p>
-              <div className="w-full bg-gray-200 h-2 rounded-full mt-1">
-                <div
-                  className="h-2 rounded-full bg-blue-500 transition-all"
-                  style={{ width: `${Math.max(0, Math.min(100, planned))}%` }}
-                />
+            {/* Combined Progress Section */}
+            <div className="mb-3 space-y-2">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-bold text-slate-900 uppercase tracking-wide">Planned</span>
+                  <span className="text-[11px] font-semibold text-blue-600">{formatPercent(planned)}</span>
+                </div>
+                <div className="w-full bg-slate-100 h-1.5 rounded-full">
+                  <div
+                    className="h-1.5 rounded-full bg-blue-500 transition-all"
+                    style={{ width: `${Math.max(0, Math.min(100, planned))}%` }}
+                  />
+                </div>
               </div>
-              <p className="text-[11px] text-gray-500 mt-1">{formatPercent(planned)}</p>
-            </div>
-
-            {/* Actual Progress */}
-            <div className="mb-3">
-              <p className="text-xs text-gray-600">Actual Progress</p>
-              <div className="w-full bg-gray-200 h-2 rounded-full mt-1">
-                <div
-                  className="h-2 rounded-full bg-green-500 transition-all"
-                  style={{ width: `${Math.max(0, Math.min(100, actual))}%` }}
-                />
-              </div>
-              <p className="text-[11px] text-gray-500 mt-1">{formatPercent(actual)}</p>
-            </div>
-
-            {/* Planned Dates */}
-            <div className="mt-1 text-xs text-gray-600 space-y-1">
-              <div className="flex justify-between">
-                <span>Planned Start:</span>
-                <span className="font-medium">{plannedStart}</span>
-              </div>
-
-              <div className="flex justify-between">
-                <span>Planned End:</span>
-                <span className="font-medium">{plannedEnd}</span>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-bold text-slate-900 uppercase tracking-wide">Actual</span>
+                  <span className="text-[11px] font-semibold text-emerald-600">{formatPercent(actual)}</span>
+                </div>
+                <div className="w-full bg-slate-100 h-1.5 rounded-full">
+                  <div
+                    className="h-1.5 rounded-full bg-emerald-500 transition-all"
+                    style={{ width: `${Math.max(0, Math.min(100, actual))}%` }}
+                  />
+                </div>
               </div>
             </div>
 
-            {/* Actual Dates */}
-            <div className="mt-2 text-xs text-gray-600 space-y-1 pt-2 border-t border-gray-100">
+            {/* Compact info grid */}
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] mb-3 pt-2 border-t border-slate-100">
               <div className="flex justify-between">
-                <span>Actual Start:</span>
-                <span className="font-medium">{actualStart}</span>
+                <span className="font-bold text-slate-900">Plan Start</span>
+                <span className="font-medium text-slate-600">{plannedStart}</span>
               </div>
-
               <div className="flex justify-between">
-                <span>Actual End:</span>
-                <span className="font-medium">{actualEnd}</span>
+                <span className="font-bold text-slate-900">Plan End</span>
+                <span className="font-medium text-slate-600">{plannedEnd}</span>
               </div>
-            </div>
-
-            {/* Costs */}
-            <div className="mt-3 text-xs text-gray-600">
               <div className="flex justify-between">
-                <span>Budget</span>
-                <span className="text-gray-800 font-medium">
-                  ${task.budgeted_cost?.toLocaleString() ?? 0}
-                </span>
+                <span className="font-bold text-slate-900">Actual Start</span>
+                <span className="font-medium text-slate-600">{actualStart}</span>
               </div>
-
               <div className="flex justify-between">
-                <span>Actual</span>
-                <span className="text-green-600 font-medium">
-                  ${task.actual_cost?.toLocaleString() ?? 0}
-                </span>
+                <span className="font-bold text-slate-900">Actual End</span>
+                <span className="font-medium text-slate-600">{actualEnd}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-bold text-slate-900">Budget</span>
+                <span className="font-medium text-slate-600">{fmtCost(task.budgeted_cost)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-bold text-slate-900">Actual</span>
+                <span className={`font-medium ${
+                  task.actual_cost && task.budgeted_cost && task.actual_cost > task.budgeted_cost
+                    ? "text-amber-600" : "text-emerald-600"
+                }`}>{fmtCost(task.actual_cost)}</span>
               </div>
             </div>
 
             {/* VIEW DELIVERABLES BUTTON */}
-            <div className="mt-4 pt-3 border-t border-gray-200">
+            <div className="mt-3 pt-2 border-t border-slate-100">
               <button
                 onClick={handleViewDeliverables}
-                className="w-full px-3 py-2 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                className="w-full px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 transition-colors"
               >
-                📋 View Deliverables & Files
+                View Deliverables ({completedCount}/{deliverablesCount})
               </button>
             </div>
           </>

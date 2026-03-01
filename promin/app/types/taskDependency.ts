@@ -10,6 +10,7 @@ export interface TaskDependency {
 
 export interface TaskWithDependencies {
   id: number;
+  task_number: number;
   title: string;
   milestone_id: number;
   status?: string;
@@ -65,4 +66,6 @@ export interface TaskNodeData {
   canonicalRiskState?: string | null;
   /** Timezone-aware YYYY-MM-DD "today" for schedule state comparison. */
   asOfDate: string;
+  /** Callback to open global chat with a scoped question about this task. */
+  onAskChat?: (message: string) => void;
 }

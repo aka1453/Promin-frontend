@@ -197,7 +197,10 @@ export default function MilestoneCard({
               : "";
 
             return (
-              <div className={`mb-4 rounded-lg p-3 border ${bgColor}`} title={hoverText}>
+              <div className={`mb-4 rounded-lg p-3 border ${bgColor}`}>
+                {hoverText && (
+                  <div className="text-xs font-medium text-slate-700 mb-2">{hoverText}</div>
+                )}
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                   <div>
                     <div className="text-slate-500 font-medium">Planned Start</div>
@@ -229,8 +232,18 @@ export default function MilestoneCard({
             </div>
             <div>
               <div className="text-slate-500 font-medium">Actual Cost</div>
-              <div className="text-slate-900 mt-0.5 font-semibold">
-                ${((milestone.actual_cost ?? 0)).toLocaleString()}
+              <div className={`mt-0.5 font-semibold ${
+                milestone.actual_cost && milestone.budgeted_cost && milestone.budgeted_cost > 0
+                  ? milestone.actual_cost > milestone.budgeted_cost
+                    ? "text-amber-600"
+                    : "text-emerald-600"
+                  : milestone.actual_cost
+                    ? "text-slate-900"
+                    : "text-slate-400"
+              }`}>
+                {milestone.actual_cost
+                  ? `$${milestone.actual_cost.toLocaleString()}`
+                  : "—"}
               </div>
             </div>
           </div>

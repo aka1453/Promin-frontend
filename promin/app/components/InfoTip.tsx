@@ -35,8 +35,8 @@ export default function InfoTip({ tip }: InfoTipProps) {
         <Info size={16} />
       </span>
       {open && (
-        <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 w-64 bg-white rounded-lg shadow-lg border border-slate-200 p-3 text-sm text-slate-600 leading-relaxed">
-          <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-l border-t border-slate-200 rotate-45" />
+        <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 w-64 bg-slate-800 text-white rounded-lg shadow-lg p-3 text-sm leading-relaxed">
+          <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-800 rotate-45" />
           {tip}
         </div>
       )}

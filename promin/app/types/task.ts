@@ -5,6 +5,7 @@ export type HealthStatus = "OK" | "WARN" | "RISK";
 export type Task = {
   id: number;
   milestone_id: number;
+  task_number: number;
 
   title: string;
   description?: string | null;

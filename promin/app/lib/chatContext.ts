@@ -52,6 +52,7 @@ export function createGroundingContext(
 /** Critical path task info for enriched context. */
 type CriticalPathTask = {
   id: number;
+  task_number: number;
   title: string;
   milestone_id: number;
   is_critical: boolean;
@@ -62,6 +63,11 @@ type CriticalPathTask = {
   actual_end: string | null;
   status: string;
 };
+
+/** Format task label for context: T-0001 "Title" */
+function taskLabel(t: { task_number: number; title: string }): string {
+  return `T-${String(t.task_number).padStart(4, "0")} "${t.title}"`;
+}
 
 /**
  * Build a structured text document from the grounding data.
@@ -74,7 +80,7 @@ export function buildContextDocument(
   const lines: string[] = [];
 
   lines.push(
-    `# Entity: ${ctx.entityName} (${ctx.explainData.entity_type} #${ctx.explainData.entity_id})`,
+    `# Entity: ${ctx.entityName} (${ctx.explainData.entity_type})`,
   );
   lines.push(`## Status: ${ctx.explainData.status} (as of ${ctx.explainData.asof})`);
   lines.push(`## Summary: ${ctx.entitySummary}`);
@@ -111,7 +117,7 @@ export function buildContextDocument(
         const status = t.actual_end ? "completed" : t.actual_start ? "in_progress" : "not_started";
         const float = t.cpm_total_float_days != null ? `float=${t.cpm_total_float_days}d` : "";
         lines.push(
-          `- task "${t.title}" (id:${t.id}): ${status} planned=${t.planned_start || "?"}→${t.planned_end || "?"} ${float}`,
+          `- task ${taskLabel(t)}: ${status} planned=${t.planned_start || "?"}→${t.planned_end || "?"} ${float}`,
         );
       }
       lines.push("");
@@ -120,7 +126,7 @@ export function buildContextDocument(
       const nextCritical = [...inProgressCritical, ...nonStartedCritical][0];
       if (nextCritical) {
         lines.push(
-          `## Next Critical Task: "${nextCritical.title}" (id:${nextCritical.id}) — ${nextCritical.actual_start ? "in progress" : "not started"}, planned ${nextCritical.planned_start || "?"}→${nextCritical.planned_end || "?"}`,
+          `## Next Critical Task: ${taskLabel(nextCritical)} — ${nextCritical.actual_start ? "in progress" : "not started"}, planned ${nextCritical.planned_start || "?"}→${nextCritical.planned_end || "?"}`,
         );
         lines.push("");
       }
@@ -134,7 +140,23 @@ export function buildContextDocument(
       lines.push("## Near-Critical Tasks (float <= 3 days):");
       for (const t of nearCritical) {
         lines.push(
-          `- task "${t.title}" (id:${t.id}): float=${t.cpm_total_float_days}d planned=${t.planned_start || "?"}→${t.planned_end || "?"}`,
+          `- task ${taskLabel(t)}: float=${t.cpm_total_float_days}d planned=${t.planned_start || "?"}→${t.planned_end || "?"}`,
+        );
+      }
+      lines.push("");
+    }
+  }
+
+  // All tasks schedule section — gives the LLM date visibility for every task
+  if (criticalPathTasks && criticalPathTasks.length > 0) {
+    const incomplete = criticalPathTasks.filter((t) => t.status !== "completed");
+    if (incomplete.length > 0) {
+      lines.push("## All Incomplete Tasks (by planned start):");
+      for (const t of incomplete) {
+        const statusLabel = t.actual_start ? "in_progress" : "not_started";
+        const crit = t.is_critical ? " [CRITICAL]" : "";
+        lines.push(
+          `- task ${taskLabel(t)}: ${statusLabel} planned=${t.planned_start || "?"}→${t.planned_end || "?"}${crit}`,
         );
       }
       lines.push("");
@@ -160,7 +182,7 @@ export function buildContextDocument(
     const planned = (Number(row.planned) * 100).toFixed(1);
     const actual = (Number(row.actual) * 100).toFixed(1);
     lines.push(
-      `${indent}- ${row.entity_type} "${row.entity_name}" (id:${row.entity_id}): planned=${planned}% actual=${actual}% risk=${row.risk_state}`,
+      `${indent}- ${row.entity_type} "${row.entity_name}": planned=${planned}% actual=${actual}% risk=${row.risk_state}`,
     );
   }
 

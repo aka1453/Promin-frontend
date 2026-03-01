@@ -8,6 +8,7 @@ import { useUserTimezone } from "../../context/UserTimezoneContext";
 import { todayForTimezone } from "../../utils/date";
 import { buildInsightExplanation } from "../../lib/insightExplanation";
 import InfoTip from "../InfoTip";
+import Tooltip from "../Tooltip";
 import type { InsightRow, InsightType, InsightSeverity } from "../../types/insights";
 import type { HierarchyRow } from "../../types/progress";
 
@@ -220,7 +221,6 @@ function InsightExplanation({
               onClick={handleAiRefine}
               disabled={aiLoading}
               className="mt-1 inline-flex items-center gap-1 text-[10px] text-slate-400 hover:text-blue-500 transition-colors disabled:opacity-50"
-              title="Refine with AI"
             >
               <Sparkles size={10} />
               {aiLoading ? "Refining..." : "Refine with AI"}

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import TaskFlowBoard from "./TaskFlowBoard";
 import TaskFlowDiagram from "./TaskFlowDiagram";
+import AddTaskButton from "./AddTaskButton";
 
 type Props = {
   milestoneId: number;
@@ -24,6 +25,13 @@ export default function TaskViewWrapper({
   taskProgressMap,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleTaskCreated = () => {
+    setRefreshKey((k) => k + 1);
+    onMilestoneChanged?.();
+    onMilestoneUpdated?.();
+  };
 
   return (
     <div className="space-y-4">
@@ -69,16 +77,20 @@ export default function TaskViewWrapper({
           </button>
         </div>
 
-        {/* Info badge */}
-        <div className="text-xs text-gray-500 bg-gray-50 px-3 py-1 rounded-full">
-          {viewMode === "kanban" && "Drag tasks between columns"}
-          {viewMode === "diagram" && "Drag to arrange • Connect for dependencies"}
-        </div>
+        {viewMode === "kanban" && canEdit && !isReadOnly && (
+          <AddTaskButton milestoneId={milestoneId} onCreated={handleTaskCreated} />
+        )}
+        {viewMode === "diagram" && (
+          <div className="text-xs text-gray-500 bg-gray-50 px-3 py-1 rounded-full">
+            Drag to arrange • Connect for dependencies
+          </div>
+        )}
       </div>
 
       {/* Render selected view */}
       {viewMode === "kanban" && (
         <TaskFlowBoard
+          key={refreshKey}
           milestoneId={milestoneId}
           canEdit={canEdit}
           isReadOnly={isReadOnly}

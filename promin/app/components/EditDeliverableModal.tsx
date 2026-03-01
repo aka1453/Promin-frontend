@@ -4,7 +4,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useToast } from "./ToastProvider";
-import { recalculateTaskFromDeliverables } from "../lib/dependencyScheduling";
 
 type Props = {
   deliverableId: number;
@@ -107,10 +106,7 @@ export default function EditDeliverableModal({
       return;
     }
 
-    // Recalculate task dates based on updated deliverable
-    await recalculateTaskFromDeliverables(taskId);
-
-    pushToast("Deliverable updated - task dates recalculated", "success");
+    pushToast("Deliverable updated", "success");
     onSuccess();
   };
 

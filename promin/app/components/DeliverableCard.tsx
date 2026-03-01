@@ -6,6 +6,7 @@ import DeliverableInlineUploader from "./DeliverableInlineUploader";
 import EditDeliverableModal from "./EditDeliverableModal";
 import DeliverableFileSection from "./DeliverableFileSection";
 import { useToast } from "./ToastProvider";
+import Tooltip from "./Tooltip";
 
 type Props = {
   deliverable: any;
@@ -230,18 +231,25 @@ export default function DeliverableCard({
       >
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-start gap-2 flex-1">
-            <input
-              type="checkbox"
-              checked={!!localDeliverable.is_done}
-              disabled={readOnly || updating || (!taskActualStart && !localDeliverable.is_done)}
-              onChange={(e) => toggleDone(e.target.checked)}
-              className="mt-1 h-4 w-4 rounded border-slate-300"
-              title={
-                !taskActualStart && !localDeliverable.is_done
-                  ? "Start the task before completing deliverables"
-                  : ""
-              }
-            />
+            {!taskActualStart && !localDeliverable.is_done ? (
+              <Tooltip content="Start the task before completing deliverables">
+                <input
+                  type="checkbox"
+                  checked={false}
+                  disabled
+                  readOnly
+                  className="mt-1 h-4 w-4 rounded border-slate-300"
+                />
+              </Tooltip>
+            ) : (
+              <input
+                type="checkbox"
+                checked={!!localDeliverable.is_done}
+                disabled={readOnly || updating}
+                onChange={(e) => toggleDone(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-slate-300"
+              />
+            )}
 
             <div className="flex-1">
               <p className="font-semibold leading-tight text-base">
@@ -256,12 +264,11 @@ export default function DeliverableCard({
 
               {/* Dependency Badge */}
               <div className="mt-2">
-                <span 
-                  className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${dependencyInfo.color}`}
-                  title={dependencyInfo.description}
-                >
-                  {dependencyInfo.label}
-                </span>
+                <Tooltip content={dependencyInfo.description}>
+                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${dependencyInfo.color}`}>
+                    {dependencyInfo.label}
+                  </span>
+                </Tooltip>
               </div>
             </div>
           </div>

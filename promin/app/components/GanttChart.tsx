@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import type { Milestone } from "../types/milestone";
 import type { Task } from "../types/task";
+import Tooltip from "./Tooltip";
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -251,15 +252,16 @@ const LeftRow = React.memo(function LeftRow({
           className="inline-block w-2 h-2 rounded-full flex-shrink-0 mr-1.5"
           style={{ backgroundColor: row.kind === "project" ? PROJECT_COLOR.actual : actualColor(row.milestoneIndex) }}
         />
-        <span
-          className={`truncate text-xs ${
-            bold ? "font-semibold text-slate-800" : "text-slate-600"
-          }`}
-          title={`${row.number} ${row.label}`}
-        >
-          <span className="text-slate-400 mr-1 font-normal">{row.number}</span>
-          {row.label}
-        </span>
+        <Tooltip content={`${row.number} ${row.label}`}>
+          <span
+            className={`truncate text-xs ${
+              bold ? "font-semibold text-slate-800" : "text-slate-600"
+            }`}
+          >
+            <span className="text-slate-400 mr-1 font-normal">{row.number}</span>
+            {row.label}
+          </span>
+        </Tooltip>
       </div>
 
       {/* Duration */}

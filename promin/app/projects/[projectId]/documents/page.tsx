@@ -8,13 +8,19 @@ import {
   useProjectRole,
 } from "../../../context/ProjectRoleContext";
 import { useToast } from "../../../components/ToastProvider";
-import { ArrowLeft, Upload, Download, FileText } from "lucide-react";
+import { Upload, Download, FileText } from "lucide-react";
+import ProjectHeader from "../../../components/ProjectHeader";
+import { ChatProvider } from "../../../context/ChatContext";
+import ChatDrawer from "../../../components/chat/ChatDrawer";
 import type { ProjectDocument } from "../../../types/document";
+import Tooltip from "../../../components/Tooltip";
 
 type Project = {
   id: number;
   name: string | null;
   status?: string | null;
+  budgeted_cost?: number | null;
+  actual_cost?: number | null;
 };
 
 function formatFileSize(bytes: number): string {
@@ -52,7 +58,7 @@ function DocumentsPageContent({ projectId }: { projectId: number }) {
   const fetchProject = useCallback(async () => {
     const { data } = await supabase
       .from("projects")
-      .select("id, name, status")
+      .select("id, name, status, budgeted_cost, actual_cost")
       .eq("id", projectId)
       .single();
     setProject(data as Project | null);
@@ -224,57 +230,40 @@ function DocumentsPageContent({ projectId }: { projectId: number }) {
         </div>
       )}
 
-      {/* HEADER */}
-      <div className="bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => router.push(`/projects/${projectId}`)}
-                className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800 transition-colors"
-              >
-                <ArrowLeft size={18} />
-                Back
-              </button>
-              <h1 className="text-2xl font-bold text-slate-800">
-                {project.name || "Untitled Project"}
-              </h1>
-              <span className="text-slate-400 text-lg font-light">/</span>
-              <h2 className="text-xl font-semibold text-slate-600">
-                Documents
-              </h2>
-            </div>
-
-            {/* Upload button */}
-            {canEdit && !isArchived && (
-              <label
-                className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors cursor-pointer ${
-                  uploading
-                    ? "bg-slate-200 text-slate-400 cursor-not-allowed"
-                    : "bg-blue-600 text-white hover:bg-blue-700"
-                }`}
-              >
-                <Upload size={18} />
-                {uploadProgress || (uploading ? "Uploading..." : "Upload Documents")}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  onChange={handleUpload}
-                  disabled={uploading}
-                  className="hidden"
-                />
-              </label>
-            )}
-          </div>
-        </div>
-      </div>
+      <ProjectHeader
+        projectId={projectId}
+        project={project}
+        canEdit={canEdit}
+      />
 
       {/* CONTENT */}
       <div
         className="container mx-auto px-4 sm:px-6 lg:px-8 py-8"
         style={{ maxWidth: "1400px" }}
       >
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold text-slate-800">Documents</h2>
+          {canEdit && !isArchived && (
+            <label
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors cursor-pointer ${
+                uploading
+                  ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                  : "bg-blue-600 text-white hover:bg-blue-700"
+              }`}
+            >
+              <Upload size={18} />
+              {uploadProgress || (uploading ? "Uploading..." : "Upload Documents")}
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                onChange={handleUpload}
+                disabled={uploading}
+                className="hidden"
+              />
+            </label>
+          )}
+        </div>
         {isArchived && (
           <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             This project is archived. Document uploads are disabled.
@@ -367,12 +356,11 @@ function DocumentsPageContent({ projectId }: { projectId: number }) {
                       {formatDate(doc.created_at)}
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className="text-xs text-slate-400 font-mono truncate max-w-[100px] inline-block"
-                        title={doc.content_hash}
-                      >
-                        {doc.content_hash.slice(0, 12)}...
-                      </span>
+                      <Tooltip content={doc.content_hash}>
+                        <span className="text-xs text-slate-400 font-mono truncate max-w-[100px] inline-block">
+                          {doc.content_hash.slice(0, 12)}...
+                        </span>
+                      </Tooltip>
                     </td>
                     <td className="px-6 py-3 text-right">
                       <button
@@ -415,7 +403,10 @@ export default function DocumentsPage() {
 
   return (
     <ProjectRoleProvider projectId={projectId}>
-      <DocumentsPageContent projectId={projectId} />
+      <ChatProvider projectId={projectId}>
+        <DocumentsPageContent projectId={projectId} />
+        <ChatDrawer />
+      </ChatProvider>
     </ProjectRoleProvider>
   );
 }

@@ -22,6 +22,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { reorderProjects } from "../lib/reorderProjects";
 import { useProjects } from "../context/ProjectsContext";
 import { useUserTimezone } from "../context/UserTimezoneContext";
+import Tooltip from "./Tooltip";
 
 // Define the shape of a project
 type Project = {
@@ -75,9 +76,10 @@ function SortableProjectItem({
           opacity-70
           hover:opacity-100
         "
-        title="Drag to reorder"
       >
-        ☰
+        <Tooltip content="Drag to reorder">
+          <span>☰</span>
+        </Tooltip>
       </span>
 
       {/* PROJECT LINK */}

@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { supabase } from "../../../lib/supabaseClient";
 import { ProjectRoleProvider } from "../../../context/ProjectRoleContext";
 import { useUserTimezone } from "../../../context/UserTimezoneContext";
 import { todayForTimezone } from "../../../utils/date";
-import { ArrowLeft } from "lucide-react";
 import GanttChart from "../../../components/GanttChart";
+import ProjectHeader from "../../../components/ProjectHeader";
+import { ChatProvider } from "../../../context/ChatContext";
+import ChatDrawer from "../../../components/chat/ChatDrawer";
 import type { Milestone } from "../../../types/milestone";
 import type { Task } from "../../../types/task";
 import type { HierarchyRow } from "../../../types/progress";
@@ -19,6 +21,9 @@ import { toEntityProgress } from "../../../types/progress";
 type Project = {
   id: number;
   name: string | null;
+  budgeted_cost?: number | null;
+  actual_cost?: number | null;
+  status?: string | null;
 };
 
 type GanttDeliverable = {
@@ -34,7 +39,6 @@ type GanttDeliverable = {
 // PAGE CONTENT
 // ─────────────────────────────────────────────
 function GanttPageContent({ projectId }: { projectId: number }) {
-  const router = useRouter();
   const { timezone, userToday } = useUserTimezone();
 
   const [project, setProject] = useState<Project | null>(null);
@@ -61,7 +65,7 @@ function GanttPageContent({ projectId }: { projectId: number }) {
       // Project
       const { data: proj } = await supabase
         .from("projects")
-        .select("id, name")
+        .select("id, name, budgeted_cost, actual_cost, status")
         .eq("id", projectId)
         .single();
       if (cancelled) return;
@@ -141,25 +145,10 @@ function GanttPageContent({ projectId }: { projectId: number }) {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* HEADER */}
-      <div className="bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => router.push(`/projects/${projectId}`)}
-                className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800 transition-colors"
-              >
-                <ArrowLeft size={18} />
-                Back
-              </button>
-              <h1 className="text-2xl font-bold text-slate-800">
-                {project.name || "Untitled Project"} — Gantt
-              </h1>
-            </div>
-          </div>
-        </div>
-      </div>
+      <ProjectHeader
+        projectId={projectId}
+        project={project}
+      />
 
       {/* GANTT CHART */}
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -198,7 +187,10 @@ export default function GanttPage() {
 
   return (
     <ProjectRoleProvider projectId={projectId}>
-      <GanttPageContent projectId={projectId} />
+      <ChatProvider projectId={projectId}>
+        <GanttPageContent projectId={projectId} />
+        <ChatDrawer />
+      </ChatProvider>
     </ProjectRoleProvider>
   );
 }

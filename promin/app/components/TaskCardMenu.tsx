@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import EditTaskModal from "./EditTaskModal";
+import Tooltip from "./Tooltip";
 
 type Props = {
   task: any;
@@ -37,22 +38,23 @@ export default function TaskCardMenu({ task, onTaskUpdated }: Props) {
 
   return (
     <div className="relative" ref={menuRef}>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setMenuOpen(!menuOpen);
-        }}
-        className="p-1 hover:bg-gray-100 rounded"
-        title="Task options"
-      >
-        <svg
-          className="w-4 h-4 text-gray-600"
-          fill="currentColor"
-          viewBox="0 0 20 20"
+      <Tooltip content="Task options">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setMenuOpen(!menuOpen);
+          }}
+          className="p-1 hover:bg-gray-100 rounded"
         >
-          <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-        </svg>
-      </button>
+          <svg
+            className="w-4 h-4 text-gray-600"
+            fill="currentColor"
+            viewBox="0 0 20 20"
+          >
+            <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+          </svg>
+        </button>
+      </Tooltip>
 
       {menuOpen && (
         <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-10 min-w-[120px]">

@@ -4,11 +4,11 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 import TaskCard from "./TaskCard";
-import AddTaskButton from "./AddTaskButton";
 import TaskDetailsDrawer from "./TaskDetailsDrawer";
 import { useToast } from "./ToastProvider";
 import { useUserTimezone } from "../context/UserTimezoneContext";
 import { todayForTimezone } from "../utils/date";
+import { Circle, Loader2, CheckCircle2 } from "lucide-react";
 
 type Props = {
   milestoneId: number;
@@ -91,19 +91,17 @@ export default function TaskFlowBoard({
 
   return (
     <>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 min-h-[400px]">
-        {/* Pending Column */}
-        <div className="bg-gray-50 rounded-lg p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-700">
-              Pending ({pendingTasks.length})
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 min-h-[400px]">
+        {/* Not Started Column */}
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-4">
+            <Circle size={16} className="text-slate-400" />
+            <h3 className="font-semibold text-slate-600 text-sm">
+              Not Started
             </h3>
-            {canEdit && !isReadOnly && (
-              <AddTaskButton
-                milestoneId={milestoneId}
-                onCreated={handleTaskCreated}
-              />
-            )}
+            <span className="text-xs font-medium text-slate-400 bg-slate-200 rounded-full px-2 py-0.5">
+              {pendingTasks.length}
+            </span>
           </div>
           <div className="space-y-3 max-h-[600px] overflow-y-auto">
             {pendingTasks.map((task) => (
@@ -119,18 +117,28 @@ export default function TaskFlowBoard({
               />
             ))}
             {pendingTasks.length === 0 && (
-              <p className="text-gray-400 text-sm text-center py-8">
-                No pending tasks
-              </p>
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <Circle size={32} className="text-slate-200 mb-3" />
+                <p className="text-slate-400 text-sm font-medium">No tasks yet</p>
+                <p className="text-slate-300 text-xs mt-1">
+                  {canEdit ? "Click + to add a task" : "Tasks will appear here"}
+                </p>
+              </div>
             )}
           </div>
         </div>
 
         {/* In Progress Column */}
-        <div className="bg-blue-50 rounded-lg p-4">
-          <h3 className="font-semibold text-blue-700 mb-4">
-            In Progress ({inProgressTasks.length})
-          </h3>
+        <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-4">
+            <Loader2 size={16} className="text-blue-500" />
+            <h3 className="font-semibold text-blue-700 text-sm">
+              In Progress
+            </h3>
+            <span className="text-xs font-medium text-blue-500 bg-blue-100 rounded-full px-2 py-0.5">
+              {inProgressTasks.length}
+            </span>
+          </div>
           <div className="space-y-3 max-h-[600px] overflow-y-auto">
             {inProgressTasks.map((task) => (
               <TaskCard
@@ -145,18 +153,26 @@ export default function TaskFlowBoard({
               />
             ))}
             {inProgressTasks.length === 0 && (
-              <p className="text-gray-400 text-sm text-center py-8">
-                No tasks in progress
-              </p>
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <Loader2 size={32} className="text-blue-200 mb-3" />
+                <p className="text-blue-400 text-sm font-medium">No active tasks</p>
+                <p className="text-blue-300 text-xs mt-1">Start a task to see it here</p>
+              </div>
             )}
           </div>
         </div>
 
         {/* Completed Column */}
-        <div className="bg-green-50 rounded-lg p-4">
-          <h3 className="font-semibold text-green-700 mb-4">
-            Completed ({completedTasks.length})
-          </h3>
+        <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-4">
+            <CheckCircle2 size={16} className="text-emerald-500" />
+            <h3 className="font-semibold text-emerald-700 text-sm">
+              Completed
+            </h3>
+            <span className="text-xs font-medium text-emerald-500 bg-emerald-100 rounded-full px-2 py-0.5">
+              {completedTasks.length}
+            </span>
+          </div>
           <div className="space-y-3 max-h-[600px] overflow-y-auto">
             {completedTasks.map((task) => (
               <TaskCard
@@ -168,12 +184,15 @@ export default function TaskFlowBoard({
                 canonicalActual={taskProgressMap?.[String(task.id)]?.actual ?? null}
                 canonicalRiskState={taskProgressMap?.[String(task.id)]?.risk_state ?? null}
                 asOfDate={asOfDate}
+                isCompleted
               />
             ))}
             {completedTasks.length === 0 && (
-              <p className="text-gray-400 text-sm text-center py-8">
-                No completed tasks
-              </p>
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <CheckCircle2 size={32} className="text-emerald-200 mb-3" />
+                <p className="text-emerald-400 text-sm font-medium">No completed tasks</p>
+                <p className="text-emerald-300 text-xs mt-1">Finished tasks appear here</p>
+              </div>
             )}
           </div>
         </div>

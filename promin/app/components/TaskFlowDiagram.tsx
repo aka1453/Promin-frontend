@@ -20,6 +20,7 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { supabase } from "../lib/supabaseClient";
+import Tooltip from "./Tooltip";
 import { queryTasksOrdered } from "../lib/queryTasks";
 import {
   getTaskDependencies,
@@ -35,6 +36,7 @@ import TaskNode from "./TaskNode";
 import TaskDetailsDrawer from "./TaskDetailsDrawer";
 import AddTaskButton from "./AddTaskButton";
 import { useUserTimezone } from "../context/UserTimezoneContext";
+import { useChat } from "../context/ChatContext";
 import { todayForTimezone } from "../utils/date";
 
 const nodeTypes: NodeTypes = {
@@ -102,6 +104,7 @@ type Props = {
 
 export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props) {
   const { timezone } = useUserTimezone();
+  const { openChatWithMessage } = useChat();
   const asOfDate = useMemo(() => todayForTimezone(timezone), [timezone]);
   const [tasks, setTasks] = useState<TaskWithDependencies[]>([]);
   const [dependencies, setDependencies] = useState<TaskDependency[]>([]);
@@ -319,6 +322,7 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
         canonicalActual: taskProgressMap?.[String(task.id)]?.actual ?? null,
         canonicalRiskState: taskProgressMap?.[String(task.id)]?.risk_state ?? null,
         asOfDate,
+        onAskChat: openChatWithMessage,
       },
     }));
 
@@ -641,34 +645,32 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
             <div className="bg-white rounded-lg shadow-lg p-2 space-y-2">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-semibold text-gray-700">Controls</span>
-                <button
-                  onClick={() => setShowControls(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                  title="Minimize controls"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                  </svg>
-                </button>
+                <Tooltip content="Minimize controls">
+                  <button
+                    onClick={() => setShowControls(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                    </svg>
+                  </button>
+                </Tooltip>
               </div>
               <button
                 onClick={handleAutoLayout}
                 className="w-full px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
-                title="Arrange tasks in a grid"
               >
                 Auto Layout
               </button>
               <button
                 onClick={handleExpandAll}
                 className="w-full px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
-                title="Expand all tasks"
               >
                 Expand All
               </button>
               <button
                 onClick={handleCollapseAll}
                 className="w-full px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
-                title="Collapse all tasks"
               >
                 Collapse All
               </button>
@@ -688,15 +690,16 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900 max-w-[220px]">
               <div className="flex items-start justify-between mb-1">
                 <p className="font-semibold">💡 Tips:</p>
-                <button
-                  onClick={() => setShowTips(false)}
-                  className="text-blue-400 hover:text-blue-600 -mt-1 -mr-1"
-                  title="Close tips"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                <Tooltip content="Close tips">
+                  <button
+                    onClick={() => setShowTips(false)}
+                    className="text-blue-400 hover:text-blue-600 -mt-1 -mr-1"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </Tooltip>
               </div>
               <ul className="space-y-1 list-disc list-inside">
                 <li>Drag tasks to reposition</li>

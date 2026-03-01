@@ -7,16 +7,15 @@ import MilestoneList from "../../components/MilestoneList";
 import AddMilestoneButton from "../../components/AddMilestoneButton";
 import { ProjectRoleProvider, useProjectRole } from "../../context/ProjectRoleContext";
 import EditMilestoneModal from "../../components/EditMilestoneModal";
-import ProjectSettingsModal from "../../components/ProjectSettingsModal";
 import ActivityFeed from "../../components/ActivityFeed";
 import type { Milestone } from "../../types/milestone";
-import CreateBaselineDialog from "../../components/CreateBaselineDialog";
-import { ArrowLeft, Settings, Clock, BarChart2, GanttChartSquare, Bookmark, FileText, Sparkles } from "lucide-react";
+import ProjectHeader from "../../components/ProjectHeader";
 import { useUserTimezone } from "../../context/UserTimezoneContext";
 import { todayForTimezone } from "../../utils/date";
 import type { EntityProgress, HierarchyRow, ForecastResult } from "../../types/progress";
 import { toEntityProgress } from "../../types/progress";
-import ChatButton from "../../components/chat/ChatButton";
+import { ChatProvider } from "../../context/ChatContext";
+import ChatDrawer from "../../components/chat/ChatDrawer";
 import { formatPercent } from "../../utils/format";
 import InfoTip from "../../components/InfoTip";
 import { completeProject } from "../../lib/lifecycle";
@@ -50,9 +49,6 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
   const [error, setError] = useState<string | null>(null);
 
   const [editingMilestoneId, setEditingMilestoneId] = useState<number | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [baselineDialogOpen, setBaselineDialogOpen] = useState(false);
-
   // Activity sidebar state
   const [showActivitySidebar, setShowActivitySidebar] = useState(false);
 
@@ -264,15 +260,6 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
     }
   }
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount);
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-slate-50">
@@ -294,127 +281,16 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* HEADER */}
-      <div className="bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => router.push("/")}
-                className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800 transition-colors"
-              >
-                <ArrowLeft size={18} />
-                Back
-              </button>
-              <h1 className="text-2xl font-bold text-slate-800">
-                {project?.name || "Untitled Project"}
-              </h1>
-            </div>
-
-            <div className="flex items-center gap-4">
-              {/* Budgeted Cost */}
-              <div className="bg-slate-50 rounded-xl px-5 py-3 border border-slate-200">
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
-                  Budgeted Cost
-                </p>
-                <p className="text-xl font-bold text-slate-800 mt-0.5">
-                  {formatCurrency(project?.budgeted_cost ?? 0)}
-                </p>
-              </div>
-
-              {/* Actual Cost */}
-              {(() => {
-                const budget = project?.budgeted_cost ?? 0;
-                const actual = project?.actual_cost ?? 0;
-                const hasBudget = budget > 0;
-                const isOver = hasBudget && actual > budget;
-                const bg = !hasBudget ? "bg-slate-50" : isOver ? "bg-red-50" : "bg-emerald-50";
-                const border = !hasBudget ? "border-slate-200" : isOver ? "border-red-200" : "border-emerald-200";
-                const labelColor = !hasBudget ? "text-slate-500" : isOver ? "text-red-600" : "text-emerald-600";
-                const valueColor = !hasBudget ? "text-slate-800" : isOver ? "text-red-700" : "text-emerald-700";
-                return (
-                  <div className={`${bg} rounded-xl px-5 py-3 border ${border}`}>
-                    <p className={`text-xs font-medium ${labelColor} uppercase tracking-wide`}>
-                      Actual Cost
-                    </p>
-                    <p className={`text-xl font-bold ${valueColor} mt-0.5`}>
-                      {formatCurrency(actual)}
-                    </p>
-                  </div>
-                );
-              })()}
-
-              {/* Action buttons — 2 rows x 3 columns */}
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => router.push(`/projects/${projectId}/gantt`)}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-                >
-                  <GanttChartSquare size={18} />
-                  Gantt
-                </button>
-
-                <button
-                  onClick={() => router.push(`/projects/${projectId}/reports`)}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-                >
-                  <BarChart2 size={18} />
-                  Reports
-                </button>
-
-                <button
-                  onClick={() => router.push(`/projects/${projectId}/documents`)}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-                >
-                  <FileText size={18} />
-                  Documents
-                </button>
-
-                <button
-                  onClick={() => router.push(`/projects/${projectId}/drafts`)}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-                >
-                  <Sparkles size={18} />
-                  AI planner
-                </button>
-
-                {!isArchived && canEdit ? (
-                  <button
-                    onClick={() => setBaselineDialogOpen(true)}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-                  >
-                    <Bookmark size={18} />
-                    Baseline
-                  </button>
-                ) : (
-                  <div />
-                )}
-
-                <button
-                  onClick={() => setShowActivitySidebar(!showActivitySidebar)}
-                  className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
-                    showActivitySidebar
-                      ? "bg-blue-600 text-white"
-                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  }`}
-                >
-                  <Clock size={18} />
-                  Activity
-                </button>
-              </div>
-
-              {/* Settings Gear */}
-              <button
-                onClick={() => setSettingsOpen(true)}
-                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
-                title="Project settings"
-              >
-                <Settings size={20} />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+      {project && (
+        <ProjectHeader
+          projectId={projectId}
+          project={project}
+          canEdit={canEdit}
+          showActivity={showActivitySidebar}
+          onToggleActivity={() => setShowActivitySidebar(!showActivitySidebar)}
+          onProjectUpdated={silentRefresh}
+        />
+      )}
 
       {/* MAIN CONTENT WITH SIDEBAR */}
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8" style={{ maxWidth: '1400px' }}>
@@ -452,7 +328,6 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                         </span>
                       );
                     })()}
-                    <ChatButton entityType="project" entityId={projectId} entityName={project?.name || undefined} />
                   </div>
                 </div>
 
@@ -521,7 +396,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                     <div className="space-y-3">
                       {/* ECD + Schedule Status */}
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-bold text-slate-900">Expected Completion</span>
+                        <span className="text-sm text-slate-600">Expected Completion</span>
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-semibold text-slate-800">
                             {forecastData.forecast_completion_date
@@ -542,7 +417,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                       {/* Best–worst range */}
                       {forecastData.best_case_date && forecastData.worst_case_date && (
                         <div className="flex items-center justify-between">
-                          <span className="text-sm font-bold text-slate-900">Range</span>
+                          <span className="text-sm text-slate-600">Range</span>
                           <span className="text-xs text-slate-500">
                             {new Date(forecastData.best_case_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                             {" — "}
@@ -553,7 +428,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
 
                       {/* Confidence + Velocity */}
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-bold text-slate-900">Confidence</span>
+                        <span className="text-sm text-slate-600">Confidence</span>
                         <div className="flex items-center gap-2">
                           <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
                             forecastData.confidence === "high"
@@ -745,24 +620,6 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
         />
       )}
 
-      {settingsOpen && project && (
-        <ProjectSettingsModal
-          project={project}
-          projectRole={canEdit ? 'owner' : 'viewer'}
-          onClose={() => setSettingsOpen(false)}
-        />
-      )}
-
-      {baselineDialogOpen && (
-        <CreateBaselineDialog
-          projectId={projectId}
-          onClose={() => setBaselineDialogOpen(false)}
-          onSuccess={() => {
-            setBaselineDialogOpen(false);
-            silentRefresh();
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -784,7 +641,10 @@ export default function ProjectPage() {
 
   return (
     <ProjectRoleProvider projectId={projectId}>
-      <ProjectPageContent projectId={projectId} />
+      <ChatProvider projectId={projectId}>
+        <ProjectPageContent projectId={projectId} />
+        <ChatDrawer />
+      </ChatProvider>
     </ProjectRoleProvider>
   );
 }

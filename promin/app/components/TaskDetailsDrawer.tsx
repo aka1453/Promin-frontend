@@ -8,6 +8,7 @@ import { todayForTimezone } from "../utils/date";
 import DeliverableCard from "./DeliverableCard";
 import DeliverableCreateModal from "./DeliverableCreateModal";
 import CommentsSection from "./CommentsSection";
+import Tooltip from "./Tooltip";
 
 type Props = {
   open: boolean;
@@ -276,14 +277,15 @@ export default function TaskDetailsDrawer({
               </button>
             )}
             {localTask.actual_start && !localTask.actual_end && (
-              <button
-                onClick={handleCompleteTask}
-                disabled={!allDeliverablesComplete}
-                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                title={!allDeliverablesComplete ? "Complete all deliverables first" : ""}
-              >
-                Complete Task
-              </button>
+              <Tooltip content={!allDeliverablesComplete ? "Complete all deliverables first" : "Mark task as complete"}>
+                <button
+                  onClick={handleCompleteTask}
+                  disabled={!allDeliverablesComplete}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Complete Task
+                </button>
+              </Tooltip>
             )}
           </div>
         </div>

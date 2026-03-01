@@ -1,13 +1,17 @@
 "use client";
 
 import { useEffect, useState, use, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "../../../../lib/supabaseClient";
 import { useUserTimezone } from "../../../../context/UserTimezoneContext";
 import { todayForTimezone } from "../../../../utils/date";
 import TaskViewWrapper from "../../../../components/TaskViewWrapper";
 import type { EntityProgress, HierarchyRow } from "../../../../types/progress";
 import { toEntityProgress } from "../../../../types/progress";
+import { ChatProvider } from "../../../../context/ChatContext";
+import ChatDrawer from "../../../../components/chat/ChatDrawer";
+import DeltaBadge from "../../../../components/DeltaBadge";
+import { formatPercent } from "../../../../utils/format";
+import ProjectHeader from "../../../../components/ProjectHeader";
 
 export default function MilestonePage({
   params,
@@ -15,7 +19,6 @@ export default function MilestonePage({
   params: Promise<{ projectId: string; milestoneId: string }>;
 }) {
   const resolvedParams = use(params);
-  const router = useRouter();
   const { timezone } = useUserTimezone();
   const projectId = parseInt(resolvedParams.projectId);
   const milestoneId = parseInt(resolvedParams.milestoneId);
@@ -200,10 +203,6 @@ export default function MilestonePage({
     return () => { supabase.removeChannel(ch); };
   }, [milestoneId, silentRefresh]);
 
-  const handleBack = () => {
-    router.push(`/projects/${projectId}`);
-  };
-
   const handleMilestoneUpdated = () => {
     loadData();
   };
@@ -227,170 +226,167 @@ export default function MilestonePage({
   const canEdit = userRole === "owner" || userRole === "editor";
   const isReadOnly = userRole === "viewer";
 
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return "—";
-    return new Date(dateStr).toISOString().split("T")[0];
+  const fmtDate = (d?: string | null) => {
+    if (!d) return "—";
+    const [y, m, day] = d.split("-");
+    const dt = new Date(Number(y), Number(m) - 1, Number(day));
+    return dt.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
   };
 
-  // Status badge reads actual_end (set by user action), not progress
-  const getStatusBadge = () => {
-    if (milestone.actual_end) {
-      return (
-        <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
-          Completed
-        </span>
-      );
-    }
-    if (milestone.actual_start) {
-      return (
-        <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-          In Progress
-        </span>
-      );
-    }
-    return (
-      <span className="px-3 py-1 bg-gray-100 text-gray-800 rounded-full text-sm font-medium">
-        Not Started
-      </span>
-    );
-  };
+  // Status derived from actual_start / actual_end
+  const statusLabel = milestone.actual_end
+    ? "Completed"
+    : milestone.actual_start
+      ? "In Progress"
+      : "Not Started";
+
+  const statusClass = milestone.actual_end
+    ? "bg-emerald-200 text-emerald-800"
+    : milestone.actual_start
+      ? "bg-blue-100 text-blue-700"
+      : "bg-slate-100 text-slate-600";
 
   const plannedVal = msProgress.planned ?? 0;
   const actualVal = msProgress.actual ?? 0;
 
   return (
+    <ChatProvider projectId={projectId}>
     <div className="min-h-screen bg-gray-50">
+      {project && (
+        <ProjectHeader
+          projectId={projectId}
+          project={project}
+          canEdit={canEdit}
+          onProjectUpdated={silentRefresh}
+        />
+      )}
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Back button */}
-        <button
-          onClick={handleBack}
-          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-          </svg>
-          Back to Milestones
-        </button>
-
-        {/* Milestone header */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                {milestone.name || milestone.title}
-              </h1>
-              {milestone.description && (
-                <p className="text-gray-600">{milestone.description}</p>
-              )}
+        {/* Milestone header — matches Project Overview format */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
+          {/* ===== HEADER ROW ===== */}
+          <div className="flex items-center justify-between mb-5">
+            <h1 className="text-lg font-semibold text-slate-700">
+              {milestone.name || milestone.title}
+            </h1>
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusClass}`}>
+                {statusLabel}
+              </span>
+              <DeltaBadge actual={actualVal} planned={plannedVal} />
             </div>
-            {getStatusBadge()}
           </div>
 
-          {/* Milestone stats */}
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mt-6">
-            <div className="bg-gray-50 rounded p-3">
-              <div className="text-xs text-gray-500 mb-1">P. START</div>
-              <div className="font-medium text-gray-900">
-                {formatDate(milestone.planned_start)}
-              </div>
-            </div>
-            <div className="bg-gray-50 rounded p-3">
-              <div className="text-xs text-gray-500 mb-1">P. END</div>
-              <div className="font-medium text-gray-900">
-                {formatDate(milestone.planned_end)}
-              </div>
-            </div>
-            {(() => {
-              const planned = milestone.planned_start;
-              const actual = milestone.actual_start;
-              let color = "text-gray-900";
-              let tooltip = "";
-              let bgColor = "bg-gray-50";
-              let labelColor = "text-gray-500";
-              if (actual && planned) {
-                const diff = Math.round((new Date(actual + "T00:00:00").getTime() - new Date(planned + "T00:00:00").getTime()) / (1000 * 60 * 60 * 24));
-                if (diff > 0) { color = "text-red-600"; tooltip = `${diff} day${diff !== 1 ? "s" : ""} delayed`; bgColor = "bg-red-50"; labelColor = "text-red-700"; }
-                else if (diff < 0) { color = "text-green-600"; tooltip = `${Math.abs(diff)} day${Math.abs(diff) !== 1 ? "s" : ""} ahead`; bgColor = "bg-green-50"; labelColor = "text-green-700"; }
-                else { color = "text-green-600"; tooltip = "On schedule"; bgColor = "bg-green-50"; labelColor = "text-green-700"; }
-              }
-              return (
-                <div className={`${bgColor} rounded p-3`}>
-                  <div className={`text-xs ${labelColor} mb-1`}>A. START</div>
-                  <div className={`font-medium ${color}`} title={tooltip}>
-                    {formatDate(actual)}
-                  </div>
-                </div>
-              );
-            })()}
-            {(() => {
-              const planned = milestone.planned_end;
-              const actual = milestone.actual_end;
-              let color = "text-gray-900";
-              let tooltip = "";
-              let bgColor = "bg-gray-50";
-              let labelColor = "text-gray-500";
-              if (actual && planned) {
-                const diff = Math.round((new Date(actual + "T00:00:00").getTime() - new Date(planned + "T00:00:00").getTime()) / (1000 * 60 * 60 * 24));
-                if (diff > 0) { color = "text-red-600"; tooltip = `${diff} day${diff !== 1 ? "s" : ""} delayed`; bgColor = "bg-red-50"; labelColor = "text-red-700"; }
-                else if (diff < 0) { color = "text-green-600"; tooltip = `${Math.abs(diff)} day${Math.abs(diff) !== 1 ? "s" : ""} ahead`; bgColor = "bg-green-50"; labelColor = "text-green-700"; }
-                else { color = "text-green-600"; tooltip = "On schedule"; bgColor = "bg-green-50"; labelColor = "text-green-700"; }
-              }
-              return (
-                <div className={`${bgColor} rounded p-3`}>
-                  <div className={`text-xs ${labelColor} mb-1`}>A. END</div>
-                  <div className={`font-medium ${color}`} title={tooltip}>
-                    {formatDate(actual)}
-                  </div>
-                </div>
-              );
-            })()}
-            <div className="bg-blue-50 rounded p-3">
-              <div className="text-xs text-blue-700 mb-1">BUDGET</div>
-              <div className="font-medium text-blue-900">
-                ${(milestone.budgeted_cost || 0).toLocaleString()}
-              </div>
-            </div>
-            {(() => {
-              const isOverBudget = (milestone.actual_cost ?? 0) > (milestone.budgeted_cost ?? 0) && (milestone.budgeted_cost ?? 0) > 0;
-              return (
-                <div className={`${isOverBudget ? "bg-red-50" : "bg-purple-50"} rounded p-3`}>
-                  <div className={`text-xs ${isOverBudget ? "text-red-700" : "text-purple-700"} mb-1`}>ACTUAL COST</div>
-                  <div className={`font-medium ${isOverBudget ? "text-red-600" : "text-purple-900"}`}>
-                    ${(milestone.actual_cost || 0).toLocaleString()}
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
+          {milestone.description && (
+            <p className="text-sm text-slate-500 mb-5">{milestone.description}</p>
+          )}
 
-          {/* Progress bars — canonical from hierarchy RPC */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+          {/* ===== PROGRESS ===== */}
+          <div className="space-y-4 mb-6">
             <div>
-              <div className="flex justify-between text-sm mb-2">
-                <span className="text-gray-600">Planned %</span>
-                <span className="font-semibold text-gray-900">
-                  {msProgress.planned != null ? `${plannedVal.toFixed(2)}%` : "—"}
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-bold text-slate-900">Planned Progress</span>
+                <span className="text-sm font-semibold text-blue-600">
+                  {msProgress.planned != null ? `${plannedVal.toFixed(1)}%` : "—"}
                 </span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-3">
+              <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
                 <div
-                  className="bg-blue-500 h-3 rounded-full transition-all"
+                  className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-blue-500 to-blue-400"
                   style={{ width: `${plannedVal}%` }}
                 />
               </div>
             </div>
+
             <div>
-              <div className="flex justify-between text-sm mb-2">
-                <span className="text-gray-600">Actual %</span>
-                <span className="font-semibold text-gray-900">
-                  {msProgress.actual != null ? `${actualVal.toFixed(2)}%` : "—"}
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-bold text-slate-900">Actual Progress</span>
+                <span className="text-sm font-semibold text-emerald-600">
+                  {msProgress.actual != null ? `${actualVal.toFixed(1)}%` : "—"}
                 </span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-3">
+              <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
                 <div
-                  className="bg-green-500 h-3 rounded-full transition-all"
+                  className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-emerald-500 to-emerald-400"
                   style={{ width: `${actualVal}%` }}
                 />
+              </div>
+            </div>
+          </div>
+
+          {/* ===== FINANCIALS ===== */}
+          <div className="grid grid-cols-2 gap-4 mb-4 border-t border-slate-200 pt-4">
+            <div>
+              <p className="text-xs font-semibold text-slate-500 mb-1">Budgeted</p>
+              <p className={`text-sm ${milestone.budgeted_cost ? "text-slate-900" : "text-slate-400"}`}>
+                {milestone.budgeted_cost
+                  ? `$${milestone.budgeted_cost.toLocaleString()}`
+                  : "—"}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs font-semibold text-slate-500 mb-1">Actual Cost</p>
+              <p
+                className={`text-sm ${
+                  milestone.actual_cost && milestone.budgeted_cost && milestone.budgeted_cost > 0
+                    ? milestone.actual_cost > milestone.budgeted_cost
+                      ? "text-amber-600"
+                      : "text-emerald-600"
+                    : milestone.actual_cost
+                      ? "text-slate-900"
+                      : "text-slate-400"
+                }`}
+              >
+                {milestone.actual_cost
+                  ? `$${milestone.actual_cost.toLocaleString()}`
+                  : "—"}
+              </p>
+            </div>
+          </div>
+
+          {/* ===== TIMELINE ===== */}
+          <div className="grid grid-cols-2 gap-4 pt-6 border-t border-slate-200">
+            <div>
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide mb-3">
+                Planned Timeline
+              </h3>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-slate-600">Start:</span>
+                  <span className="text-sm font-medium text-slate-800">
+                    {fmtDate(milestone.planned_start) || "Not set"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-slate-600">End:</span>
+                  <span className="text-sm font-medium text-slate-800">
+                    {fmtDate(milestone.planned_end) || "Not set"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide mb-3">
+                Actual Timeline
+              </h3>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-slate-600">Start:</span>
+                  <span className="text-sm font-medium text-slate-800">
+                    {milestone.actual_start ? fmtDate(milestone.actual_start) : "Not started"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-slate-600">End:</span>
+                  <span className="text-sm font-medium text-slate-800">
+                    {milestone.actual_end ? fmtDate(milestone.actual_end) : "In progress"}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -413,5 +409,7 @@ export default function MilestonePage({
         </div>
       </div>
     </div>
+    <ChatDrawer />
+    </ChatProvider>
   );
 }
