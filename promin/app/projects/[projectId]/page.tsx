@@ -490,8 +490,9 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
 
                 {/* Forecast Section — always rendered; shows neutral state when unavailable */}
                 <div className="pt-4 border-t border-slate-200 mb-2">
-                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide mb-3">
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide mb-3 flex items-center gap-1">
                     Forecast
+                    <InfoTip tip="Expected completion uses a trend-weighted velocity (EWMA) that emphasizes recent progress over historical averages. The range shows P25–P75 pace bounds. Planned idle phases (e.g. procurement) are excluded so waiting periods don't penalize the forecast." />
                   </h3>
                   {!forecastData ? (
                     <div className="flex items-center gap-2 text-slate-400 bg-slate-50 rounded-lg px-4 py-2 text-sm">
