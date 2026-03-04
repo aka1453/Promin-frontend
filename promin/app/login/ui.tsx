@@ -281,7 +281,7 @@ export default function LoginUI() {
     try {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${window.location.origin}/auth/callback` },
+        options: { redirectTo: `${window.location.origin}/` },
       });
       if (oauthError) {
         const msg = oauthError.message.toLowerCase();
@@ -313,7 +313,7 @@ export default function LoginUI() {
     try {
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(
         resetEmail,
-        { redirectTo: `${window.location.origin}/auth/callback?next=/login?mode=recovery` }
+        { redirectTo: `${window.location.origin}/login?mode=recovery` }
       );
       if (resetError) {
         setError(resetError.message);
