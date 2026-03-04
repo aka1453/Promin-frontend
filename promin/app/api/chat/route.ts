@@ -17,7 +17,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createGroundingContext, buildContextDocument } from "../../lib/chatContext";
 import { CHAT_SYSTEM_PROMPT } from "../../lib/chatSystemPrompt";
 import { todayForTimezone } from "../../utils/date";
-import { checkIpLimit, checkUserLimit } from "../../lib/rateLimit";
+import { checkIpLimit, checkUserLimit, checkAndIncrementDailyCap } from "../../lib/rateLimit";
 import type { ExplainData } from "../../types/explain";
 import type { HierarchyRow } from "../../types/progress";
 
@@ -84,12 +84,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // --- User rate limit (after auth) ---
+  // --- User rate limit (burst, after auth) ---
   const userCheck = checkUserLimit(user.id);
   if (userCheck.limited) {
     return NextResponse.json(
       { ok: false, error: "Too many requests. Please try again later." },
       { status: 429, headers: { "Retry-After": String(Math.ceil(userCheck.retryAfterMs / 1000)) } },
+    );
+  }
+
+  // --- User daily cap ---
+  const dailyCheck = checkAndIncrementDailyCap("chat", user.id, "CHAT_DAILY_CAP_PER_USER", 200);
+  if (dailyCheck.limited) {
+    return NextResponse.json(
+      { ok: false, error: "Daily chat limit reached. Please try again tomorrow." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(dailyCheck.retryAfterMs / 1000)) } },
     );
   }
 

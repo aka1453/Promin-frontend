@@ -5,7 +5,7 @@
  * and optional user instructions. Uses OpenAI SDK.
  *
  * Feature-flagged via DRAFT_AI_ENABLED env var (default: OFF).
- * Model configurable via DRAFT_AI_MODEL env var (default: gpt-4o).
+ * Model configurable via DRAFT_AI_MODEL env var (default: gpt-4o-mini).
  *
  * Governance:
  *   - AI output is PROPOSAL ONLY — stored in draft tables, never live
@@ -329,7 +329,7 @@ export async function generateDraftPlan(params: {
 
   userMessage += `\n\nGenerate a structured project plan as JSON based on the documents above. Remember: every milestone, task, and deliverable MUST have a descriptive name — never use generic placeholders.`;
 
-  const model = process.env.DRAFT_AI_MODEL || "gpt-4o";
+  const model = process.env.DRAFT_AI_MODEL || "gpt-4o-mini";
   const client = getClient();
 
   const response = await client.chat.completions.create({
@@ -399,5 +399,5 @@ export async function generateDraftPlan(params: {
  * Get the configured AI model name for audit logging.
  */
 export function getDraftAIModel(): string {
-  return process.env.DRAFT_AI_MODEL || "gpt-4o";
+  return process.env.DRAFT_AI_MODEL || "gpt-4o-mini";
 }

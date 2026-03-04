@@ -21,7 +21,7 @@ import {
   getDraftAIModel,
   type AIDraftDependency,
 } from "../../../../../lib/draftGenerate";
-import { checkRouteLimit } from "../../../../../lib/rateLimit";
+import { checkRouteLimit, checkRouteIpLimit, checkAndIncrementDailyCap } from "../../../../../lib/rateLimit";
 
 const MAX_USER_INSTRUCTIONS_LENGTH = 2000;
 
@@ -47,6 +47,16 @@ export async function POST(
     );
   }
 
+  // IP rate limit (before auth) — 10 draft requests per IP per 5 minutes
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const ipCheck = checkRouteIpLimit("draft", ip, 10, 5 * 60_000);
+  if (ipCheck.limited) {
+    return NextResponse.json(
+      { ok: false, error: "Too many requests. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(ipCheck.retryAfterMs / 1000)) } },
+    );
+  }
+
   // Auth — token-scoped client so all DB/storage ops respect RLS
   const auth = await getAuthenticatedClient(req);
   if (!auth) {
@@ -57,12 +67,21 @@ export async function POST(
   }
   const { supabase, userId } = auth;
 
-  // Rate limit: 5 draft generations per user per 5 minutes
-  const rlCheck = checkRouteLimit("draft", userId, 5, 5 * 60_000);
+  // Burst rate limit: 3 draft generations per user per 5 minutes (down from 5)
+  const rlCheck = checkRouteLimit("draft", userId, 3, 5 * 60_000);
   if (rlCheck.limited) {
     return NextResponse.json(
       { ok: false, error: "Too many requests. Please try again later." },
       { status: 429, headers: { "Retry-After": String(Math.ceil(rlCheck.retryAfterMs / 1000)) } },
+    );
+  }
+
+  // Daily cap: 20 draft generations per user per day
+  const dailyCheck = checkAndIncrementDailyCap("draft", userId, "DRAFT_DAILY_CAP_PER_USER", 20);
+  if (dailyCheck.limited) {
+    return NextResponse.json(
+      { ok: false, error: "Daily draft generation limit reached. Please try again tomorrow." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(dailyCheck.retryAfterMs / 1000)) } },
     );
   }
 

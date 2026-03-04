@@ -14,7 +14,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "../../../lib/supabaseServer";
 import OpenAI from "openai";
-import { checkRouteLimit } from "../../../lib/rateLimit";
+import { checkRouteLimit, checkRouteIpLimit, checkAndIncrementDailyCap } from "../../../lib/rateLimit";
 
 const SYSTEM_PROMPT = `You are a project management assistant. You rephrase the provided explanation draft to sound more natural and professional.
 
@@ -49,6 +49,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // IP rate limit (before auth)
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const ipCheck = checkRouteIpLimit("insights", ip, 30);
+  if (ipCheck.limited) {
+    return NextResponse.json(
+      { ok: false, error: "Too many requests. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(ipCheck.retryAfterMs / 1000)) } },
+    );
+  }
+
   // Auth check
   const sb = await createSupabaseServer();
   const { data: { session } } = await sb.auth.getSession();
@@ -56,12 +66,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  // Rate limit: 30 refinements per user per minute
-  const rlCheck = checkRouteLimit("insights", session.user.id, 30);
+  // Burst rate limit: 10 refinements per user per minute (down from 30)
+  const rlCheck = checkRouteLimit("insights", session.user.id, 10);
   if (rlCheck.limited) {
     return NextResponse.json(
       { ok: false, error: "Too many requests. Please try again later." },
       { status: 429, headers: { "Retry-After": String(Math.ceil(rlCheck.retryAfterMs / 1000)) } },
+    );
+  }
+
+  // Daily cap: 100 refinements per user per day
+  const dailyCheck = checkAndIncrementDailyCap("insights", session.user.id, "INSIGHTS_DAILY_CAP_PER_USER", 100);
+  if (dailyCheck.limited) {
+    return NextResponse.json(
+      { ok: false, error: "Daily insight refinement limit reached. Please try again tomorrow." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(dailyCheck.retryAfterMs / 1000)) } },
     );
   }
 
