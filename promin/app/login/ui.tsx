@@ -234,25 +234,36 @@ export default function LoginUI() {
 
     try {
       if (mode === "signin") {
-        const { error: authError } = await supabase.auth.signInWithPassword({
-          email,
-          password: pw,
+        // Use server route so session cookies are set (works even when
+        // localStorage is blocked by strict browser privacy settings).
+        const res = await fetch("/api/auth/signin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password: pw }),
         });
-        if (authError) {
-          setError(authError.message);
+        const body = await res.json();
+        if (!res.ok) {
+          setError(body.error ?? "Sign-in failed.");
           setPending(false);
           return;
         }
+        // Also initialise the browser client so in-memory session is ready
+        await supabase.auth.signInWithPassword({ email, password: pw });
       } else {
-        const { error: signUpError } = await supabase.auth.signUp({
-          email,
-          password: pw,
+        // Use server route for sign-up too
+        const res = await fetch("/api/auth/signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password: pw }),
         });
-        if (signUpError) {
-          setError(signUpError.message);
+        const body = await res.json();
+        if (!res.ok) {
+          setError(body.error ?? "Sign-up failed.");
           setPending(false);
           return;
         }
+        // Also initialise the browser client
+        await supabase.auth.signUp({ email, password: pw });
       }
 
       router.push("/");
