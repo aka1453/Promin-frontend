@@ -35,7 +35,6 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
   const [completedCount, setCompletedCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [normalizedWeight, setNormalizedWeight] = useState<number | null>(null);
 
   // ADDED: Collapse state with localStorage persistence (Issue #4)
   const [isCollapsed, setIsCollapsed] = useState(() => {
@@ -79,28 +78,6 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
 
     checkDeliverables();
   }, [task?.id]);
-
-  // Calculate normalized weight
-  useEffect(() => {
-    const calculateNormalizedWeight = async () => {
-      if (!task?.milestone_id) return;
-
-      const { data, error } = await supabase
-        .from("tasks")
-        .select("weight")
-        .eq("milestone_id", task.milestone_id);
-
-      if (error || !data) return;
-
-      const totalWeight = data.reduce((sum, t) => sum + (t.weight || 0), 0);
-      if (totalWeight > 0) {
-        const normalized = ((task.weight || 0) / totalWeight) * 100;
-        setNormalizedWeight(normalized);
-      }
-    };
-
-    calculateNormalizedWeight();
-  }, [task?.milestone_id, task?.weight]);
 
   // ADDED: Toggle collapse function (Issue #4)
   const toggleCollapse = (e: React.MouseEvent) => {
@@ -272,7 +249,7 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
               </button>
             </div>
             {/* Weight badge */}
-            <Tooltip content={`Weight: ${(weight * 100).toFixed(1)}%${normalizedWeight !== null ? ` (Normalized: ${normalizedWeight.toFixed(1)}%)` : ''}`}>
+            <Tooltip content={`Weight: ${(weight * 100).toFixed(1)}% (DB-normalized)`}>
               <span className="text-[10px] text-slate-400 font-semibold mt-0.5">
                 W: {(weight * 100).toFixed(0)}%
               </span>

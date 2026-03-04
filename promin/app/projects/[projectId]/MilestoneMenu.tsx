@@ -8,7 +8,6 @@ interface Milestone {
   id: number;
   title: string;
   description: string | null;
-  status: string;
 }
 
 export default function MilestoneMenu({ milestone, onMutated }: { milestone: Milestone; onMutated?: () => void }) {
@@ -17,7 +16,6 @@ export default function MilestoneMenu({ milestone, onMutated }: { milestone: Mil
   const [editOpen, setEditOpen] = useState(false);
   const [title, setTitle] = useState(milestone.title);
   const [description, setDescription] = useState(milestone.description ?? "");
-  const [status, setStatus] = useState(milestone.status);
   const [loading, setLoading] = useState(false);
 
   function toggleMenu() {
@@ -52,12 +50,12 @@ export default function MilestoneMenu({ milestone, onMutated }: { milestone: Mil
     }
 
     setLoading(true);
+    // Only send user-editable fields. DB owns status (lifecycle trigger).
     const { error } = await supabase
       .from("milestones")
       .update({
         title,
         description,
-        status,
       })
       .eq("id", milestone.id);
 
@@ -129,18 +127,7 @@ export default function MilestoneMenu({ milestone, onMutated }: { milestone: Mil
         onChange={(e) => setDescription(e.target.value)}
       />
 
-      <label className="block text-sm font-medium mb-1">Status</label>
-      <select
-        className="w-full border border-gray-300 rounded p-2 mb-4"
-        value={status}
-        onChange={(e) => setStatus(e.target.value)}
-      >
-        <option value="pending">Pending</option>
-        <option value="in_progress">In Progress</option>
-        <option value="done">Done</option>
-      </select>
-
-      <div className="flex justify-end gap-2">
+      <div className="flex justify-end gap-2 mt-4">
         <button
           className="px-3 py-2 rounded bg-gray-200 hover:bg-gray-300"
           onClick={() => !loading && setEditOpen(false)}

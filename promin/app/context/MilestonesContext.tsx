@@ -30,6 +30,8 @@ async function editMilestone(updated: Milestone) {
   // Never send `weight` from the client.
   // Only update user-editable fields. DB owns normalized `weight`.
 
+  // IMPORTANT: Only send user-editable fields.
+  // DB owns: weight (normalized), actual_start, actual_end, status (lifecycle).
   const payload: Record<string, any> = {
   name: updated.name ?? null,
   description: updated.description ?? null,
@@ -39,9 +41,6 @@ async function editMilestone(updated: Milestone) {
 
   planned_start: (updated as any).planned_start ?? null,
   planned_end: (updated as any).planned_end ?? null,
-  actual_start: (updated as any).actual_start ?? null,
-  actual_end: (updated as any).actual_end ?? null,
-  status: (updated as any).status ?? null,
   budgeted_cost: (updated as any).budgeted_cost ?? 0,
   actual_cost: (updated as any).actual_cost ?? 0,
 };

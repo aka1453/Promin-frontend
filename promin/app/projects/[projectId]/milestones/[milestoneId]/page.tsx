@@ -183,16 +183,16 @@ export default function MilestonePage({
     return () => { supabase.removeChannel(ch); };
   }, [milestoneId, silentRefresh]);
 
-  // Realtime on subtasks — deliverable completion triggers progress change
+  // Realtime on deliverables — deliverable completion triggers progress change
   useEffect(() => {
     const ch = supabase
-      .channel("ms-detail-subtasks-" + milestoneId)
+      .channel("ms-detail-deliverables-" + milestoneId)
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
-          table: "subtasks",
+          table: "deliverables",
         },
         () => {
           if (initialLoadDone.current) silentRefresh();
@@ -237,18 +237,14 @@ export default function MilestonePage({
     });
   };
 
-  // Status derived from actual_start / actual_end
-  const statusLabel = milestone.actual_end
-    ? "Completed"
-    : milestone.actual_start
-      ? "In Progress"
-      : "Not Started";
-
-  const statusClass = milestone.actual_end
-    ? "bg-emerald-200 text-emerald-800"
-    : milestone.actual_start
-      ? "bg-blue-100 text-blue-700"
-      : "bg-slate-100 text-slate-600";
+  // Status from DB (set by lifecycle triggers) — consistent with MilestoneCard
+  const statusMap: Record<string, { label: string; cls: string }> = {
+    completed: { label: "Completed", cls: "bg-emerald-200 text-emerald-800" },
+    in_progress: { label: "In Progress", cls: "bg-blue-100 text-blue-700" },
+    pending: { label: "Not Started", cls: "bg-slate-100 text-slate-600" },
+  };
+  const { label: statusLabel, cls: statusClass } =
+    statusMap[milestone.status] ?? statusMap.pending;
 
   const plannedVal = msProgress.planned ?? 0;
   const actualVal = msProgress.actual ?? 0;
