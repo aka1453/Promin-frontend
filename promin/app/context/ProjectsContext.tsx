@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
-import { supabase } from "../lib/supabaseClient";
+import { supabase, restoreSessionFromCookie } from "../lib/supabaseClient";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 function isInvalidRefreshTokenError(err: { message?: string } | null): boolean {
@@ -126,8 +126,10 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     mountedRef.current = true;
 
-    // Initial load — also start realtime if session exists
+    // Initial load — try cookie-based session restore first (for environments
+    // where localStorage/sessionStorage are blocked), then load projects.
     (async () => {
+      await restoreSessionFromCookie();
       await reloadProjects();
       const { data: { session }, error: sessErr } = await supabase.auth.getSession();
       if (sessErr && isInvalidRefreshTokenError(sessErr)) {

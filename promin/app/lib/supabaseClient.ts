@@ -51,26 +51,28 @@ export const supabase =
     },
   }));
 
-// On page load, check for a session cookie written by the login page.
+// Restore session from a cookie written by the login page.
 // In restricted environments (Codespaces WebView, some mobile browsers),
 // localStorage and sessionStorage are blocked. The login page writes the
-// tokens to a short-lived cookie, which we restore here via setSession().
-// The onAuthStateChange listener in ProjectsContext will pick up the session.
-if (typeof document !== "undefined") {
+// tokens to a short-lived cookie. This function must be called on page load
+// (not as a module-level side effect, since the module may be cached before
+// the cookie exists). Returns a Promise that resolves once setSession completes.
+export async function restoreSessionFromCookie(): Promise<boolean> {
+  if (typeof document === "undefined") return false;
   const match = document.cookie.match(/sb-auth-token=([^;]+)/);
-  if (match) {
-    try {
-      const { access_token, refresh_token } = JSON.parse(
-        decodeURIComponent(match[1])
-      );
-      // Clear the cookie immediately
-      document.cookie = "sb-auth-token=;path=/;max-age=0";
-      // Restore session (async — onAuthStateChange will propagate)
-      supabase.auth.setSession({ access_token, refresh_token });
-    } catch {
-      // Malformed cookie — ignore
-      document.cookie = "sb-auth-token=;path=/;max-age=0";
-    }
+  if (!match) return false;
+  try {
+    const { access_token, refresh_token } = JSON.parse(
+      decodeURIComponent(match[1])
+    );
+    // Clear the cookie immediately
+    document.cookie = "sb-auth-token=;path=/;max-age=0";
+    // Restore session — await so callers can rely on the session being set
+    const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+    return !error;
+  } catch {
+    document.cookie = "sb-auth-token=;path=/;max-age=0";
+    return false;
   }
 }
 
