@@ -86,3 +86,19 @@ export function checkUserLimit(userId: string): { limited: false } | { limited: 
   const limit = getLimit("CHAT_RATE_LIMIT_PER_USER", 20);
   return check(`user:${userId}`, limit, getWindowMs());
 }
+
+/**
+ * Generic rate-limit check for any route.
+ * @param scope  A route-specific prefix, e.g. "draft" or "upload"
+ * @param key    The user/IP identifier
+ * @param limit  Max requests per window
+ * @param windowMs  Sliding window in ms (default 60 000)
+ */
+export function checkRouteLimit(
+  scope: string,
+  key: string,
+  limit: number,
+  windowMs = 60_000,
+): { limited: false } | { limited: true; retryAfterMs: number } {
+  return check(`${scope}:${key}`, limit, windowMs);
+}

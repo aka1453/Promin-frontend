@@ -49,6 +49,21 @@ export async function middleware(request: NextRequest) {
   // which triggers the token refresh and cookie update.
   await supabase.auth.getUser();
 
+  // --- Security headers ---
+  const headers = supabaseResponse.headers;
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("X-Frame-Options", "DENY");
+  headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  headers.set("X-DNS-Prefetch-Control", "off");
+  headers.set(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), browsing-topics=()",
+  );
+  headers.set(
+    "Strict-Transport-Security",
+    "max-age=63072000; includeSubDomains; preload",
+  );
+
   return supabaseResponse;
 }
 

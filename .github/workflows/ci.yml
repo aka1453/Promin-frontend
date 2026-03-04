@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-typecheck-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: promin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: promin/package-lock.json
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      - name: Check for secrets
+        run: |
+          # Ensure no NEXT_PUBLIC_OPENAI vars exist
+          if grep -r "NEXT_PUBLIC_OPENAI" --include="*.ts" --include="*.tsx" --include="*.js" .; then
+            echo "ERROR: Found NEXT_PUBLIC_OPENAI reference"
+            exit 1
+          fi
+          # Ensure no hardcoded sk- keys
+          if grep -rn '"sk-' --include="*.ts" --include="*.tsx" --include="*.js" .; then
+            echo "ERROR: Found hardcoded API key"
+            exit 1
+          fi

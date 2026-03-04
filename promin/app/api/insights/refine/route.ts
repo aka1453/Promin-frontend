@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "../../../lib/supabaseServer";
 import OpenAI from "openai";
+import { checkRouteLimit } from "../../../lib/rateLimit";
 
 const SYSTEM_PROMPT = `You are a project management assistant. You rephrase the provided explanation draft to sound more natural and professional.
 
@@ -53,6 +54,15 @@ export async function POST(req: NextRequest) {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Rate limit: 30 refinements per user per minute
+  const rlCheck = checkRouteLimit("insights", session.user.id, 30);
+  if (rlCheck.limited) {
+    return NextResponse.json(
+      { ok: false, error: "Too many requests. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rlCheck.retryAfterMs / 1000)) } },
+    );
   }
 
   // Parse body

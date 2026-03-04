@@ -21,6 +21,9 @@ import {
   getDraftAIModel,
   type AIDraftDependency,
 } from "../../../../../lib/draftGenerate";
+import { checkRouteLimit } from "../../../../../lib/rateLimit";
+
+const MAX_USER_INSTRUCTIONS_LENGTH = 2000;
 
 export async function POST(
   req: NextRequest,
@@ -52,7 +55,16 @@ export async function POST(
       { status: 401 }
     );
   }
-  const { supabase } = auth;
+  const { supabase, userId } = auth;
+
+  // Rate limit: 5 draft generations per user per 5 minutes
+  const rlCheck = checkRouteLimit("draft", userId, 5, 5 * 60_000);
+  if (rlCheck.limited) {
+    return NextResponse.json(
+      { ok: false, error: "Too many requests. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rlCheck.retryAfterMs / 1000)) } },
+    );
+  }
 
   // Parse request body
   let body: { user_instructions?: string; document_ids?: number[] } = {};
@@ -60,6 +72,17 @@ export async function POST(
     body = await req.json();
   } catch {
     // Empty body is OK — user_instructions is optional
+  }
+
+  // Validate user_instructions length
+  if (
+    body.user_instructions &&
+    body.user_instructions.length > MAX_USER_INSTRUCTIONS_LENGTH
+  ) {
+    return NextResponse.json(
+      { ok: false, error: `Instructions must be under ${MAX_USER_INSTRUCTIONS_LENGTH} characters.` },
+      { status: 400 },
+    );
   }
 
   // Fetch project
@@ -103,8 +126,9 @@ export async function POST(
   const { data: documents, error: docError } = await docQuery.order("created_at", { ascending: true });
 
   if (docError) {
+    console.error("[draft-generate] Failed to fetch documents:", docError.message);
     return NextResponse.json(
-      { ok: false, error: `Failed to fetch documents: ${docError.message}` },
+      { ok: false, error: "Failed to fetch project documents." },
       { status: 500 }
     );
   }
@@ -144,8 +168,9 @@ export async function POST(
       .download(doc.storage_object_path);
 
     if (dlError || !fileData) {
+      console.error("[draft-generate] Download failed:", doc.original_filename, dlError?.message);
       return NextResponse.json(
-        { ok: false, error: `Failed to download ${doc.original_filename}: ${dlError?.message || "Unknown error"}` },
+        { ok: false, error: `Failed to download document "${doc.original_filename}".` },
         { status: 500 }
       );
     }
@@ -178,8 +203,9 @@ export async function POST(
       .single();
 
     if (extError || !extRecord) {
+      console.error("[draft-generate] Extraction store failed:", doc.original_filename, extError?.message);
       return NextResponse.json(
-        { ok: false, error: `Failed to store extraction for ${doc.original_filename}: ${extError?.message || "Unknown"}` },
+        { ok: false, error: `Failed to process document "${doc.original_filename}".` },
         { status: 500 }
       );
     }
@@ -206,8 +232,9 @@ export async function POST(
     .single();
 
   if (draftError || !draft) {
+    console.error("[draft-generate] Draft record creation failed:", draftError?.message);
     return NextResponse.json(
-      { ok: false, error: `Failed to create draft record: ${draftError?.message || "Unknown"}` },
+      { ok: false, error: "Failed to create draft. Please try again." },
       { status: 500 }
     );
   }
@@ -357,17 +384,17 @@ export async function POST(
 
     return NextResponse.json({ ok: true, draft_id: draftId }, { status: 201 });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Generation failed";
-    console.error("[draft-generate] Error:", message);
+    const internalMessage = err instanceof Error ? err.message : "Generation failed";
+    console.error("[draft-generate] Error:", internalMessage);
 
-    // Mark draft as error
+    // Mark draft as error — store generic message only (no internal details)
     await supabase
       .from("plan_drafts")
-      .update({ status: "error", error_message: message })
+      .update({ status: "error", error_message: "Draft generation failed." })
       .eq("id", draftId);
 
     return NextResponse.json(
-      { ok: false, error: message, draft_id: draftId },
+      { ok: false, error: "Draft generation failed. Please try again.", draft_id: draftId },
       { status: 500 }
     );
   }

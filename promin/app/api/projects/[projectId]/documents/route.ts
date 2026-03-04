@@ -10,9 +10,19 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedClient } from "../../../../lib/apiAuth";
+import { checkRouteLimit } from "../../../../lib/rateLimit";
 import crypto from "crypto";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+
+/** Sanitize a filename: strip path separators and control chars, limit length. */
+function sanitizeFilename(name: string): string {
+  return name
+    .replace(/[/\\]/g, "_")          // no path traversal
+    .replace(/[^\w.\-() ]/g, "_")    // only safe chars
+    .replace(/\.{2,}/g, ".")         // no ".."
+    .slice(0, 255);                  // max length
+}
 
 /**
  * POST — Upload a project document.
@@ -41,6 +51,15 @@ export async function POST(
     );
   }
   const { supabase, userId } = auth;
+
+  // Rate limit: 20 uploads per user per 5 minutes
+  const rlCheck = checkRouteLimit("upload", userId, 20, 5 * 60_000);
+  if (rlCheck.limited) {
+    return NextResponse.json(
+      { ok: false, error: "Too many uploads. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rlCheck.retryAfterMs / 1000)) } },
+    );
+  }
 
   // Parse FormData
   let formData: FormData;
@@ -74,9 +93,12 @@ export async function POST(
   // Compute SHA-256 hash
   const contentHash = crypto.createHash("sha256").update(buffer).digest("hex");
 
-  // Storage path: {projectId}/{timestamp}_{originalFilename}
+  // Sanitize filename before storage
+  const safeFilename = sanitizeFilename(file.name);
+
+  // Storage path: {projectId}/{timestamp}_{sanitizedFilename}
   const timestamp = Date.now();
-  const storagePath = `${projectId}/${timestamp}_${file.name}`;
+  const storagePath = `${projectId}/${timestamp}_${safeFilename}`;
 
   // Upload to storage bucket
   const { error: storageError } = await supabase.storage
@@ -87,8 +109,9 @@ export async function POST(
     });
 
   if (storageError) {
+    console.error("[documents] Storage upload failed:", storageError.message);
     return NextResponse.json(
-      { ok: false, error: `Storage upload failed: ${storageError.message}` },
+      { ok: false, error: "File upload failed. Please try again." },
       { status: 500 }
     );
   }
@@ -112,8 +135,9 @@ export async function POST(
     // NOTE: Storage object may be orphaned here. This is intentional —
     // the project-documents bucket has NO DELETE policy (immutability guarantee).
     // Orphaned objects are access-controlled and never listed in the UI.
+    console.error("[documents] Database insert failed:", dbError.message);
     return NextResponse.json(
-      { ok: false, error: `Database insert failed: ${dbError.message}` },
+      { ok: false, error: "Failed to save document metadata. Please try again." },
       { status: 500 }
     );
   }
@@ -158,8 +182,9 @@ export async function GET(
     .order("created_at", { ascending: false });
 
   if (error) {
+    console.error("[documents] List query failed:", error.message);
     return NextResponse.json(
-      { ok: false, error: error.message },
+      { ok: false, error: "Failed to list documents." },
       { status: 500 }
     );
   }
