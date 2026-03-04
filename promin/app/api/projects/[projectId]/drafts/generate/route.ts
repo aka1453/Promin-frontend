@@ -67,8 +67,8 @@ export async function POST(
   }
   const { supabase, userId } = auth;
 
-  // Burst rate limit: 3 draft generations per user per 5 minutes (down from 5)
-  const rlCheck = checkRouteLimit("draft", userId, 3, 5 * 60_000);
+  // Burst rate limit: 1 draft generation per user per 5 minutes
+  const rlCheck = checkRouteLimit("draft", userId, 1, 5 * 60_000);
   if (rlCheck.limited) {
     return NextResponse.json(
       { ok: false, error: "Too many requests. Please try again later." },
