@@ -29,7 +29,6 @@ import {
   updateTaskPosition,
   updateTaskCollapsed,
 } from "../lib/taskDependencies";
-import { updateTaskDatesAndCascade } from "../lib/dependencyScheduling";
 import type { Task } from "../types/task";
 import type { TaskDependency, TaskWithDependencies } from "../types/taskDependency";
 import TaskNode from "./TaskNode";
@@ -420,41 +419,22 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
       setIsCalculating(true);
       setCalculatingMessage(`Creating dependency: ${sourceTitle} → ${targetTitle}...`);
 
-      // Create the dependency
+      // Create the dependency — DB triggers handle date cascading automatically
       const { error } = await createTaskDependency({
         task_id: targetId,
         depends_on_task_id: sourceId,
       });
 
+      setIsCalculating(false);
+      setCalculatingMessage("");
+
       if (error) {
         console.error("Error creating dependency:", error);
-        setIsCalculating(false);
-        setCalculatingMessage("");
         alert(`Failed to create dependency: ${error.message}`);
         return;
       }
 
-      // Auto-schedule: Calculate and update target task dates
-      setCalculatingMessage(`Calculating dates for ${targetTitle}...`);
-      const result = await updateTaskDatesAndCascade(targetId);
-      
-      setIsCalculating(false);
-      setCalculatingMessage("");
-
-      if (!result.success) {
-        console.error("Error auto-scheduling:", result.error);
-        alert(`Dependency created but auto-scheduling failed: ${result.error || "Unknown error"}`);
-      } else {
-        // Show success message with details
-        const updatedCount = result.updatedTasks.length;
-        if (updatedCount === 1) {
-          alert(`✅ Dependency created!\n\n"${targetTitle}" dates have been recalculated.`);
-        } else {
-          alert(`✅ Dependency created!\n\n${updatedCount} task(s) were automatically rescheduled:\n• ${targetTitle}\n• Plus ${updatedCount - 1} successor task(s)`);
-        }
-      }
-
-      // Reload to show updated dates and new dependency
+      // Reload to show updated dates and new dependency (DB already cascaded)
       await loadData();
     },
     [loadData, tasks]

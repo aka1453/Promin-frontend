@@ -4,7 +4,6 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useToast } from "./ToastProvider";
-import { recalculateTaskFromDeliverables } from "../lib/dependencyScheduling";
 
 type Props = {
   taskId: number;
@@ -62,9 +61,7 @@ export default function DeliverableCreateModal({
         return;
       }
 
-      // Recalculate task dates based on new deliverable
-      await recalculateTaskFromDeliverables(taskId);
-
+      // DB triggers handle: deliverable scheduling, task date derivation, cascade
       pushToast("Deliverable created - task dates updated", "success");
       onSuccess();
     } catch (e: any) {

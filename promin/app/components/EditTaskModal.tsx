@@ -3,7 +3,6 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { updateTaskDatesAndCascade } from "../lib/dependencyScheduling";
 import { useToast } from "./ToastProvider";
 
 type Props = {
@@ -82,10 +81,7 @@ export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
         return;
       }
 
-      // Cascade: recalculate this task's planned_end from its deliverables,
-      // then propagate new dates down to all successor tasks and their deliverables.
-      await updateTaskDatesAndCascade(taskId);
-
+      // DB triggers handle: deliverable scheduling, task date cascade to successors
       pushToast("Task updated successfully", "success");
       onSuccess();
     } catch (e: any) {
