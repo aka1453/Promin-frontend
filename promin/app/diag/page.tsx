@@ -31,18 +31,57 @@ export default function DiagPage() {
         result.sessionError = String(e);
       }
 
-      // 3. Check localStorage for Supabase auth
+      // 3. Check localStorage availability & Supabase keys
       try {
+        localStorage.setItem("__diag_test__", "1");
+        localStorage.removeItem("__diag_test__");
+        result.localStorageAvailable = true;
         const keys = Object.keys(localStorage).filter(
           (k) => k.includes("supabase") || k.includes("sb-")
         );
         result.localStorageKeys = keys;
         result.localStorageCount = keys.length;
       } catch (e) {
+        result.localStorageAvailable = false;
         result.localStorageError = String(e);
       }
 
-      // 4. If session exists, try querying projects
+      // 4. Check cookies (auth cookies from middleware/server routes)
+      try {
+        const cookies = document.cookie.split(";").map((c) => c.trim().split("=")[0]).filter(Boolean);
+        const sbCookies = cookies.filter(
+          (c) => c.includes("supabase") || c.includes("sb-")
+        );
+        result.cookiesAvailable = navigator.cookieEnabled;
+        result.allCookieNames = cookies;
+        result.supabaseCookieNames = sbCookies;
+        result.supabaseCookieCount = sbCookies.length;
+      } catch (e) {
+        result.cookieError = String(e);
+      }
+
+      // 5. Check third-party cookie / storage restrictions
+      result.userAgent = navigator.userAgent;
+      result.isPrivateMode = "unknown";
+
+      // 6. Check if Supabase URL is reachable (corporate firewall check)
+      try {
+        const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+        const start = Date.now();
+        const resp = await fetch(`${sbUrl}/auth/v1/settings`, {
+          method: "GET",
+          headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "" },
+        });
+        const elapsed = Date.now() - start;
+        result.supabaseReachable = resp.ok;
+        result.supabaseStatus = resp.status;
+        result.supabaseLatencyMs = elapsed;
+      } catch (e) {
+        result.supabaseReachable = false;
+        result.supabaseReachError = String(e);
+      }
+
+      // 7. If session exists, try querying projects
       if (result.session) {
         try {
           const { data, error, count } = await supabase
@@ -58,9 +97,10 @@ export default function DiagPage() {
         }
       }
 
-      // 5. Window location info
+      // 8. Window & URL info
       result.windowOrigin = window.location.origin;
       result.windowPathname = window.location.pathname;
+      result.windowHash = window.location.hash ? "(hash present, redacted)" : "(none)";
 
       setInfo(result);
       setLoading(false);
