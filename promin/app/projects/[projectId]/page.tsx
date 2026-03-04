@@ -68,6 +68,9 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
 
   // Track whether we've done the first load — realtime refreshes skip the spinner
   const initialLoadDone = useRef(false);
+  // Debounce timer for realtime callbacks — coalesces cascade events
+  // (deliverable → task → milestone → project triggers) into a single refresh.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!projectId) return { project: null, milestones: [] };
@@ -172,10 +175,26 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
     await fetchCanonicalProgress();
   }, [fetchData, fetchCanonicalProgress]);
 
+  /** Debounced silent refresh — coalesces rapid cascade events into one refresh. */
+  const debouncedSilentRefresh = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      debounceRef.current = null;
+      silentRefresh();
+    }, 300);
+  }, [silentRefresh]);
+
   // Initial mount
   useEffect(() => {
     load();
   }, [load]);
+
+  // Clean up debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   // Realtime on projects table — fires when DB-computed fields change
   useEffect(() => {
@@ -190,13 +209,13 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
           filter: `id=eq.${projectId}`,
         },
         () => {
-          if (initialLoadDone.current) silentRefresh();
+          if (initialLoadDone.current) debouncedSilentRefresh();
         }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(ch); };
-  }, [projectId, silentRefresh]);
+  }, [projectId, debouncedSilentRefresh]);
 
   // Realtime on milestones table — fires when milestone data changes
   useEffect(() => {
@@ -211,13 +230,13 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
           filter: `project_id=eq.${projectId}`,
         },
         () => {
-          if (initialLoadDone.current) silentRefresh();
+          if (initialLoadDone.current) debouncedSilentRefresh();
         }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(ch); };
-  }, [projectId, silentRefresh]);
+  }, [projectId, debouncedSilentRefresh]);
 
   const handleEditMilestone = (m: Milestone) => {
     if (isArchived || !canEdit) return;

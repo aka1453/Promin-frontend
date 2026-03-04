@@ -26,6 +26,13 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
   const mountedRef = useRef(true);
   const channelRef = useRef<RealtimeChannel | null>(null);
 
+  // Debounce timer for realtime-triggered refreshes to prevent cascade storms.
+  // When DB triggers fire (deliverable → task → milestone → project), multiple
+  // realtime events arrive within milliseconds. Without debounce, each event
+  // triggers a full SELECT * FROM projects query — at scale this causes a
+  // "thundering herd" that overloads the database.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const reloadProjects = useCallback(async () => {
     try {
       const { data: { session }, error: authErr } = await supabase.auth.getSession();
@@ -74,6 +81,15 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  /** Debounced reload — coalesces rapid-fire realtime events into one refresh. */
+  const debouncedReload = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      debounceRef.current = null;
+      reloadProjects();
+    }, 300);
+  }, [reloadProjects]);
+
   /** Subscribe to realtime only when we have a valid session. */
   const subscribeRealtime = useCallback(() => {
     // Never open a realtime channel on /login — there is no session and the
@@ -91,12 +107,12 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "projects" },
-        () => { reloadProjects(); }
+        () => { debouncedReload(); }
       )
       .subscribe();
 
     channelRef.current = ch;
-  }, [reloadProjects]);
+  }, [debouncedReload]);
 
   const unsubscribeRealtime = useCallback(() => {
     if (channelRef.current) {
@@ -144,6 +160,8 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
       mountedRef.current = false;
       subscription.unsubscribe();
       unsubscribeRealtime();
+      // Clear any pending debounce on unmount
+      if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [reloadProjects, subscribeRealtime, unsubscribeRealtime]);
 

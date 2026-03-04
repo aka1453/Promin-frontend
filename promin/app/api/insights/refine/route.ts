@@ -13,6 +13,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "../../../lib/supabaseServer";
+import { checkIpLimit, checkUserLimit } from "../../../lib/rateLimit";
 import OpenAI from "openai";
 
 const SYSTEM_PROMPT = `You are a project management assistant. You rephrase the provided explanation draft to sound more natural and professional.
@@ -48,11 +49,30 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // IP rate limit (before auth to protect against unauthenticated floods)
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const ipCheck = checkIpLimit(ip);
+  if (ipCheck.limited) {
+    return NextResponse.json(
+      { ok: false, error: "Too many requests. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(ipCheck.retryAfterMs / 1000)) } },
+    );
+  }
+
   // Auth check
   const sb = await createSupabaseServer();
   const { data: { session } } = await sb.auth.getSession();
   if (!session) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  // User rate limit (after auth)
+  const userCheck = checkUserLimit(session.user.id);
+  if (userCheck.limited) {
+    return NextResponse.json(
+      { ok: false, error: "Too many requests. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(userCheck.retryAfterMs / 1000)) } },
+    );
   }
 
   // Parse body

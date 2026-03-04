@@ -33,6 +33,9 @@ export default function MilestonePage({
   const [taskProgressMap, setTaskProgressMap] = useState<Record<string, EntityProgress>>({});
 
   const initialLoadDone = useRef(false);
+  // Debounce timer for realtime callbacks — coalesces cascade events
+  // (deliverable → task → milestone → project triggers) into a single refresh.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchData = useCallback(async () => {
     const { data: milestoneData } = await supabase
@@ -116,9 +119,25 @@ export default function MilestonePage({
     await fetchCanonicalProgress();
   }, [fetchData, fetchCanonicalProgress]);
 
+  /** Debounced silent refresh — coalesces rapid cascade events into one refresh. */
+  const debouncedSilentRefresh = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      debounceRef.current = null;
+      silentRefresh();
+    }, 300);
+  }, [silentRefresh]);
+
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Clean up debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   // Realtime on milestones — triggers canonical progress refresh
   useEffect(() => {
@@ -133,13 +152,13 @@ export default function MilestonePage({
           filter: `id=eq.${milestoneId}`,
         },
         () => {
-          if (initialLoadDone.current) silentRefresh();
+          if (initialLoadDone.current) debouncedSilentRefresh();
         }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(ch); };
-  }, [milestoneId, silentRefresh]);
+  }, [milestoneId, debouncedSilentRefresh]);
 
   // Realtime on projects — triggers refresh when project data changes
   useEffect(() => {
@@ -154,13 +173,13 @@ export default function MilestonePage({
           filter: `id=eq.${projectId}`,
         },
         () => {
-          if (initialLoadDone.current) silentRefresh();
+          if (initialLoadDone.current) debouncedSilentRefresh();
         }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(ch); };
-  }, [projectId, silentRefresh]);
+  }, [projectId, debouncedSilentRefresh]);
 
   // Realtime on tasks — so task status/progress changes reflect immediately
   useEffect(() => {
@@ -175,13 +194,13 @@ export default function MilestonePage({
           filter: `milestone_id=eq.${milestoneId}`,
         },
         () => {
-          if (initialLoadDone.current) silentRefresh();
+          if (initialLoadDone.current) debouncedSilentRefresh();
         }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(ch); };
-  }, [milestoneId, silentRefresh]);
+  }, [milestoneId, debouncedSilentRefresh]);
 
   // Realtime on subtasks — deliverable completion triggers progress change
   useEffect(() => {
@@ -195,13 +214,13 @@ export default function MilestonePage({
           table: "subtasks",
         },
         () => {
-          if (initialLoadDone.current) silentRefresh();
+          if (initialLoadDone.current) debouncedSilentRefresh();
         }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(ch); };
-  }, [milestoneId, silentRefresh]);
+  }, [milestoneId, debouncedSilentRefresh]);
 
   const handleMilestoneUpdated = () => {
     loadData();
