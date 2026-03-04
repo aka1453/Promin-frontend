@@ -234,7 +234,7 @@ export default function LoginUI() {
 
     try {
       if (mode === "signin") {
-        const { error: authError } = await supabase.auth.signInWithPassword({
+        const { data, error: authError } = await supabase.auth.signInWithPassword({
           email,
           password: pw,
         });
@@ -243,8 +243,16 @@ export default function LoginUI() {
           setPending(false);
           return;
         }
+        // Persist session in a cookie so it survives navigation in restricted
+        // environments (e.g. Codespaces WebView) where localStorage is blocked.
+        if (data.session) {
+          document.cookie = `sb-auth-token=${encodeURIComponent(JSON.stringify({
+            access_token: data.session.access_token,
+            refresh_token: data.session.refresh_token,
+          }))};path=/;max-age=120;SameSite=Lax`;
+        }
       } else {
-        const { error: signUpError } = await supabase.auth.signUp({
+        const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password: pw,
         });
@@ -252,6 +260,12 @@ export default function LoginUI() {
           setError(signUpError.message);
           setPending(false);
           return;
+        }
+        if (data.session) {
+          document.cookie = `sb-auth-token=${encodeURIComponent(JSON.stringify({
+            access_token: data.session.access_token,
+            refresh_token: data.session.refresh_token,
+          }))};path=/;max-age=120;SameSite=Lax`;
         }
       }
 

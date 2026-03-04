@@ -51,6 +51,29 @@ export const supabase =
     },
   }));
 
+// On page load, check for a session cookie written by the login page.
+// In restricted environments (Codespaces WebView, some mobile browsers),
+// localStorage and sessionStorage are blocked. The login page writes the
+// tokens to a short-lived cookie, which we restore here via setSession().
+// The onAuthStateChange listener in ProjectsContext will pick up the session.
+if (typeof document !== "undefined") {
+  const match = document.cookie.match(/sb-auth-token=([^;]+)/);
+  if (match) {
+    try {
+      const { access_token, refresh_token } = JSON.parse(
+        decodeURIComponent(match[1])
+      );
+      // Clear the cookie immediately
+      document.cookie = "sb-auth-token=;path=/;max-age=0";
+      // Restore session (async — onAuthStateChange will propagate)
+      supabase.auth.setSession({ access_token, refresh_token });
+    } catch {
+      // Malformed cookie — ignore
+      document.cookie = "sb-auth-token=;path=/;max-age=0";
+    }
+  }
+}
+
 /** Get Bearer token headers for authenticated API calls. */
 export async function getAuthHeaders(): Promise<Record<string, string>> {
   const { data: { session } } = await supabase.auth.getSession();

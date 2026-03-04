@@ -53,6 +53,34 @@ export default function DiagPage() {
         result.sessionStorageError = String(e);
       }
 
+      // 3c. Check cookies for auth token
+      try {
+        const hasCookie = document.cookie.includes("sb-auth-token");
+        result.authCookiePresent = hasCookie;
+        result.allCookies = document.cookie
+          .split(";")
+          .map((c) => c.trim().split("=")[0])
+          .filter(Boolean);
+      } catch (e) {
+        result.cookieError = String(e);
+      }
+
+      // 3d. Storage write test (can we actually write?)
+      try {
+        localStorage.setItem("__diag_test__", "1");
+        localStorage.removeItem("__diag_test__");
+        result.localStorageWritable = true;
+      } catch {
+        result.localStorageWritable = false;
+      }
+      try {
+        sessionStorage.setItem("__diag_test__", "1");
+        sessionStorage.removeItem("__diag_test__");
+        result.sessionStorageWritable = true;
+      } catch {
+        result.sessionStorageWritable = false;
+      }
+
       // 4. If session exists, try querying projects
       if (result.session) {
         try {
