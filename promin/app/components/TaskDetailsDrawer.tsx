@@ -5,6 +5,7 @@ import { supabase } from "../lib/supabaseClient";
 import { startTask, completeTask } from "../lib/lifecycle";
 import { useUserTimezone } from "../context/UserTimezoneContext";
 import { todayForTimezone } from "../utils/date";
+import { useToast } from "./ToastProvider";
 import DeliverableCard from "./DeliverableCard";
 import DeliverableCreateModal from "./DeliverableCreateModal";
 import CommentsSection from "./CommentsSection";
@@ -24,13 +25,14 @@ export default function TaskDetailsDrawer({
   onTaskUpdated,
 }: Props) {
   const { timezone } = useUserTimezone();
+  const { pushToast, pushActionToast } = useToast();
   const [deliverables, setDeliverables] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [localTask, setLocalTask] = useState(task);
   const [activeTab, setActiveTab] = useState<"deliverables" | "comments">("deliverables");
   const [projectId, setProjectId] = useState<number | null>(null);
-  
+
   // Track if deliverables were changed
   const deliverablesChangedRef = useRef(false);
 
@@ -48,8 +50,8 @@ export default function TaskDetailsDrawer({
     }
   };
 
-  const loadDeliverables = async () => {
-    if (!task?.id) return;
+  const loadDeliverables = async (): Promise<any[]> => {
+    if (!task?.id) return [];
 
     setLoading(true);
     try {
@@ -62,13 +64,15 @@ export default function TaskDetailsDrawer({
       if (error) {
         console.error("Failed to load deliverables:", error);
         setDeliverables([]);
-        return;
+        return [];
       }
 
       setDeliverables(data || []);
+      return data || [];
     } catch (err) {
       console.error("Load deliverables exception:", err);
       setDeliverables([]);
+      return [];
     } finally {
       setLoading(false);
     }
@@ -144,14 +148,40 @@ export default function TaskDetailsDrawer({
     }
   };
 
+  const handleCompleteTaskFromToast = async () => {
+    try {
+      await completeTask(localTask.id, todayForTimezone(timezone));
+      await loadTask();
+      onTaskUpdated?.();
+    } catch (error) {
+      console.error("Failed to complete task:", error);
+      pushToast("Failed to complete task. Ensure all deliverables are done.", "error");
+    }
+  };
+
   const handleDeliverableChanged = async () => {
     // Mark that deliverables have changed
     deliverablesChangedRef.current = true;
-    
+
     // Reload deliverables AND task in drawer only
-    await loadDeliverables();
+    const freshDeliverables = await loadDeliverables();
     await loadTask();
-    
+
+    // Check if all deliverables just became complete
+    const allDone =
+      freshDeliverables.length > 0 &&
+      freshDeliverables.every((d: any) => d.is_done === true);
+
+    if (allDone && localTask.actual_start && !localTask.actual_end) {
+      pushActionToast(
+        "All deliverables complete! Finish this task?",
+        "Complete",
+        handleCompleteTaskFromToast,
+        "info",
+        8000
+      );
+    }
+
     // DON'T call onTaskUpdated here - wait for drawer close
   };
 

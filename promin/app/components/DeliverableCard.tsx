@@ -5,6 +5,7 @@ import { supabase } from "../lib/supabaseClient";
 import DeliverableInlineUploader from "./DeliverableInlineUploader";
 import EditDeliverableModal from "./EditDeliverableModal";
 import DeliverableFileSection from "./DeliverableFileSection";
+import InlineEditCost from "./InlineEditCost";
 import { useToast } from "./ToastProvider";
 import Tooltip from "./Tooltip";
 
@@ -336,13 +337,31 @@ export default function DeliverableCard({
             </div>
           )}
 
-          {/* Actual Cost */}
-          {(localDeliverable.actual_cost != null && localDeliverable.actual_cost > 0) && (
+          {/* Actual Cost - inline editable */}
+          {(localDeliverable.budgeted_cost > 0 || localDeliverable.actual_cost > 0 || !readOnly) && (
             <div>
               <span className="text-gray-500">Actual Cost:</span>
-              <span className={`ml-2 font-medium ${localDeliverable.actual_cost > (localDeliverable.budgeted_cost ?? 0) && (localDeliverable.budgeted_cost ?? 0) > 0 ? "text-red-600" : "text-gray-900"}`}>
-                ${localDeliverable.actual_cost.toLocaleString()}
-              </span>
+              <InlineEditCost
+                value={localDeliverable.actual_cost}
+                budgetedCost={localDeliverable.budgeted_cost}
+                readOnly={readOnly}
+                onSave={async (newCost: number) => {
+                  const { error } = await supabase
+                    .from("deliverables")
+                    .update({ actual_cost: newCost })
+                    .eq("id", localDeliverable.id);
+
+                  if (error) {
+                    console.error("Inline cost save error:", error);
+                    pushToast("Failed to save cost", "error");
+                    throw error;
+                  }
+
+                  setLocalDeliverable({ ...localDeliverable, actual_cost: newCost });
+                  pushToast("Cost updated", "success");
+                  onChanged?.();
+                }}
+              />
             </div>
           )}
 
