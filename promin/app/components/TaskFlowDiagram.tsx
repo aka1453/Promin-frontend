@@ -31,7 +31,7 @@ import {
 } from "../lib/taskDependencies";
 import { updateTaskDatesAndCascade } from "../lib/dependencyScheduling";
 import type { Task } from "../types/task";
-import type { TaskDependency, TaskWithDependencies } from "../types/taskDependency";
+import type { TaskDependency, TaskWithDependencies, TaskNodeData } from "../types/taskDependency";
 import TaskNode from "./TaskNode";
 import TaskDetailsDrawer from "./TaskDetailsDrawer";
 import AddTaskButton from "./AddTaskButton";
@@ -211,6 +211,7 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
   }, [milestoneId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, [loadData]);
 
@@ -590,7 +591,7 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
         <Controls />
         <MiniMap
           nodeColor={(node) => {
-            const task = (node.data as any)?.task;
+            const task = (node.data as TaskNodeData)?.task;
             if (!task) return "#e5e7eb";
             if (task.actual_end) return "#10b981";
             if (task.actual_start) return "#3b82f6";

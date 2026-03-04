@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
+import type { Task } from "../types/task";
 import TaskCard from "./TaskCard";
 import TaskDetailsDrawer from "./TaskDetailsDrawer";
 import { useToast } from "./ToastProvider";
@@ -31,9 +32,9 @@ export default function TaskFlowBoard({
   const { timezone } = useUserTimezone();
   const asOfDate = todayForTimezone(timezone);
 
-  const [tasks, setTasks] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   const loadTasks = async () => {
     setLoading(true);
@@ -54,6 +55,7 @@ export default function TaskFlowBoard({
 
   useEffect(() => {
     loadTasks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [milestoneId]);
 
   const handleTaskCreated = async () => {
@@ -62,7 +64,7 @@ export default function TaskFlowBoard({
     onMilestoneUpdated?.();
   };
 
-  const handleTaskClick = (task: any) => {
+  const handleTaskClick = (task: Task) => {
     setSelectedTask(task);
   };
 

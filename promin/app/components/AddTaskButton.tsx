@@ -60,9 +60,9 @@ export default function AddTaskButton({ milestoneId, onCreated }: Props) {
       // Success - close modal and refresh
       setOpen(false);
       onCreated();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Task creation exception:", err);
-      alert(`Failed to create task: ${err.message || "Unknown error"}`);
+      alert(`Failed to create task: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setCreating(false);
     }

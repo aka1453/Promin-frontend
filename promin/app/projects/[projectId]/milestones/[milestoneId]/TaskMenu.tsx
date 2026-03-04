@@ -5,10 +5,11 @@ import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import SubtaskInlineUploader from "@/components/DeliverableInlineUploader";
 import { useToast } from "@/components/ToastProvider";
+import type { Deliverable } from "@/types/deliverable";
 
 type Props = {
   taskId: number;
-  subtask: any;
+  subtask: Deliverable;
   isReadOnly?: boolean;
   onEdit: () => void;
   onDelete: () => void;
@@ -33,7 +34,7 @@ export default function SubtaskCard({
 
     setUpdating(true);
 
-    const updatePayload: any = {
+    const updatePayload: Record<string, unknown> = {
       is_done: checked,
       completed_at: checked ? new Date().toISOString() : null,
     };

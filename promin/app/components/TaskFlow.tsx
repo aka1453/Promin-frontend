@@ -34,6 +34,7 @@ export default function TaskFlow({ milestoneId }: Props) {
 
   useEffect(() => {
     loadTasks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [milestoneId]);
 
   const handleTaskClick = (task: Task) => {

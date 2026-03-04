@@ -7,10 +7,11 @@ import EditDeliverableModal from "./EditDeliverableModal";
 import DeliverableFileSection from "./DeliverableFileSection";
 import { useToast } from "./ToastProvider";
 import Tooltip from "./Tooltip";
+import { Deliverable } from "../types/deliverable";
 
 type Props = {
-  deliverable: any;
-  existingDeliverables: any[];
+  deliverable: Deliverable;
+  existingDeliverables: Deliverable[];
   canEdit?: boolean;
   canDelete?: boolean;
   onChanged?: () => void;
@@ -33,7 +34,7 @@ export default function DeliverableCard({
   const [editOpen, setEditOpen] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
   const [assignedUserName, setAssignedUserName] = useState<string | null>(null);
-  const [dependsOnDeliverable, setDependsOnDeliverable] = useState<any>(null);
+  const [dependsOnDeliverable, setDependsOnDeliverable] = useState<Deliverable | null>(null);
 
   const readOnly = !canEdit;
   const [confirmUncheck, setConfirmUncheck] = useState(false);
@@ -59,7 +60,7 @@ export default function DeliverableCard({
         const dependency = existingDeliverables.find(
           d => d.id === localDeliverable.depends_on_deliverable_id
         );
-        setDependsOnDeliverable(dependency);
+        setDependsOnDeliverable(dependency ?? null);
       } else {
         // Clear dependency if none exists
         setDependsOnDeliverable(null);
@@ -84,7 +85,7 @@ export default function DeliverableCard({
   async function performToggle(checked: boolean) {
     setUpdating(true);
 
-    const updatePayload: any = {
+    const updatePayload: { is_done: boolean; completed_at: string | null } = {
       is_done: checked,
       completed_at: checked ? new Date().toISOString() : null,
     };
@@ -179,7 +180,7 @@ export default function DeliverableCard({
         const dependency = existingDeliverables.find(
           d => d.id === data.depends_on_deliverable_id
         );
-        setDependsOnDeliverable(dependency);
+        setDependsOnDeliverable(dependency ?? null);
       } else {
         setDependsOnDeliverable(null);
       }
@@ -188,7 +189,7 @@ export default function DeliverableCard({
     onChanged?.();
   };
 
-  const formatDate = (dateStr: string | null) => {
+  const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return "—";
     return new Date(dateStr).toLocaleDateString("en-US", {
       month: "short",

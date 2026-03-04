@@ -15,7 +15,7 @@ type Props = {
 export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
   const { pushToast } = useToast();
 
-  const [task, setTask] = useState<any>(null);
+  const [task, setTask] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [title, setTitle] = useState("");
@@ -88,9 +88,9 @@ export default function EditTaskModal({ taskId, onClose, onSuccess }: Props) {
 
       pushToast("Task updated successfully", "success");
       onSuccess();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Update task exception:", e);
-      pushToast(e?.message || "Failed to update task", "error");
+      pushToast(e instanceof Error ? e.message : "Failed to update task", "error");
     } finally {
       setSaving(false);
     }

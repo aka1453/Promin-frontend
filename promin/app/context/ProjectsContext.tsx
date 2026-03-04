@@ -18,9 +18,11 @@ function redirectToLogin() {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ProjectsContext = createContext<any>(null);
 
 export function ProjectsProvider({ children }: { children: React.ReactNode }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [projects, setProjects] = useState<any[]>([]);
   const [loaded, setLoaded] = useState(false);
   const mountedRef = useRef(true);

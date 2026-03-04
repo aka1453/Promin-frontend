@@ -9,10 +9,25 @@ import DeliverableCard from "./DeliverableCard";
 import DeliverableCreateModal from "./DeliverableCreateModal";
 import CommentsSection from "./CommentsSection";
 import Tooltip from "./Tooltip";
+import type { Deliverable } from "../types/deliverable";
+
+type TaskRecord = {
+  id: number;
+  title?: string;
+  description?: string | null;
+  milestone_id?: number;
+  planned_start?: string | null;
+  planned_end?: string | null;
+  actual_start?: string | null;
+  actual_end?: string | null;
+  weight?: number;
+  duration_days?: number;
+  status?: string;
+};
 
 type Props = {
   open: boolean;
-  task: any;
+  task: TaskRecord | null;
   onClose: () => void;
   onTaskUpdated?: () => void;
 };
@@ -24,7 +39,7 @@ export default function TaskDetailsDrawer({
   onTaskUpdated,
 }: Props) {
   const { timezone } = useUserTimezone();
-  const [deliverables, setDeliverables] = useState<any[]>([]);
+  const [deliverables, setDeliverables] = useState<Deliverable[]>([]);
   const [loading, setLoading] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [localTask, setLocalTask] = useState(task);

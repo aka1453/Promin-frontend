@@ -28,6 +28,9 @@ import Tooltip from "./Tooltip";
 type Project = {
   id: number;
   name: string;
+  deleted_at?: string | null;
+  status?: string;
+  position?: number;
 };
 
 function SortableProjectItem({
@@ -96,7 +99,7 @@ function SortableProjectItem({
 export default function Sidebar() {
   const { projects, setProjects, reloadProjects } = useProjects();
   const { timezone, setTimezone } = useUserTimezone();
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<{ email?: string; user_metadata?: Record<string, string> } | null>(null);
   const router = useRouter();
 
   // Optimistic order for sidebar (prevents snap-back while DB saves)
@@ -104,7 +107,7 @@ export default function Sidebar() {
 
   // Debounced persistence for reorder
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const snapshotRef = useRef<any[] | null>(null);
+  const snapshotRef = useRef<Project[] | null>(null);
   const [reorderError, setReorderError] = useState<string | null>(null);
 
   // Clear error after 4 seconds
@@ -149,21 +152,21 @@ export default function Sidebar() {
   }, []);
 
   const activeProjects = projects.filter(
-    (p: any) => p.deleted_at == null && p.status !== "archived"
+    (p: Project) => p.deleted_at == null && p.status !== "archived"
   );
 
   const archivedProjects = projects.filter(
-    (p: any) => p.deleted_at == null && p.status === "archived"
+    (p: Project) => p.deleted_at == null && p.status === "archived"
   );
 
   const activeProjectsForRender = optimisticOrder
     ? optimisticOrder
-        .map((id) => activeProjects.find((p: any) => p.id === id))
+        .map((id) => activeProjects.find((p: Project) => p.id === id))
         .filter(Boolean)
     : activeProjects;
 
   const deletedProjects = projects.filter(
-    (p: any) => p.deleted_at != null
+    (p: Project) => p.deleted_at != null
   );
 
   const [showArchived, setShowArchived] = useState(false);
@@ -273,7 +276,7 @@ export default function Sidebar() {
 
             // Optimistic: update context projects with new positions
             const positionMap = new Map(orderedIds.map((id, i) => [id, i]));
-            const updatedProjects = projects.map((p: any) => {
+            const updatedProjects = projects.map((p: Project) => {
               const newPos = positionMap.get(p.id);
               return newPos !== undefined ? { ...p, position: newPos } : p;
             });
@@ -287,11 +290,11 @@ export default function Sidebar() {
           }}
         >
           <SortableContext
-            items={activeProjectsForRender.map((p: any) => p.id)}
+            items={activeProjectsForRender.map((p: Project) => p.id)}
             strategy={verticalListSortingStrategy}
           >
             <div className="flex flex-col gap-1">
-              {activeProjectsForRender.map((p: any) => (
+              {activeProjectsForRender.map((p: Project) => (
                 <SortableProjectItem
                   key={p.id}
                   project={p}
@@ -314,7 +317,7 @@ export default function Sidebar() {
 
             {showArchived && (
               <div className="flex flex-col gap-1 opacity-70">
-                {archivedProjects.map((p: any) => (
+                {archivedProjects.map((p: Project) => (
                   <Link
                     key={p.id}
                     href={`/projects/${p.id}`}

@@ -3,6 +3,7 @@
 
 import React, { useEffect, useState } from "react";
 import { MoreVertical, ChevronDown, ChevronUp } from "lucide-react";
+import type { Task } from "../types/task";
 import { formatPercent, formatTaskNumber } from "../utils/format";
 import { getTaskScheduleState, getScheduleBorderClass } from "../utils/schedule";
 import { startTask, completeTask } from "../lib/lifecycle";
@@ -15,8 +16,8 @@ import ChatButton from "./chat/ChatButton";
 import Tooltip from "./Tooltip";
 
 type Props = {
-  task: any;
-  onClick?: (task: any) => void;
+  task: Task;
+  onClick?: (task: Task) => void;
   onTaskUpdated?: () => void;
   canonicalPlanned?: number | null;
   canonicalActual?: number | null;
@@ -247,7 +248,7 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
           {/* BUTTONS + WEIGHT */}
           <div className="flex flex-col items-end flex-shrink-0">
             <div className="flex items-center gap-0.5">
-              <ChatButton entityType="task" entityId={task.id} entityName={task.name || undefined} compact />
+              <ChatButton entityType="task" entityId={task.id} entityName={task.title || undefined} compact />
 
               {/* Collapse button */}
               <Tooltip content={isCollapsed ? "Expand" : "Collapse"}>

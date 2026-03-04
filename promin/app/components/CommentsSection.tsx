@@ -113,9 +113,9 @@ export default function CommentsSection({
       if (fetchError) throw fetchError;
 
       setComments(data || []);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to load comments:", err);
-      setError(err.message);
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }

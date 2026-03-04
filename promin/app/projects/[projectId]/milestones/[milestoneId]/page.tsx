@@ -7,6 +7,7 @@ import { todayForTimezone } from "../../../../utils/date";
 import TaskViewWrapper from "../../../../components/TaskViewWrapper";
 import type { EntityProgress, HierarchyRow } from "../../../../types/progress";
 import { toEntityProgress } from "../../../../types/progress";
+import type { Milestone } from "../../../../types/milestone";
 import { ChatProvider } from "../../../../context/ChatContext";
 import ChatDrawer from "../../../../components/chat/ChatDrawer";
 import DeltaBadge from "../../../../components/DeltaBadge";
@@ -23,8 +24,8 @@ export default function MilestonePage({
   const projectId = parseInt(resolvedParams.projectId);
   const milestoneId = parseInt(resolvedParams.milestoneId);
 
-  const [milestone, setMilestone] = useState<any>(null);
-  const [project, setProject] = useState<any>(null);
+  const [milestone, setMilestone] = useState<Milestone | null>(null);
+  const [project, setProject] = useState<{ id: number; name: string | null; budgeted_cost?: number | null; actual_cost?: number | null; status?: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
 
@@ -129,6 +130,7 @@ export default function MilestonePage({
   }, [silentRefresh]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, [loadData]);
 
@@ -290,7 +292,7 @@ export default function MilestonePage({
           {/* ===== HEADER ROW ===== */}
           <div className="flex items-center justify-between mb-5">
             <h1 className="text-lg font-semibold text-slate-700">
-              {milestone.name || milestone.title}
+              {milestone.name || "Untitled"}
             </h1>
             <div className="flex items-center gap-2">
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusClass}`}>

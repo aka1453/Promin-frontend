@@ -4,6 +4,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useToast } from "./ToastProvider";
+import type { Deliverable } from "../types/deliverable";
 
 type Props = {
   deliverableId: number;
@@ -23,7 +24,7 @@ export default function EditDeliverableModal({
   const [saving, setSaving] = useState(false);
 
   const [taskId, setTaskId] = useState<number>(0);
-  const [existingDeliverables, setExistingDeliverables] = useState<any[]>([]);
+  const [existingDeliverables, setExistingDeliverables] = useState<Deliverable[]>([]);
   const [title, setTitle] = useState("");
   const [weight, setWeight] = useState("0");
   const [durationDays, setDurationDays] = useState("1");
@@ -125,7 +126,7 @@ export default function EditDeliverableModal({
 
   // Calculate total weight
   const sum = (existingDeliverables || []).reduce(
-    (acc: number, d: any) => {
+    (acc: number, d: Record<string, unknown>) => {
       // Exclude current deliverable from sum
       if (d.id === deliverableId) return acc;
       return acc + Number(d.weight ?? 0) * 100;

@@ -24,6 +24,7 @@ export default function AddMilestoneButton({
   useEffect(() => {
     if (!open) return;
     // reset each open
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setName("");
     setWeight("0");
     setLoading(false);

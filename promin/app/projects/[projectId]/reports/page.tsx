@@ -1129,7 +1129,7 @@ function ExportTab({
 
       // Query task_dependencies for all tasks in this project
       const taskIds = tasks.map((t) => t.id);
-      let depMap: Record<number, number[]> = {};
+      const depMap: Record<number, number[]> = {};
       if (taskIds.length > 0) {
         const { data: deps } = await (await import("../../../lib/supabaseClient")).supabase
           .from("task_dependencies")
@@ -1702,7 +1702,7 @@ function ExportTab({
             </div>
             <p className="text-sm font-semibold text-slate-800 mb-1">{exp.label}</p>
             <p className="text-xs text-slate-500 mb-4 leading-relaxed">{exp.desc}</p>
-            {(exp as any).hasGranularity && (
+            {(exp as { hasGranularity?: boolean }).hasGranularity && (
               <div className="mb-3 w-full">
                 <select
                   value={scurveGranularity}
@@ -1811,7 +1811,7 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
 
     // Tasks — fetch all tasks for milestones in this project
     if (msData && msData.length > 0) {
-      const msIds = msData.map((m: any) => m.id);
+      const msIds = msData.map((m: Record<string, unknown>) => m.id);
       const { data: taskData } = await supabase
         .from("tasks")
         .select("*")
@@ -1821,9 +1821,10 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
     }
 
     setLoading(false);
-  }, [projectId]);
+  }, [projectId, timezone]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 

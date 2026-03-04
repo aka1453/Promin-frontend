@@ -5,7 +5,7 @@ import EditTaskModal from "./EditTaskModal";
 import Tooltip from "./Tooltip";
 
 type Props = {
-  task: any;
+  task: { id: number };
   onTaskUpdated: () => void;
 };
 

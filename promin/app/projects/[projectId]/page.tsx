@@ -186,6 +186,7 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
 
   // Initial mount
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
@@ -274,8 +275,8 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
     try {
       await completeProject(project.id, todayForTimezone(timezone));
       load();
-    } catch (err: any) {
-      console.error("Failed to complete project:", err.message);
+    } catch (err: unknown) {
+      console.error("Failed to complete project:", err instanceof Error ? err.message : err);
     }
   }
 

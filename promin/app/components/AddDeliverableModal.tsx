@@ -1,10 +1,11 @@
 "use client";
 
 import DeliverableCreateModal from "./DeliverableCreateModal";
+import { Deliverable } from "../types/deliverable";
 
 type Props = {
   taskId: number;
-  existingDeliverables: any[];
+  existingDeliverables: Deliverable[];
   onClose: () => void;
   onCreated: () => void;
 };

@@ -46,9 +46,9 @@ export default function DeliverableFileSection({
           created_at: file.created_at,
         }))
       );
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Failed to load files:", e);
-      setError(e.message || "Failed to load files");
+      setError(e instanceof Error ? e.message : "Failed to load files");
     } finally {
       setLoading(false);
     }
@@ -65,9 +65,9 @@ export default function DeliverableFileSection({
       if (data?.signedUrl) {
         window.open(data.signedUrl, "_blank");
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Preview error:", e);
-      alert(e.message || "Failed to preview file");
+      alert(e instanceof Error ? e.message : "Failed to preview file");
     }
   };
 
@@ -90,9 +90,9 @@ export default function DeliverableFileSection({
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Download error:", e);
-      alert(e.message || "Failed to download file");
+      alert(e instanceof Error ? e.message : "Failed to download file");
     }
   };
 
@@ -108,9 +108,9 @@ export default function DeliverableFileSection({
       if (error) throw error;
 
       await loadFiles();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Delete error:", e);
-      alert(e.message || "Failed to delete file");
+      alert(e instanceof Error ? e.message : "Failed to delete file");
     }
   };
 

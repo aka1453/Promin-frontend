@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useToast } from "./ToastProvider";
+import { Deliverable } from "../types/deliverable";
 
 type Props = {
   taskId: number;
-  existingDeliverables: any[];
+  existingDeliverables: Deliverable[];
   onClose: () => void;
   onSuccess: () => void;
 };

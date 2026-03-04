@@ -30,27 +30,27 @@ async function editMilestone(updated: Milestone) {
   // Never send `weight` from the client.
   // Only update user-editable fields. DB owns normalized `weight`.
 
-  const payload: Record<string, any> = {
+  const payload: Record<string, unknown> = {
   name: updated.name ?? null,
   description: updated.description ?? null,
 
-  // Only include if it exists in the object (Milestone type may not define it)
-  position: (updated as any).position ?? undefined,
+  // position is not in the Milestone type but may exist on the DB row
+  position: (updated as Milestone & { position?: number }).position ?? undefined,
 
-  planned_start: (updated as any).planned_start ?? null,
-  planned_end: (updated as any).planned_end ?? null,
-  actual_start: (updated as any).actual_start ?? null,
-  actual_end: (updated as any).actual_end ?? null,
-  status: (updated as any).status ?? null,
-  budgeted_cost: (updated as any).budgeted_cost ?? 0,
-  actual_cost: (updated as any).actual_cost ?? 0,
+  planned_start: updated.planned_start ?? null,
+  planned_end: updated.planned_end ?? null,
+  actual_start: updated.actual_start ?? null,
+  actual_end: updated.actual_end ?? null,
+  status: updated.status ?? null,
+  budgeted_cost: updated.budgeted_cost ?? 0,
+  actual_cost: updated.actual_cost ?? 0,
 };
 
 
   // Remove undefined keys so we don't accidentally null columns
   Object.keys(payload).forEach((key) => {
-    if ((payload as any)[key] === undefined) {
-      delete (payload as any)[key];
+    if (payload[key] === undefined) {
+      delete payload[key];
     }
   });
 
@@ -119,6 +119,7 @@ async function deleteMilestone(milestoneId: number) {
 
   useEffect(() => {
     reloadMilestones();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   return (

@@ -52,9 +52,9 @@ export default function DeliverableInlineUploader({
 
       pushToast(`File uploaded as ${newFileName}`, "success");
       onUploaded?.();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Upload error:", error);
-      pushToast(error.message || "Failed to upload file", "error");
+      pushToast(error instanceof Error ? error.message : "Failed to upload file", "error");
     } finally {
       setUploading(false);
       e.target.value = "";

@@ -63,6 +63,9 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
     return `$${val.toLocaleString()}`;
   };
 
+  // Cost fields exist on the runtime task object but are not declared on TaskWithDependencies
+  const taskCosts = task as unknown as { budgeted_cost?: number; actual_cost?: number };
+
   // Get border color based on schedule state (matching TaskCard)
   const getBorderClass = () => {
     if (isDelayed) return "border-red-500";
@@ -411,14 +414,14 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
           </div>
           <div className="flex justify-between">
             <span className="font-bold text-slate-900">Budget</span>
-            <span className="font-medium text-slate-600">{fmtCost((task as any).budgeted_cost)}</span>
+            <span className="font-medium text-slate-600">{fmtCost(taskCosts.budgeted_cost)}</span>
           </div>
           <div className="flex justify-between">
             <span className="font-bold text-slate-900">Actual</span>
             <span className={`font-medium ${
-              (task as any).actual_cost && (task as any).budgeted_cost && (task as any).actual_cost > (task as any).budgeted_cost
+              taskCosts.actual_cost && taskCosts.budgeted_cost && taskCosts.actual_cost > taskCosts.budgeted_cost
                 ? "text-amber-600" : "text-emerald-600"
-            }`}>{fmtCost((task as any).actual_cost)}</span>
+            }`}>{fmtCost(taskCosts.actual_cost)}</span>
           </div>
         </div>
 

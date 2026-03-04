@@ -31,7 +31,7 @@ export default function CommentComposer({
   const [showMentions, setShowMentions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([]);
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Get current user — use getSession() (local cache, no network call)
@@ -54,7 +54,7 @@ export default function CommentComposer({
 
     if (error) throw error;
 
-    const members: ProjectMember[] = (data || []).map((member: any) => ({
+    const members: ProjectMember[] = (data || []).map((member: Record<string, unknown>) => ({
       user_id: member.user_id,
       full_name: member.full_name || "Unknown",
       email: member.email || "",
@@ -141,9 +141,9 @@ export default function CommentComposer({
 
       setBody("");
       onCommentAdded();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to add comment:", err);
-      alert("Failed to add comment: " + err.message);
+      alert("Failed to add comment: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSubmitting(false);
     }

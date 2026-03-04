@@ -18,7 +18,7 @@ async function loadUsers() {
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-const [users, setUsers] = useState<any[]>([]);
+const [users, setUsers] = useState<{ id: string; full_name: string }[]>([]);
 const [projectManagerId, setProjectManagerId] = useState<string | null>(null);
 
 

@@ -8,8 +8,27 @@ import DeltaBadge from "./DeltaBadge";
 import { formatPercent } from "../utils/format";
 import Tooltip from "./Tooltip";
 
+type ProjectData = {
+  id: number;
+  name?: string | null;
+  status?: string | null;
+  planned_start?: string | null;
+  planned_end?: string | null;
+  actual_start?: string | null;
+  actual_end?: string | null;
+  budgeted_cost?: number | null;
+  actual_cost?: number | null;
+  owner_id?: string;
+  archived_at?: string | null;
+  project_manager?: {
+    id?: string;
+    full_name?: string | null;
+    email?: string | null;
+  } | null;
+};
+
 type Props = {
-  project: any;
+  project: ProjectData;
   onClick?: () => void;
   onOpenSettings?: () => void;
   hideSettings?: boolean;
@@ -55,7 +74,7 @@ function getInitials(name?: string | null, email?: string | null): string {
   return "PM";
 }
 
-function getAvatarColor(key?: string) {
+function getAvatarColor(key?: string | null) {
   if (!key) return "#1e40af";
 
   const colors = [

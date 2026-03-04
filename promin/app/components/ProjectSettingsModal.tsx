@@ -1,11 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { canEdit, isOwner } from "../utils/permissions";
 
+type ProjectRecord = {
+  id: number;
+  name?: string | null;
+  status?: string | null;
+  owner_id?: string;
+  archived_at?: string | null;
+  project_manager?: { full_name?: string | null } | null;
+};
+
 type Props = {
-  project: any;
+  project: ProjectRecord;
   projectRole: 'owner' | 'editor' | 'viewer' | null;
   onClose: () => void;
 };
@@ -16,8 +25,7 @@ export default function ProjectSettingsModal({ project,projectRole, onClose }: P
   // TEMP: Pro gating (hardcoded for now)
   const isPro = true;
   const isArchived = project?.status === "archived";
-  const isOwnerUser = isOwner(projectRole);
-  const [name, setName] = useState<string>("");
+  const [name, setName] = useState<string>(project?.name ?? "");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -34,10 +42,15 @@ export default function ProjectSettingsModal({ project,projectRole, onClose }: P
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
 
 
-  // Keep local state in sync when a different project is selected
-  useEffect(() => {
-  setName(project?.name ?? "");
+  // Keep local name in sync when a different project is selected
+  const prevProjectNameRef = useRef(project?.name);
+  if (prevProjectNameRef.current !== project?.name) {
+    prevProjectNameRef.current = project?.name;
+    setName(project?.name ?? "");
+  }
 
+  // Load collaborators when project or role changes
+  useEffect(() => {
   async function loadMembers() {
     if (!project?.id || !isOwner(projectRole)) return;
 
@@ -57,9 +70,9 @@ console.log("RLS DEBUG — projectRole:", projectRole);
 
 if (!error && data) {
   setMembers(
-  data.map((m: any) => ({
+  data.map((m: { user_id: string; role: string; email: string }) => ({
     user_id: m.user_id,
-    role: m.role,
+    role: m.role as "owner" | "editor" | "viewer",
     email: m.email,
   }))
 );
@@ -97,8 +110,7 @@ console.log("Project role:", projectRole);
       return;
     }
 
-    // optimistic sync (so the modal text updates immediately)
-    project.name = trimmed;
+    // optimistic sync — local state `name` already holds `trimmed`
   }
 async function inviteByEmail() {
   if (!project || !inviteEmail) return;
@@ -228,7 +240,7 @@ async function restoreProject() {
   );
   if (!confirmed) return;
 
-  const { data: auth } = await supabase.auth.getUser();
+  await supabase.auth.getUser();
 
 const { error } = await supabase
   .from("projects")

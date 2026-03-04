@@ -10,7 +10,7 @@ export async function calculateTaskDurationFromDeliverables(
 ): Promise<number> {
   // Try selecting dependency columns first; fall back to id-only if they
   // don't exist in the view (PGRST204).
-  let deliverables: any[] | null = null;
+  let deliverables: { id: number; duration_days: number | null; depends_on_deliverable_id: number | null }[] | null = null;
   const { data, error } = await supabase
     .from("deliverables")
     .select("id, duration_days, depends_on_deliverable_id")
@@ -298,7 +298,7 @@ export async function updateTaskDatesAndCascade(taskId: number): Promise<{
     const newDuration = await calculateTaskDurationFromDeliverables(taskId);
 
     // Update this task
-    const updateData: any = {
+    const updateData: Record<string, string | number> = {
       planned_start: newDates.planned_start,
       planned_end: newDates.planned_end,
     };
@@ -345,9 +345,9 @@ export async function updateTaskDatesAndCascade(taskId: number): Promise<{
     }
 
     return { success: true, updatedTasks };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error in cascade:", error);
-    return { success: false, updatedTasks, error: error.message };
+    return { success: false, updatedTasks, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -409,7 +409,7 @@ export async function checkEarlyStart(taskId: number): Promise<{
   const incompletePredecessors: string[] = [];
 
   for (const dep of dependencies) {
-    const predecessor = (dep as any).tasks;
+    const predecessor = (dep as unknown as { tasks: { title: string; actual_end: string | null } | null }).tasks;
     if (predecessor && !predecessor.actual_end) {
       incompletePredecessors.push(predecessor.title);
     }

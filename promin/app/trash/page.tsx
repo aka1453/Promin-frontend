@@ -8,7 +8,7 @@ import ProjectOverviewCard from "../components/ProjectOverviewCard";
 
 type Project = {
   id: number;
-  name?: string | null;
+  name?: string;
   deleted_at?: string | null;
   project_manager?: {
     full_name: string;
@@ -83,6 +83,7 @@ loadTrash();            // re-fetch Trash from DB
 }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadTrash();
   }, []);
 

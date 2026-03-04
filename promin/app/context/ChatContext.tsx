@@ -46,6 +46,7 @@ export function ChatProvider({
 
   // Load conversations on mount
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refreshConversations();
   }, [refreshConversations]);
 

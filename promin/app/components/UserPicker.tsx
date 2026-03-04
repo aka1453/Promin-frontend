@@ -67,7 +67,7 @@ export default function UserPicker({
 
     if (error) throw error;
 
-    const userList: User[] = (data || []).map((member: any) => ({
+    const userList: User[] = (data || []).map((member: { user_id: string; full_name?: string; email?: string }) => ({
       id: member.user_id,
       full_name: member.full_name || "Unknown",
       email: member.email || "",

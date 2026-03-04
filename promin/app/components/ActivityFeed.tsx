@@ -13,7 +13,7 @@ type Activity = {
   entity_type: string;
   entity_id: number;
   action: string;
-  metadata: any;
+  metadata: Record<string, unknown>;
   created_at: string;
 };
 
@@ -84,9 +84,9 @@ export default function ActivityFeed({
       if (fetchError) throw fetchError;
 
       setActivities(data || []);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to load activities:", err);
-      setError(err.message);
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }

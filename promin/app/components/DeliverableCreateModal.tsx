@@ -5,10 +5,11 @@ import { useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useToast } from "./ToastProvider";
 import { recalculateTaskFromDeliverables } from "../lib/dependencyScheduling";
+import { Deliverable } from "../types/deliverable";
 
 type Props = {
   taskId: number;
-  existingDeliverables: any[];
+  existingDeliverables: Deliverable[];
   onClose: () => void;
   onSuccess: () => void;
 };
@@ -30,7 +31,7 @@ export default function DeliverableCreateModal({
 
   // Calculate total weight as percentage for display only
   const sum = (existingDeliverables || []).reduce(
-    (acc: number, d: any) => acc + Number(d.weight ?? 0) * 100,
+    (acc: number, d: Deliverable) => acc + Number(d.weight ?? 0) * 100,
     0
   );
   const proposed = sum + Number(weight);
@@ -67,9 +68,9 @@ export default function DeliverableCreateModal({
 
       pushToast("Deliverable created - task dates updated", "success");
       onSuccess();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Create deliverable exception:", e);
-      pushToast(e?.message || "Failed to create deliverable", "error");
+      pushToast(e instanceof Error ? e.message : "Failed to create deliverable", "error");
     } finally {
       setCreating(false);
     }

@@ -114,6 +114,7 @@ function DraftsPageContent({ projectId }: { projectId: number }) {
   }, [fetchProject, fetchDrafts]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadAll();
   }, [loadAll]);
 
