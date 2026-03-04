@@ -42,6 +42,17 @@ export default function DiagPage() {
         result.localStorageError = String(e);
       }
 
+      // 3b. Check sessionStorage for Supabase auth (fallback storage)
+      try {
+        const ssKeys = Object.keys(sessionStorage).filter(
+          (k) => k.includes("supabase") || k.includes("sb-")
+        );
+        result.sessionStorageKeys = ssKeys;
+        result.sessionStorageCount = ssKeys.length;
+      } catch (e) {
+        result.sessionStorageError = String(e);
+      }
+
       // 4. If session exists, try querying projects
       if (result.session) {
         try {

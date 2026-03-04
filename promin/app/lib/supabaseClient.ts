@@ -11,6 +11,30 @@ if (!supabaseAnonKey) throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
 const supabaseUrl = supabaseUrlRaw.replace(/\/+$/, "");
 
+// Resilient storage adapter: dual-writes to both localStorage and sessionStorage.
+// Mobile browsers on Codespaces forwarded ports often block or partition
+// localStorage. sessionStorage survives within a tab and acts as fallback.
+const resilientStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      const v = localStorage.getItem(key);
+      if (v !== null) return v;
+    } catch { /* localStorage blocked */ }
+    try {
+      return sessionStorage.getItem(key);
+    } catch { /* sessionStorage also blocked */ }
+    return null;
+  },
+  setItem: (key: string, value: string): void => {
+    try { localStorage.setItem(key, value); } catch { /* blocked */ }
+    try { sessionStorage.setItem(key, value); } catch { /* blocked */ }
+  },
+  removeItem: (key: string): void => {
+    try { localStorage.removeItem(key); } catch { /* blocked */ }
+    try { sessionStorage.removeItem(key); } catch { /* blocked */ }
+  },
+};
+
 // ✅ hard singleton even if the module is evaluated multiple times
 const g = globalThis as unknown as {
   __promin_supabase__?: SupabaseClient;
@@ -23,6 +47,7 @@ export const supabase =
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: false,
+      storage: resilientStorage,
     },
   }));
 
