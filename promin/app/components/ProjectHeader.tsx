@@ -12,6 +12,7 @@ import {
   FileText,
   Sparkles,
   BotMessageSquare,
+  CheckSquare,
 } from "lucide-react";
 import { useChat } from "../context/ChatContext";
 import Tooltip from "./Tooltip";
@@ -177,6 +178,14 @@ export default function ProjectHeader({
                 >
                   <FileText size={18} />
                   Documents
+                </button>
+
+                <button
+                  onClick={() => router.push(`/projects/${projectId}/my-work`)}
+                  className={navButtonClass("my-work")}
+                >
+                  <CheckSquare size={18} />
+                  My Work
                 </button>
 
                 <button
