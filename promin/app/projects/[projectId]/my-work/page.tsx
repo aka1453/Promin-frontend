@@ -105,16 +105,41 @@ function MyWorkContent({ projectId }: { projectId: number }) {
       });
   }, [projectId]);
 
-  // Fetch deliverables for this project
+  // Fetch deliverables for this project (two-step: get task IDs, then deliverables)
   const loadDeliverables = useCallback(async () => {
     setLoading(true);
     try {
+      // Step 1: Get all tasks in this project via milestones
+      const { data: taskData, error: taskError } = await supabase
+        .from("tasks")
+        .select("id, title, actual_start, milestones!inner(id, title, project_id)")
+        .eq("milestones.project_id", projectId);
+
+      if (taskError || !taskData || taskData.length === 0) {
+        if (taskError) console.error("Failed to load tasks:", taskError);
+        setDeliverables([]);
+        setLoading(false);
+        return;
+      }
+
+      const taskIds = taskData.map((t: any) => t.id);
+
+      // Build a lookup map for task metadata
+      const taskMap = new Map<number, { id: number; title: string; actual_start: string | null; milestones: { id: number; title: string } }>();
+      for (const t of taskData as any[]) {
+        taskMap.set(t.id, {
+          id: t.id,
+          title: t.title,
+          actual_start: t.actual_start,
+          milestones: { id: t.milestones.id, title: t.milestones.title },
+        });
+      }
+
+      // Step 2: Fetch deliverables for those tasks
       let query = supabase
         .from("deliverables")
-        .select(
-          "id, task_id, title, description, is_done, completed_at, planned_end, planned_start, priority, weight, assigned_user_id, tasks!inner(id, title, actual_start, milestones!inner(id, title, projects!inner(id)))"
-        )
-        .eq("tasks.milestones.projects.id", projectId)
+        .select("id, task_id, title, description, is_done, completed_at, planned_end, planned_start, priority, weight, assigned_user_id")
+        .in("task_id", taskIds)
         .order("planned_end", { ascending: true, nullsFirst: false });
 
       if (!showCompleted) {
@@ -129,7 +154,13 @@ function MyWorkContent({ projectId }: { projectId: number }) {
         return;
       }
 
-      setDeliverables((data as unknown as DeliverableRow[]) ?? []);
+      // Merge task metadata into deliverables
+      const merged = (data ?? []).map((d: any) => ({
+        ...d,
+        tasks: taskMap.get(d.task_id)!,
+      })).filter((d: any) => d.tasks) as unknown as DeliverableRow[];
+
+      setDeliverables(merged);
     } catch (err) {
       console.error("Load deliverables exception:", err);
       setDeliverables([]);
