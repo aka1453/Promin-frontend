@@ -43,7 +43,7 @@ type DeliverableRow = {
     actual_start: string | null;
     milestones: {
       id: number;
-      title: string;
+      name: string;
     };
   };
 };
@@ -112,7 +112,7 @@ function MyWorkContent({ projectId }: { projectId: number }) {
       // Step 1: Get milestones for this project
       const { data: milestoneData, error: msError } = await supabase
         .from("milestones")
-        .select("id, title")
+        .select("id, name")
         .eq("project_id", projectId);
 
       if (msError || !milestoneData || milestoneData.length === 0) {
@@ -123,9 +123,9 @@ function MyWorkContent({ projectId }: { projectId: number }) {
       }
 
       const milestoneIds = milestoneData.map((m: any) => m.id);
-      const milestoneMap = new Map<number, { id: number; title: string }>();
+      const milestoneMap = new Map<number, { id: number; name: string }>();
       for (const m of milestoneData as any[]) {
-        milestoneMap.set(m.id, { id: m.id, title: m.title });
+        milestoneMap.set(m.id, { id: m.id, name: m.name });
       }
 
       // Step 2: Get tasks for those milestones
@@ -142,14 +142,14 @@ function MyWorkContent({ projectId }: { projectId: number }) {
       }
 
       const taskIds = taskData.map((t: any) => t.id);
-      const taskMap = new Map<number, { id: number; title: string; actual_start: string | null; milestones: { id: number; title: string } }>();
+      const taskMap = new Map<number, { id: number; title: string; actual_start: string | null; milestones: { id: number; name: string } }>();
       for (const t of taskData as any[]) {
         const ms = milestoneMap.get(t.milestone_id);
         taskMap.set(t.id, {
           id: t.id,
           title: t.title,
           actual_start: t.actual_start,
-          milestones: ms ?? { id: 0, title: "" },
+          milestones: ms ?? { id: 0, name: "" },
         });
       }
 
@@ -232,7 +232,7 @@ function MyWorkContent({ projectId }: { projectId: number }) {
           taskId: d.tasks.id,
           taskTitle: d.tasks.title,
           taskActualStart: d.tasks.actual_start,
-          milestoneName: d.tasks.milestones.title,
+          milestoneName: d.tasks.milestones.name,
           deliverables: [],
         };
         map.set(d.task_id, group);
