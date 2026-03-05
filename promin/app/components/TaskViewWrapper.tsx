@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { Maximize2, Minimize2 } from "lucide-react";
 import TaskFlowBoard from "./TaskFlowBoard";
 import TaskFlowDiagram from "./TaskFlowDiagram";
 import AddTaskButton from "./AddTaskButton";
@@ -26,6 +27,17 @@ export default function TaskViewWrapper({
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [diagramFullscreen, setDiagramFullscreen] = useState(false);
+
+  // Allow Escape to exit fullscreen
+  useEffect(() => {
+    if (!diagramFullscreen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDiagramFullscreen(false);
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [diagramFullscreen]);
 
   const handleTaskCreated = () => {
     setRefreshKey((k) => k + 1);
@@ -81,8 +93,17 @@ export default function TaskViewWrapper({
           <AddTaskButton milestoneId={milestoneId} onCreated={handleTaskCreated} />
         )}
         {viewMode === "diagram" && (
-          <div className="text-xs text-gray-500 bg-gray-50 px-3 py-1 rounded-full">
-            Drag to arrange • Connect for dependencies
+          <div className="flex items-center gap-2">
+            <div className="text-xs text-gray-500 bg-gray-50 px-3 py-1 rounded-full">
+              Drag to arrange • Connect for dependencies
+            </div>
+            <button
+              onClick={() => setDiagramFullscreen((v) => !v)}
+              className="p-1.5 rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition"
+              title={diagramFullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
+            >
+              {diagramFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
           </div>
         )}
       </div>
@@ -101,7 +122,23 @@ export default function TaskViewWrapper({
       )}
 
       {viewMode === "diagram" && (
-        <div className="w-full h-[600px] border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+        <div className={
+          diagramFullscreen
+            ? "fixed inset-0 z-50 bg-gray-50"
+            : "w-full h-[600px] border border-gray-200 rounded-lg overflow-hidden bg-gray-50"
+        }>
+          {diagramFullscreen && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[60]">
+              <button
+                onClick={() => setDiagramFullscreen(false)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white shadow-md border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+              >
+                <Minimize2 size={14} />
+                Exit Fullscreen
+                <span className="text-xs text-gray-400 ml-1">(Esc)</span>
+              </button>
+            </div>
+          )}
           <TaskFlowDiagram milestoneId={milestoneId} taskProgressMap={taskProgressMap} />
         </div>
       )}

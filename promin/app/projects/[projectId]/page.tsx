@@ -18,6 +18,7 @@ import { ChatProvider } from "../../context/ChatContext";
 import ChatDrawer from "../../components/chat/ChatDrawer";
 import { formatPercent } from "../../utils/format";
 import InfoTip from "../../components/InfoTip";
+import { ChevronDown } from "lucide-react";
 import { completeProject } from "../../lib/lifecycle";
 import ProjectInsights from "../../components/insights/ProjectInsights";
 
@@ -65,6 +66,18 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
 
   // Raw hierarchy rows for entity name resolution (used by ProjectInsights)
   const [hierarchyRows, setHierarchyRows] = useState<HierarchyRow[]>([]);
+
+  // Collapsible overview — persist preference per project in localStorage
+  const overviewStorageKey = `promin:overview-expanded:${projectId}`;
+  const [overviewExpanded, setOverviewExpanded] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const stored = localStorage.getItem(`promin:overview-expanded:${projectId}`);
+    return stored === null ? true : stored === "true";
+  });
+
+  useEffect(() => {
+    localStorage.setItem(overviewStorageKey, String(overviewExpanded));
+  }, [overviewExpanded, overviewStorageKey]);
 
   // Track whether we've done the first load — realtime refreshes skip the spinner
   const initialLoadDone = useRef(false);
@@ -306,7 +319,18 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
             {project && (
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8">
                 <div className="flex items-center justify-between mb-5">
-                  <h2 className="text-lg font-semibold text-slate-700">Project Overview</h2>
+                  <button
+                    type="button"
+                    onClick={() => setOverviewExpanded((v) => !v)}
+                    className="flex items-center gap-1.5 group"
+                  >
+                    {overviewExpanded ? (
+                      <ChevronDown size={14} className="text-slate-400 group-hover:text-slate-600 transition-colors" />
+                    ) : (
+                      <ChevronDown size={14} className="text-slate-400 group-hover:text-slate-600 transition-colors -rotate-90" />
+                    )}
+                    <h2 className="text-lg font-semibold text-slate-700">Project Overview</h2>
+                  </button>
                   <div className="flex items-center gap-2">
                     {/* Delta badge — always visible, even at 0% */}
                     <InfoTip tip="Difference between actual and planned progress. Green means ahead of plan, amber means behind." />
@@ -331,6 +355,8 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                   </div>
                 </div>
 
+                <div className={`grid transition-[grid-template-rows] duration-200 ease-in-out ${overviewExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+                <div className="overflow-hidden">
                 <div className="space-y-4 mb-6">
                   <div>
                     <div className="flex items-center justify-between mb-2">
@@ -554,6 +580,8 @@ function ProjectPageContent({ projectId }: { projectId: number }) {
                     </div>
                   )}
                 </div>
+                </div>{/* end overflow-hidden */}
+                </div>{/* end collapsible grid */}
               </div>
             )}
 

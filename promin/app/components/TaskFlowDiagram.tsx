@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import ReactFlow, {
   Background,
   Controls,
@@ -17,6 +17,7 @@ import ReactFlow, {
   BaseEdge,
   EdgeProps,
   getBezierPath,
+  ReactFlowInstance,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { supabase } from "../lib/supabaseClient";
@@ -71,6 +72,14 @@ function CustomEdge({
 
   return (
     <>
+      {/* Invisible wider path for easier clicking */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={20}
+        style={{ pointerEvents: "stroke", cursor: "pointer" }}
+      />
       <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={style} />
       <EdgeLabelRenderer>
         <div
@@ -80,8 +89,9 @@ function CustomEdge({
             pointerEvents: "all",
           }}
           className="nodrag nopan"
+          title={`This task takes ${duration} day${duration === 1 ? "" : "s"} to complete${offset > 0 ? `. ${offset} day${offset === 1 ? "" : "s"} buffer before the next task starts.` : "."} Click to remove dependency.`}
         >
-          <div className={`bg-white px-2 py-1 rounded shadow-md border text-xs font-medium flex flex-col gap-0.5 ${isImpacted ? "border-red-400" : "border-gray-300"}`}>
+          <div className={`bg-white px-2 py-1 rounded shadow-md border text-xs font-medium flex flex-col gap-0.5 cursor-pointer hover:shadow-lg transition-shadow ${isImpacted ? "border-red-400" : "border-gray-300"}`}>
             <div className={isImpacted ? "text-red-700" : "text-indigo-700"}>⏱️ {duration}d</div>
             {offset > 0 && (
               <div className="text-amber-700">+{offset}d buffer</div>
@@ -116,6 +126,11 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
     }
     return true;
   });
+  const [legendOpen, setLegendOpen] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return localStorage.getItem("promin:legend-collapsed") !== "true";
+  });
+
   const [showControls, setShowControls] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('workflow_showControls');
@@ -126,6 +141,7 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const reactFlowRef = useRef<ReactFlowInstance | null>(null);
 
   const [selectedTask, setSelectedTask] = useState<TaskWithDependencies | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -252,17 +268,169 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
     await loadData();
   }, [tasks, loadData]);
 
-  // Auto layout handler
+  // Auto layout handler — topological sort: predecessors left, successors right
   const handleAutoLayout = useCallback(() => {
-    const HORIZONTAL_SPACING = 350;
-    const VERTICAL_SPACING = 200;
+    const HORIZONTAL_SPACING = 420;
+    // Card heights: collapsed ~180px, expanded ~470px. Add generous gap between cards.
+    const COLLAPSED_HEIGHT = 220;
+    const EXPANDED_HEIGHT = 520;
+    const VERTICAL_GAP = 40;
 
-    // Simple grid layout
-    const updates = tasks.map((task, index) => ({
-      id: task.id,
-      x: (index % 3) * HORIZONTAL_SPACING,
-      y: Math.floor(index / 3) * VERTICAL_SPACING,
-    }));
+    // Build adjacency and in-degree for topological depth
+    const inDegree = new Map<number, number>();
+    const successorsMap = new Map<number, number[]>();
+    for (const t of tasks) {
+      inDegree.set(t.id, 0);
+      successorsMap.set(t.id, []);
+    }
+    for (const dep of dependencies) {
+      inDegree.set(dep.task_id, (inDegree.get(dep.task_id) || 0) + 1);
+      const list = successorsMap.get(dep.depends_on_task_id) || [];
+      list.push(dep.task_id);
+      successorsMap.set(dep.depends_on_task_id, list);
+    }
+
+    // BFS to compute topological depth (column index)
+    const depth = new Map<number, number>();
+    const queue: number[] = [];
+    for (const t of tasks) {
+      if ((inDegree.get(t.id) || 0) === 0) {
+        depth.set(t.id, 0);
+        queue.push(t.id);
+      }
+    }
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const currentDepth = depth.get(current) || 0;
+      for (const succ of successorsMap.get(current) || []) {
+        const newDepth = currentDepth + 1;
+        if (!depth.has(succ) || depth.get(succ)! < newDepth) {
+          depth.set(succ, newDepth);
+        }
+        const remaining = (inDegree.get(succ) || 1) - 1;
+        inDegree.set(succ, remaining);
+        if (remaining === 0) {
+          queue.push(succ);
+        }
+      }
+    }
+
+    // Handle tasks not reached (cycle members) — place them in column 0
+    for (const t of tasks) {
+      if (!depth.has(t.id)) depth.set(t.id, 0);
+    }
+
+    // --- Build predecessor lookup ---
+    const predecessorsMap = new Map<number, number[]>();
+    for (const t of tasks) predecessorsMap.set(t.id, []);
+    for (const dep of dependencies) {
+      const list = predecessorsMap.get(dep.task_id) || [];
+      list.push(dep.depends_on_task_id);
+      predecessorsMap.set(dep.task_id, list);
+    }
+
+    // --- Identify connected components via Union-Find ---
+    const ufParent = new Map<number, number>();
+    const ufFind = (x: number): number => {
+      if (!ufParent.has(x)) ufParent.set(x, x);
+      if (ufParent.get(x) !== x) ufParent.set(x, ufFind(ufParent.get(x)!));
+      return ufParent.get(x)!;
+    };
+    const ufUnion = (a: number, b: number) => {
+      const ra = ufFind(a), rb = ufFind(b);
+      if (ra !== rb) ufParent.set(ra, rb);
+    };
+    for (const t of tasks) ufFind(t.id);
+    for (const dep of dependencies) ufUnion(dep.task_id, dep.depends_on_task_id);
+
+    const components = new Map<number, number[]>();
+    for (const t of tasks) {
+      const root = ufFind(t.id);
+      if (!components.has(root)) components.set(root, []);
+      components.get(root)!.push(t.id);
+    }
+
+    // --- Lay out each component, stacking components vertically ---
+    const taskHeight = (id: number): number => {
+      const t = tasks.find(tk => tk.id === id)!;
+      return (t.diagram_collapsed ?? true) ? COLLAPSED_HEIGHT : EXPANDED_HEIGHT;
+    };
+
+    const positionMap = new Map<number, { x: number; y: number }>();
+    let componentOffsetY = 0;
+    // Largest component first (visual stability)
+    const sortedComponents = [...components.values()].sort((a, b) => b.length - a.length);
+
+    for (const compIds of sortedComponents) {
+      // Group this component's tasks by column
+      const colTasks = new Map<number, number[]>();
+      for (const id of compIds) {
+        const col = depth.get(id) || 0;
+        if (!colTasks.has(col)) colTasks.set(col, []);
+        colTasks.get(col)!.push(id);
+      }
+      const sortedCols = [...colTasks.keys()].sort((a, b) => a - b);
+
+      // Track y-center of each placed task for predecessor-median
+      const yCenterMap = new Map<number, number>();
+      let componentMaxY = componentOffsetY;
+
+      for (const col of sortedCols) {
+        const ids = colTasks.get(col)!;
+
+        if (col === sortedCols[0]) {
+          // First column: stack by task position ordering
+          ids.sort((a, b) => {
+            const ta = tasks.find(t => t.id === a)!;
+            const tb = tasks.find(t => t.id === b)!;
+            return ta.position - tb.position;
+          });
+          let y = componentOffsetY;
+          for (const id of ids) {
+            const h = taskHeight(id);
+            positionMap.set(id, { x: col * HORIZONTAL_SPACING, y });
+            yCenterMap.set(id, y + h / 2);
+            y += h + VERTICAL_GAP;
+          }
+          componentMaxY = Math.max(componentMaxY, y - VERTICAL_GAP);
+        } else {
+          // Subsequent columns: ideal y = median of predecessor centers
+          const idealY = new Map<number, number>();
+          for (const id of ids) {
+            const preds = (predecessorsMap.get(id) || []).filter(p => yCenterMap.has(p));
+            if (preds.length > 0) {
+              const predCenters = preds.map(p => yCenterMap.get(p)!).sort((a, b) => a - b);
+              const medianCenter = predCenters[Math.floor(predCenters.length / 2)];
+              idealY.set(id, medianCenter - taskHeight(id) / 2);
+            } else {
+              idealY.set(id, componentOffsetY);
+            }
+          }
+
+          // Sort by ideal y, then de-overlap with greedy pass
+          ids.sort((a, b) => idealY.get(a)! - idealY.get(b)!);
+          let minNextY = -Infinity;
+          for (const id of ids) {
+            const ideal = idealY.get(id)!;
+            const y = Math.max(ideal, minNextY);
+            const h = taskHeight(id);
+            positionMap.set(id, { x: col * HORIZONTAL_SPACING, y });
+            yCenterMap.set(id, y + h / 2);
+            minNextY = y + h + VERTICAL_GAP;
+            componentMaxY = Math.max(componentMaxY, y + h);
+          }
+        }
+      }
+
+      componentOffsetY = componentMaxY + VERTICAL_GAP * 2;
+    }
+
+    // Build updates array
+    const updates: { id: number; x: number; y: number }[] = [];
+    for (const [id, pos] of positionMap) {
+      updates.push({ id, x: pos.x, y: pos.y });
+    }
 
     // Update database
     updates.forEach(({ id, x, y }) => {
@@ -278,7 +446,13 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
           : task;
       })
     );
-  }, [tasks]);
+
+    // Fit view after layout settles. setTasks → useEffect(setNodes) → RF render
+    // takes multiple frames, so delay to let the pipeline complete.
+    setTimeout(() => {
+      reactFlowRef.current?.fitView({ padding: 0.15, duration: 300 });
+    }, 200);
+  }, [tasks, dependencies]);
 
   // Expand/collapse all
   const handleExpandAll = useCallback(async () => {
@@ -287,6 +461,9 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
     );
     await Promise.all(updates);
     await loadData();
+    setTimeout(() => {
+      reactFlowRef.current?.fitView({ padding: 0.15, duration: 300 });
+    }, 200);
   }, [tasks, loadData]);
 
   const handleCollapseAll = useCallback(async () => {
@@ -295,6 +472,9 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
     );
     await Promise.all(updates);
     await loadData();
+    setTimeout(() => {
+      reactFlowRef.current?.fitView({ padding: 0.15, duration: 300 });
+    }, 200);
   }, [tasks, loadData]);
 
   // Convert tasks to ReactFlow nodes
@@ -308,8 +488,8 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
       id: String(task.id),
       type: "taskNode",
       position: {
-        x: task.diagram_x || index * 300,
-        y: task.diagram_y || 100,
+        x: task.diagram_x ?? index * 300,
+        y: task.diagram_y ?? 100,
       },
       data: {
         task,
@@ -445,13 +625,11 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
         console.error("Error auto-scheduling:", result.error);
         alert(`Dependency created but auto-scheduling failed: ${result.error || "Unknown error"}`);
       } else {
-        // Show success message with details
         const updatedCount = result.updatedTasks.length;
-        if (updatedCount === 1) {
-          alert(`✅ Dependency created!\n\n"${targetTitle}" dates have been recalculated.`);
-        } else {
-          alert(`✅ Dependency created!\n\n${updatedCount} task(s) were automatically rescheduled:\n• ${targetTitle}\n• Plus ${updatedCount - 1} successor task(s)`);
-        }
+        const details = updatedCount === 1
+          ? `"${targetTitle}" dates recalculated.`
+          : `${updatedCount} tasks rescheduled (${targetTitle} + ${updatedCount - 1} successor${updatedCount - 1 === 1 ? "" : "s"}).`;
+        alert(`✅ Dependency created! ${details}`);
       }
 
       // Reload to show updated dates and new dependency
@@ -548,14 +726,58 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
   return (
     <div className="w-full h-full relative">
       {/* Cycle Detection Banner */}
-      {cpmStatus === "CYCLE_DETECTED" && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 bg-red-50 border border-red-300 rounded-lg px-4 py-2 shadow-md flex items-center gap-2 text-sm text-red-800 max-w-lg">
-          <svg className="w-5 h-5 flex-shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-          </svg>
-          <span>Dependency cycle detected. Fix dependencies to compute critical path.</span>
-        </div>
-      )}
+      {cpmStatus === "CYCLE_DETECTED" && (() => {
+        // Detect which tasks are in the cycle using DFS from dependency data
+        const adj = new Map<number, number[]>();
+        for (const dep of dependencies) {
+          const list = adj.get(dep.depends_on_task_id) || [];
+          list.push(dep.task_id);
+          adj.set(dep.depends_on_task_id, list);
+        }
+        const cycleTasks: string[] = [];
+        const visited = new Set<number>();
+        const stack = new Set<number>();
+        const inCycle = new Set<number>();
+
+        function dfs(node: number): boolean {
+          visited.add(node);
+          stack.add(node);
+          for (const next of adj.get(node) || []) {
+            if (stack.has(next)) {
+              // Found cycle — mark all tasks in current stack from 'next' onward
+              inCycle.add(next);
+              inCycle.add(node);
+              return true;
+            }
+            if (!visited.has(next) && dfs(next)) {
+              if (stack.has(node)) inCycle.add(node);
+              return true;
+            }
+          }
+          stack.delete(node);
+          return false;
+        }
+        for (const t of tasks) dfs(t.id);
+        for (const id of inCycle) {
+          const t = tasks.find(tk => tk.id === id);
+          if (t) cycleTasks.push(t.title);
+        }
+
+        return (
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 bg-red-50 border border-red-300 rounded-lg px-4 py-2 shadow-md flex items-center gap-2 text-sm text-red-800 max-w-lg">
+            <svg className="w-5 h-5 flex-shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            <div>
+              <span className="font-semibold">Dependency cycle detected.</span>
+              {cycleTasks.length > 0 && (
+                <span> Involved: {cycleTasks.join(" → ")}.</span>
+              )}
+              <span className="text-red-600"> Remove a dependency to fix.</span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Calculating Overlay */}
       {isCalculating && (
@@ -582,8 +804,10 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
         onEdgeClick={onEdgeClick}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
+        onInit={(instance) => { reactFlowRef.current = instance; }}
         fitView
-        minZoom={0.1}
+        fitViewOptions={{ padding: 0.15 }}
+        minZoom={0.3}
         maxZoom={2}
       >
         <Background />
@@ -600,43 +824,62 @@ export default function TaskFlowDiagram({ milestoneId, taskProgressMap }: Props)
         />
 
         <Panel position="top-left" className="bg-white rounded-lg shadow-md p-3">
-          <div className="space-y-2 text-xs">
-            <div className="font-semibold text-gray-700">Legend</div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-green-500"></div>
-              <span>Completed</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-              <span>In Progress</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-gray-400"></div>
-              <span>Not Started</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-red-500"></div>
-              <span>Delayed</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-amber-500"></div>
-              <span>Behind</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-0.5 bg-red-500"></div>
-              <span>Delay Impact</span>
-            </div>
-            <div className="border-t border-gray-200 pt-2 mt-1">
+          <button
+            type="button"
+            onClick={() => {
+              setLegendOpen((v) => {
+                localStorage.setItem("promin:legend-collapsed", String(v));
+                return !v;
+              });
+            }}
+            className="flex items-center gap-1.5 group"
+          >
+            <svg
+              className={`w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 transition-transform ${legendOpen ? "rotate-0" : "-rotate-90"}`}
+              fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+            <span className="text-xs font-semibold text-gray-700">Legend</span>
+          </button>
+          {legendOpen && (
+            <div className="space-y-2 text-xs mt-2">
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-sm border-2 border-purple-600"></div>
-                <span>Critical Path</span>
+                <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                <span>Completed</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-sm border-2 border-purple-300 border-dashed"></div>
-                <span>Near-Critical</span>
+                <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                <span>In Progress</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-gray-400"></div>
+                <span>Not Started</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                <span>Delayed</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-amber-500"></div>
+                <span>Behind</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-0.5 bg-red-500"></div>
+                <span>Delay Impact</span>
+              </div>
+              <div className="border-t border-gray-200 pt-2 mt-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-sm border-2 border-purple-600"></div>
+                  <span>Critical Path</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-sm border-2 border-purple-300 border-dashed"></div>
+                  <span>Near-Critical</span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </Panel>
 
         {/* Custom controls panel - Top Right - now collapsible */}

@@ -280,10 +280,20 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
           </div>
         </div>
 
-        {/* COLLAPSED VIEW - Just progress */}
+        {/* COLLAPSED VIEW - Progress + schedule state */}
         {isCollapsed && (
-          <div className="text-xs text-gray-600">
-            {formatPercent(actual)} complete • {completedCount}/{deliverablesCount} deliverables
+          <div className="flex items-center gap-2 text-xs text-gray-600">
+            <span>{formatPercent(actual)} complete • {completedCount}/{deliverablesCount} deliverables</span>
+            {scheduleState === "DELAYED" && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800">
+                Delayed
+              </span>
+            )}
+            {scheduleState === "BEHIND" && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800">
+                Behind
+              </span>
+            )}
           </div>
         )}
 
@@ -373,8 +383,11 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
               <div className="flex justify-between">
                 <span className="font-bold text-slate-900">Actual</span>
                 <span className={`font-medium ${
-                  task.actual_cost && task.budgeted_cost && task.actual_cost > task.budgeted_cost
-                    ? "text-amber-600" : "text-emerald-600"
+                  (task.actual_cost ?? 0) > (task.budgeted_cost ?? 0)
+                    ? "text-red-600"
+                    : (task.budgeted_cost ?? 0) > 0 && (task.actual_cost ?? 0) <= (task.budgeted_cost ?? 0)
+                      ? "text-emerald-600"
+                      : "text-slate-600"
                 }`}>{fmtCost(task.actual_cost)}</span>
               </div>
             </div>
@@ -385,7 +398,7 @@ export default function TaskCard({ task, onClick, onTaskUpdated, canonicalPlanne
                 onClick={handleViewDeliverables}
                 className="w-full px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 transition-colors"
               >
-                View Deliverables ({completedCount}/{deliverablesCount})
+                View Deliverables & Files ({completedCount}/{deliverablesCount})
               </button>
             </div>
           </>

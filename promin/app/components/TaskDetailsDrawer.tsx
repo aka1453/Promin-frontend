@@ -2,13 +2,13 @@
 
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { startTask, completeTask } from "../lib/lifecycle";
+import { startTask } from "../lib/lifecycle";
 import { useUserTimezone } from "../context/UserTimezoneContext";
 import { todayForTimezone } from "../utils/date";
 import DeliverableCard from "./DeliverableCard";
 import DeliverableCreateModal from "./DeliverableCreateModal";
 import CommentsSection from "./CommentsSection";
-import Tooltip from "./Tooltip";
+import TaskDependenciesTab from "./TaskDependenciesTab";
 
 type Props = {
   open: boolean;
@@ -28,7 +28,7 @@ export default function TaskDetailsDrawer({
   const [loading, setLoading] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [localTask, setLocalTask] = useState(task);
-  const [activeTab, setActiveTab] = useState<"deliverables" | "comments">("deliverables");
+  const [activeTab, setActiveTab] = useState<"deliverables" | "comments" | "dependencies">("deliverables");
   const [projectId, setProjectId] = useState<number | null>(null);
   
   // Track if deliverables were changed
@@ -112,11 +112,6 @@ export default function TaskDetailsDrawer({
   if (!open || !localTask) return null;
 
   const canEdit = true;
-  const canDelete = true;
-
-  // Check if all deliverables are done
-  const allDeliverablesComplete = deliverables.length > 0 && 
-    deliverables.every((d) => d.is_done === true);
 
   const handleStartTask = async () => {
     try {
@@ -125,22 +120,6 @@ export default function TaskDetailsDrawer({
       onTaskUpdated?.();
     } catch (error) {
       console.error("Failed to start task:", error);
-    }
-  };
-
-  const handleCompleteTask = async () => {
-    const confirmed = confirm(
-      "Complete this task? This will lock its actual end date."
-    );
-    if (!confirmed) return;
-
-    try {
-      await completeTask(localTask.id, todayForTimezone(timezone));
-      await loadTask();
-      onTaskUpdated?.();
-    } catch (error) {
-      console.error("Failed to complete task:", error);
-      alert("Failed to complete task. Make sure all deliverables are marked as done.");
     }
   };
 
@@ -209,13 +188,23 @@ export default function TaskDetailsDrawer({
             >
               Comments
             </button>
+            <button
+              onClick={() => setActiveTab("dependencies")}
+              className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === "dependencies"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Dependencies
+            </button>
           </div>
 
           {/* Task Info Grid */}
           <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
             {/* Planned Dates */}
             <div>
-              <span className="text-gray-500">Planned Start:</span>
+              <span className="font-semibold text-gray-900">Planned Start:</span>
               <span className="ml-2 font-medium">
                 {localTask.planned_start
                   ? new Date(localTask.planned_start).toLocaleDateString()
@@ -223,7 +212,7 @@ export default function TaskDetailsDrawer({
               </span>
             </div>
             <div>
-              <span className="text-gray-500">Planned End:</span>
+              <span className="font-semibold text-gray-900">Planned End:</span>
               <span className="ml-2 font-medium">
                 {localTask.planned_end
                   ? new Date(localTask.planned_end).toLocaleDateString()
@@ -233,7 +222,7 @@ export default function TaskDetailsDrawer({
 
             {/* Actual Dates */}
             <div>
-              <span className="text-gray-500">Actual Start:</span>
+              <span className="font-semibold text-gray-900">Actual Start:</span>
               <span className="ml-2 font-medium">
                 {localTask.actual_start
                   ? new Date(localTask.actual_start).toLocaleDateString()
@@ -241,7 +230,7 @@ export default function TaskDetailsDrawer({
               </span>
             </div>
             <div>
-              <span className="text-gray-500">Actual End:</span>
+              <span className="font-semibold text-gray-900">Actual End:</span>
               <span className="ml-2 font-medium">
                 {localTask.actual_end
                   ? new Date(localTask.actual_end).toLocaleDateString()
@@ -251,7 +240,7 @@ export default function TaskDetailsDrawer({
 
             {/* Weight */}
             <div>
-              <span className="text-gray-500">Weight:</span>
+              <span className="font-semibold text-gray-900">Weight:</span>
               <span className="ml-2 font-medium">
                 {((localTask.weight ?? 0) * 100).toFixed(0)}%
               </span>
@@ -259,35 +248,25 @@ export default function TaskDetailsDrawer({
 
             {/* Duration */}
             <div>
-              <span className="text-gray-500">Duration:</span>
+              <span className="font-semibold text-gray-900">Duration:</span>
               <span className="ml-2 font-medium">
                 {localTask.duration_days || 0} days
               </span>
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="mt-4 flex gap-2">
-            {!localTask.actual_start && (
+          {/* Start Task Button */}
+          {!localTask.actual_start && (
+            <div className="mt-4">
               <button
                 onClick={handleStartTask}
                 className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700"
               >
                 Start Task
               </button>
-            )}
-            {localTask.actual_start && !localTask.actual_end && (
-              <Tooltip content={!allDeliverablesComplete ? "Complete all deliverables first" : "Mark task as complete"}>
-                <button
-                  onClick={handleCompleteTask}
-                  disabled={!allDeliverablesComplete}
-                  className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Complete Task
-                </button>
-              </Tooltip>
-            )}
-          </div>
+            </div>
+          )}
+
         </div>
 
         {/* BODY */}
@@ -350,6 +329,18 @@ export default function TaskDetailsDrawer({
               entityType="task"
               entityId={localTask.id}
               projectId={projectId}
+            />
+          )}
+
+          {/* DEPENDENCIES TAB */}
+          {activeTab === "dependencies" && localTask.milestone_id && (
+            <TaskDependenciesTab
+              taskId={localTask.id}
+              milestoneId={localTask.milestone_id}
+              onDepsChanged={async () => {
+                await loadTask();
+                onTaskUpdated?.();
+              }}
             />
           )}
         </div>

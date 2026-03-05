@@ -32,15 +32,24 @@ export default function DeliverableCard({
   const [updating, setUpdating] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
+  const [fileCount, setFileCount] = useState(0);
   const [assignedUserName, setAssignedUserName] = useState<string | null>(null);
   const [dependsOnDeliverable, setDependsOnDeliverable] = useState<any>(null);
 
   const readOnly = !canEdit;
   const [confirmUncheck, setConfirmUncheck] = useState(false);
+  const [editingActualCost, setEditingActualCost] = useState(false);
+  const [actualCostInput, setActualCostInput] = useState("");
 
   // Load assigned user name and dependency info
   useEffect(() => {
     const loadData = async () => {
+      // Load file count
+      const { data: files } = await supabase.storage
+        .from("subtask-files")
+        .list(`${localDeliverable.id}`);
+      setFileCount(files?.length ?? 0);
+
       // Load assigned user
       if (localDeliverable.assigned_user_id) {
         const { data } = await supabase
@@ -69,6 +78,25 @@ export default function DeliverableCard({
     loadData();
   }, [localDeliverable.assigned_user_id, localDeliverable.depends_on_deliverable_id, existingDeliverables]);
 
+  async function saveActualCost() {
+    const parsed = parseFloat(actualCostInput);
+    const value = isNaN(parsed) || parsed < 0 ? null : parsed;
+
+    const { error } = await supabase
+      .from("deliverables")
+      .update({ actual_cost: value })
+      .eq("id", localDeliverable.id);
+
+    if (error) {
+      pushToast("Failed to update actual cost", "error");
+    } else {
+      setLocalDeliverable({ ...localDeliverable, actual_cost: value });
+      pushToast("Actual cost updated", "success");
+      onChanged?.();
+    }
+    setEditingActualCost(false);
+  }
+
   async function toggleDone(checked: boolean) {
     if (readOnly) return;
 
@@ -84,24 +112,46 @@ export default function DeliverableCard({
   async function performToggle(checked: boolean) {
     setUpdating(true);
 
-    const updatePayload: any = {
+    const optimisticPayload = {
       is_done: checked,
       completed_at: checked ? new Date().toISOString() : null,
     };
 
     setLocalDeliverable({
       ...localDeliverable,
-      ...updatePayload,
+      ...optimisticPayload,
     });
 
-    const { error } = await supabase
-      .from("deliverables")
-      .update(updatePayload)
-      .eq("id", localDeliverable.id);
+    let error: any = null;
+
+    if (checked) {
+      // Marking as done: direct update is allowed
+      const result = await supabase
+        .from("deliverables")
+        .update({ is_done: true, completed_at: new Date().toISOString() })
+        .eq("id", localDeliverable.id);
+      error = result.error;
+    } else {
+      // Unchecking: must use reopen_deliverable RPC to bypass completion lock
+      const result = await supabase.rpc("reopen_deliverable", {
+        p_deliverable_id: localDeliverable.id,
+      });
+      error = result.error;
+    }
 
     if (error) {
       console.error("Toggle deliverable error:", error);
-      pushToast("Failed to update deliverable", "error");
+      // Surface dependency-block errors clearly
+      const msg = error.message || "";
+      if (msg.includes("DEP-001")) {
+        // Extract the human-readable part after "DEP-001: "
+        const readable = msg.replace(/^.*DEP-001:\s*/, "");
+        pushToast(readable, "error");
+      } else {
+        pushToast("Failed to update deliverable", "error");
+      }
+      // Revert optimistic update
+      setLocalDeliverable(deliverable);
     } else {
       // Log undo-completion to activity_logs for audit trail
       if (!checked) {
@@ -222,10 +272,20 @@ export default function DeliverableCard({
 
   const dependencyInfo = getDependencyDisplay();
 
+  // Status-based border color
+  const isDelayed = !localDeliverable.is_done
+    && localDeliverable.planned_end
+    && new Date(localDeliverable.planned_end) < new Date();
+  const borderClass = localDeliverable.is_done
+    ? "border-green-400 border-2"
+    : isDelayed
+      ? "border-red-400 border-2"
+      : "border border-gray-300";
+
   return (
     <>
       <div
-        className={`rounded-lg border px-4 py-3 text-sm transition
+        className={`rounded-lg ${borderClass} px-4 py-3 text-sm transition
           ${readOnly ? "bg-gray-50 opacity-80" : "bg-white hover:bg-gray-50"}
         `}
       >
@@ -260,6 +320,16 @@ export default function DeliverableCard({
                 <p className="mt-1 text-xs text-slate-600">
                   {localDeliverable.description}
                 </p>
+              )}
+
+              {/* Assignee */}
+              {assignedUserName && (
+                <div className="mt-1 flex items-center gap-1 text-xs text-gray-700">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <span className="font-medium">{assignedUserName}</span>
+                </div>
               )}
 
               {/* Dependency Badge */}
@@ -302,11 +372,14 @@ export default function DeliverableCard({
             </span>
           </div>
 
-          {/* Weight */}
+          {/* Weight: show user input + normalized */}
           <div>
             <span className="text-gray-500">Weight:</span>
             <span className="ml-2 font-medium text-gray-900">
-              {((localDeliverable.weight ?? 0) * 100).toFixed(0)}%
+              {((localDeliverable.user_weight ?? localDeliverable.weight ?? 0) * 100).toFixed(0)}%
+            </span>
+            <span className="ml-1 text-gray-400 text-[10px]">
+              (norm: {((localDeliverable.weight ?? 0) * 100).toFixed(0)}%)
             </span>
           </div>
 
@@ -318,42 +391,74 @@ export default function DeliverableCard({
             </span>
           </div>
 
-          {/* Planned End */}
+          {/* Planned End (auto-calculated from planned_start + duration) */}
           <div>
             <span className="text-gray-500">Planned End:</span>
             <span className="ml-2 font-medium text-gray-900">
               {formatDate(localDeliverable.planned_end)}
             </span>
+            <span className="ml-1 text-gray-400 text-[10px]">(auto)</span>
           </div>
 
-          {/* Budgeted Cost */}
-          {(localDeliverable.budgeted_cost != null && localDeliverable.budgeted_cost > 0) && (
-            <div>
-              <span className="text-gray-500">Budget:</span>
-              <span className="ml-2 font-medium text-gray-900">
-                ${localDeliverable.budgeted_cost.toLocaleString()}
-              </span>
-            </div>
-          )}
+          {/* Cost fields:
+              - If budgeted > 0: show both Budget and Actual Cost (actual defaults to $0)
+              - If budgeted = 0 but actual > 0: show both
+              - Otherwise: hide both */}
+          {((localDeliverable.budgeted_cost ?? 0) > 0 || (localDeliverable.actual_cost ?? 0) > 0) && (
+            <>
+              <div>
+                <span className="text-gray-500">Budget:</span>
+                <span className="ml-2 font-medium text-gray-900">
+                  ${(localDeliverable.budgeted_cost ?? 0).toLocaleString()}
+                </span>
+              </div>
 
-          {/* Actual Cost */}
-          {(localDeliverable.actual_cost != null && localDeliverable.actual_cost > 0) && (
-            <div>
-              <span className="text-gray-500">Actual Cost:</span>
-              <span className={`ml-2 font-medium ${localDeliverable.actual_cost > (localDeliverable.budgeted_cost ?? 0) && (localDeliverable.budgeted_cost ?? 0) > 0 ? "text-red-600" : "text-gray-900"}`}>
-                ${localDeliverable.actual_cost.toLocaleString()}
-              </span>
-            </div>
-          )}
-
-          {/* Assigned User */}
-          {assignedUserName && (
-            <div className="col-span-2">
-              <span className="text-gray-500">Assigned:</span>
-              <span className="ml-2 font-medium text-gray-900">
-                {assignedUserName}
-              </span>
-            </div>
+              {/* Actual Cost — inline editable */}
+              <div>
+                <span className="text-gray-500">Actual Cost:</span>
+                {editingActualCost ? (
+                  <span className="ml-2 inline-flex items-center gap-1">
+                    <span className="text-gray-500">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      autoFocus
+                      value={actualCostInput}
+                      onChange={(e) => setActualCostInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") saveActualCost();
+                        if (e.key === "Escape") setEditingActualCost(false);
+                      }}
+                      onBlur={saveActualCost}
+                      className="w-24 px-1.5 py-0.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => {
+                      if (readOnly) return;
+                      setActualCostInput(
+                        (localDeliverable.actual_cost ?? 0) > 0
+                          ? String(localDeliverable.actual_cost)
+                          : ""
+                      );
+                      setEditingActualCost(true);
+                    }}
+                    disabled={readOnly}
+                    className={`ml-2 font-medium ${
+                      (localDeliverable.actual_cost ?? 0) > (localDeliverable.budgeted_cost ?? 0)
+                        ? "text-red-600"
+                        : (localDeliverable.budgeted_cost ?? 0) > 0 && (localDeliverable.actual_cost ?? 0) <= (localDeliverable.budgeted_cost ?? 0)
+                          ? "text-emerald-600"
+                          : "text-gray-900"
+                    } ${!readOnly ? "hover:underline cursor-pointer" : ""}`}
+                  >
+                    ${(localDeliverable.actual_cost ?? 0).toLocaleString()}
+                  </button>
+                )}
+              </div>
+            </>
           )}
 
           {/* Dependency Details */}
@@ -367,16 +472,8 @@ export default function DeliverableCard({
           )}
         </div>
 
-        {/* FIXED Issue #8: Upload button OUTSIDE collapsible section */}
+        {/* Files section — collapsed by default with file count */}
         <div className="border-t pt-3 space-y-2">
-          {/* Upload button always visible - FIXED PROP NAME */}
-          <DeliverableInlineUploader
-            deliverableId={localDeliverable.id}
-            deliverableTitle={localDeliverable.title}
-            onUploaded={onChanged}
-          />
-
-          {/* Files section collapsible - FIXED PROP NAME */}
           <button
             onClick={() => setShowFiles(!showFiles)}
             className="w-full flex items-center justify-between text-sm font-medium text-gray-700 hover:text-gray-900"
@@ -385,7 +482,11 @@ export default function DeliverableCard({
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
               </svg>
-              Files {showFiles ? '(Hide)' : '(Show)'}
+              {fileCount > 0
+                ? `\uD83D\uDCCE ${fileCount} file${fileCount !== 1 ? "s" : ""}`
+                : "Files"
+              }
+              {showFiles ? " (Hide)" : " (Show)"}
             </span>
             <svg
               className={`w-4 h-4 transition-transform ${showFiles ? "rotate-180" : ""}`}
@@ -398,7 +499,19 @@ export default function DeliverableCard({
           </button>
 
           {showFiles && (
-            <div className="mt-2">
+            <div className="mt-2 space-y-2">
+              <DeliverableInlineUploader
+                deliverableId={localDeliverable.id}
+                deliverableTitle={localDeliverable.title}
+                onUploaded={() => {
+                  // Refresh file count after upload
+                  supabase.storage
+                    .from("subtask-files")
+                    .list(`${localDeliverable.id}`)
+                    .then(({ data }) => setFileCount(data?.length ?? 0));
+                  onChanged?.();
+                }}
+              />
               <DeliverableFileSection
                 deliverableId={localDeliverable.id}
                 deliverableTitle={localDeliverable.title}

@@ -126,11 +126,11 @@ export default function ProjectHeader({
                 const budget = project.budgeted_cost ?? 0;
                 const actual = project.actual_cost ?? 0;
                 const hasBudget = budget > 0;
-                const isOver = hasBudget && actual > budget;
-                const bg = !hasBudget ? "bg-slate-50" : isOver ? "bg-red-50" : "bg-emerald-50";
-                const border = !hasBudget ? "border-slate-200" : isOver ? "border-red-200" : "border-emerald-200";
-                const labelColor = !hasBudget ? "text-slate-500" : isOver ? "text-red-600" : "text-emerald-600";
-                const valueColor = !hasBudget ? "text-slate-800" : isOver ? "text-red-700" : "text-emerald-700";
+                const isOver = actual > budget;
+                const bg = isOver ? "bg-red-50" : hasBudget ? "bg-emerald-50" : "bg-slate-50";
+                const border = isOver ? "border-red-200" : hasBudget ? "border-emerald-200" : "border-slate-200";
+                const labelColor = isOver ? "text-red-600" : hasBudget ? "text-emerald-600" : "text-slate-500";
+                const valueColor = isOver ? "text-red-700" : hasBudget ? "text-emerald-700" : "text-slate-800";
                 const pct = hasBudget ? ((actual / budget) * 100).toFixed(1) : null;
                 const remaining = budget - actual;
                 const tooltipContent = hasBudget ? (

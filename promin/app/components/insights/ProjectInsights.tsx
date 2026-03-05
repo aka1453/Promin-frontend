@@ -63,6 +63,36 @@ function humanizeHeadline(headline: string): string {
   return headline;
 }
 
+/** Build entity_type:entity_id -> risk_state lookup from hierarchy rows */
+function buildRiskStateMap(rows: HierarchyRow[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    if (row.risk_state) {
+      map.set(`${row.entity_type}:${row.entity_id}`, row.risk_state);
+    }
+  }
+  return map;
+}
+
+/**
+ * Resolve the display label and color for an insight badge.
+ * When an entity is DELAYED, override "Risk Driver" → "Delayed" with red styling
+ * so the badge communicates urgency rather than the internal RPC category.
+ */
+function resolveInsightBadge(
+  insight: InsightRow,
+  riskStateMap: Map<string, string>,
+): { label: string; color: string } {
+  const riskState = riskStateMap.get(`${insight.entity_type}:${insight.entity_id}`);
+  if (riskState === "DELAYED") {
+    return { label: "Delayed", color: "bg-red-100 text-red-700" };
+  }
+  return {
+    label: INSIGHT_TYPE_LABELS[insight.insight_type],
+    color: INSIGHT_TYPE_COLORS[insight.insight_type],
+  };
+}
+
 /** Build entity_type:entity_id -> entity_name lookup from hierarchy rows */
 function buildNameMap(rows: HierarchyRow[]): Map<string, string> {
   const map = new Map<string, string>();
@@ -245,10 +275,19 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
 
   const nameMap = useMemo(() => buildNameMap(hierarchyRows), [hierarchyRows]);
   const parentMap = useMemo(() => buildParentMap(hierarchyRows), [hierarchyRows]);
+  const riskStateMap = useMemo(() => buildRiskStateMap(hierarchyRows), [hierarchyRows]);
 
-  // Primary Focus: first eligible insight (already canon-ordered by DB)
+  // Primary Focus: first eligible task/milestone-level insight (canon-ordered by DB).
+  // Project-level insights are excluded — on a project page they just restate what
+  // the user already sees (progress bars, forecast). Primary Focus should point to
+  // a specific task the user can act on.
   const primaryFocus = useMemo(
-    () => insights.find((i) => PRIMARY_FOCUS_TYPES.has(i.insight_type)) ?? null,
+    () =>
+      insights.find(
+        (i) =>
+          PRIMARY_FOCUS_TYPES.has(i.insight_type) &&
+          i.entity_type !== "project",
+      ) ?? null,
     [insights],
   );
 
@@ -358,6 +397,7 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
           {primaryFocus && (() => {
             const entityLabel = resolveEntityLabel(primaryFocus.entity_type, primaryFocus.entity_id, nameMap);
             const href = resolveEntityHref(projectId, primaryFocus.entity_type, primaryFocus.entity_id, parentMap);
+            const badge = resolveInsightBadge(primaryFocus, riskStateMap);
             return (
               <div className="mt-3 mb-4 rounded-lg border-2 border-slate-300 bg-slate-50 px-4 py-3">
                 <div className="flex items-center gap-1 mb-1">
@@ -365,8 +405,8 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
                   <InfoTip tip="The highest-priority actionable insight for this project right now." />
                 </div>
                 <div className="flex items-center gap-2 mb-1.5">
-                  <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${INSIGHT_TYPE_COLORS[primaryFocus.insight_type]}`}>
-                    {INSIGHT_TYPE_LABELS[primaryFocus.insight_type]}
+                  <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${badge.color}`}>
+                    {badge.label}
                   </span>
                   <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${SEVERITY_COLORS[primaryFocus.severity]}`}>
                     {primaryFocus.severity}
@@ -391,6 +431,7 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
             {insights.filter((i) => i !== primaryFocus).slice(0, 5).map((insight, idx) => {
               const entityLabel = resolveEntityLabel(insight.entity_type, insight.entity_id, nameMap);
               const href = resolveEntityHref(projectId, insight.entity_type, insight.entity_id, parentMap);
+              const badge = resolveInsightBadge(insight, riskStateMap);
 
               return (
                 <div
@@ -399,8 +440,8 @@ export default function ProjectInsights({ projectId, hierarchyRows }: Props) {
                 >
                   {/* Badges row */}
                   <div className="flex items-center gap-2 mb-1.5">
-                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${INSIGHT_TYPE_COLORS[insight.insight_type]}`}>
-                      {INSIGHT_TYPE_LABELS[insight.insight_type]}
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${badge.color}`}>
+                      {badge.label}
                     </span>
                     <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${SEVERITY_COLORS[insight.severity]}`}>
                       {insight.severity}

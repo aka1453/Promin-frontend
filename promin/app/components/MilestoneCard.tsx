@@ -233,12 +233,10 @@ export default function MilestoneCard({
             <div>
               <div className="text-slate-500 font-medium">Actual Cost</div>
               <div className={`mt-0.5 font-semibold ${
-                milestone.actual_cost && milestone.budgeted_cost && milestone.budgeted_cost > 0
-                  ? milestone.actual_cost > milestone.budgeted_cost
-                    ? "text-amber-600"
-                    : "text-emerald-600"
-                  : milestone.actual_cost
-                    ? "text-slate-900"
+                (milestone.actual_cost ?? 0) > (milestone.budgeted_cost ?? 0)
+                  ? "text-red-600"
+                  : (milestone.budgeted_cost ?? 0) > 0 && (milestone.actual_cost ?? 0) <= (milestone.budgeted_cost ?? 0)
+                    ? "text-emerald-600"
                     : "text-slate-400"
               }`}>
                 {milestone.actual_cost

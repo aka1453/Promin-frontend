@@ -51,7 +51,7 @@ export default function DeliverableCreateModal({
       const { error } = await supabase.from("deliverables").insert({
         task_id: taskId,
         title: title.trim(),
-        weight: Number(weight) / 100, // Store as decimal (0-1)
+        user_weight: Number(weight) / 100, // Store as user_weight; DB trigger normalizes into weight
         duration_days: Number(durationDays),
         depends_on_deliverable_id: dependsOnDeliverableId ? Number(dependsOnDeliverableId) : null,
       });

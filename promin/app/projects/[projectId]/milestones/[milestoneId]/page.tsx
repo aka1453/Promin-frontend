@@ -12,6 +12,7 @@ import ChatDrawer from "../../../../components/chat/ChatDrawer";
 import DeltaBadge from "../../../../components/DeltaBadge";
 import { formatPercent } from "../../../../utils/format";
 import ProjectHeader from "../../../../components/ProjectHeader";
+import { ChevronDown } from "lucide-react";
 
 export default function MilestonePage({
   params,
@@ -31,6 +32,18 @@ export default function MilestonePage({
   // Canonical progress from hierarchy RPC (0-100 scale)
   const [msProgress, setMsProgress] = useState<{ planned: number | null; actual: number | null }>({ planned: null, actual: null });
   const [taskProgressMap, setTaskProgressMap] = useState<Record<string, EntityProgress>>({});
+
+  // Collapsible milestone overview — persist per milestone
+  const msOverviewKey = `promin:ms-overview-expanded:${milestoneId}`;
+  const [msOverviewExpanded, setMsOverviewExpanded] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const stored = localStorage.getItem(`promin:ms-overview-expanded:${milestoneId}`);
+    return stored === null ? true : stored === "true";
+  });
+
+  useEffect(() => {
+    localStorage.setItem(msOverviewKey, String(msOverviewExpanded));
+  }, [msOverviewExpanded, msOverviewKey]);
 
   const initialLoadDone = useRef(false);
 
@@ -270,9 +283,20 @@ export default function MilestonePage({
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
           {/* ===== HEADER ROW ===== */}
           <div className="flex items-center justify-between mb-5">
-            <h1 className="text-lg font-semibold text-slate-700">
-              {milestone.name || milestone.title}
-            </h1>
+            <button
+              type="button"
+              onClick={() => setMsOverviewExpanded((v) => !v)}
+              className="flex items-center gap-1.5 group"
+            >
+              {msOverviewExpanded ? (
+                <ChevronDown size={14} className="text-slate-400 group-hover:text-slate-600 transition-colors" />
+              ) : (
+                <ChevronDown size={14} className="text-slate-400 group-hover:text-slate-600 transition-colors -rotate-90" />
+              )}
+              <h1 className="text-lg font-semibold text-slate-700">
+                {milestone.name || milestone.title}
+              </h1>
+            </button>
             <div className="flex items-center gap-2">
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusClass}`}>
                 {statusLabel}
@@ -280,6 +304,9 @@ export default function MilestonePage({
               <DeltaBadge actual={actualVal} planned={plannedVal} />
             </div>
           </div>
+
+          <div className={`grid transition-[grid-template-rows] duration-200 ease-in-out ${msOverviewExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+          <div className="overflow-hidden">
 
           {milestone.description && (
             <p className="text-sm text-slate-500 mb-5">{milestone.description}</p>
@@ -332,12 +359,10 @@ export default function MilestonePage({
               <p className="text-xs font-semibold text-slate-500 mb-1">Actual Cost</p>
               <p
                 className={`text-sm ${
-                  milestone.actual_cost && milestone.budgeted_cost && milestone.budgeted_cost > 0
-                    ? milestone.actual_cost > milestone.budgeted_cost
-                      ? "text-amber-600"
-                      : "text-emerald-600"
-                    : milestone.actual_cost
-                      ? "text-slate-900"
+                  (milestone.actual_cost ?? 0) > (milestone.budgeted_cost ?? 0)
+                    ? "text-red-600"
+                    : (milestone.budgeted_cost ?? 0) > 0 && (milestone.actual_cost ?? 0) <= (milestone.budgeted_cost ?? 0)
+                      ? "text-emerald-600"
                       : "text-slate-400"
                 }`}
               >
@@ -390,6 +415,8 @@ export default function MilestonePage({
               </div>
             </div>
           </div>
+          </div>{/* end overflow-hidden */}
+          </div>{/* end collapsible grid */}
         </div>
 
         {/* Task Flow Section */}

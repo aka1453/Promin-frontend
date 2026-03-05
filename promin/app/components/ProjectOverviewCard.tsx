@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart2, Settings } from "lucide-react";
+import { BarChart2, ChevronDown, Settings } from "lucide-react";
 import ProgressBar from "./ProgressBar";
 import DeltaBadge from "./DeltaBadge";
 import { formatPercent } from "../utils/format";
@@ -90,6 +90,18 @@ export default function ProjectOverviewCard({
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
+  // Collapsible details — persist preference per project in localStorage
+  const storageKey = `promin:overview-expanded:${project.id}`;
+  const [expanded, setExpanded] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const stored = localStorage.getItem(storageKey);
+    return stored === null ? true : stored === "true";
+  });
+
+  useEffect(() => {
+    localStorage.setItem(storageKey, String(expanded));
+  }, [expanded, storageKey]);
+
   const planned = canonicalPlanned ?? 0;
   const actual = canonicalActual ?? 0;
 
@@ -164,7 +176,7 @@ export default function ProjectOverviewCard({
         </div>
         </Tooltip>
 
-        <h3 className="text-lg font-semibold text-slate-900 leading-tight">
+        <h3 className="text-lg font-semibold text-slate-900 leading-tight line-clamp-2">
           {project.name ?? "Untitled Project"}
         </h3>
       </div>
@@ -236,37 +248,64 @@ export default function ProjectOverviewCard({
     </div>
 
     {/* ===== STATUS PILL + EXPLANATION ===== */}
-    {riskState && (
-      <div className="flex items-center gap-2 mt-1.5">
-        <Tooltip content="Schedule health: worst-case deliverable status (near deadline/overdue)">
-          <span
-            className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-              riskState === "COMPLETED" ? "bg-emerald-200 text-emerald-800"
-              : riskState === "DELAYED"  ? "bg-red-100 text-red-700"
-              : riskState === "AT_RISK"  ? "bg-amber-100 text-amber-700"
-              : riskState === "ON_TRACK" ? "bg-emerald-100 text-emerald-700"
-              : ""
-            }`}
-          >
-            {statusLabel}
-          </span>
-        </Tooltip>
-        {riskState === "DELAYED" && (
-          <span className="text-sm text-slate-900">
-            {overdueCount != null && overdueCount >= 1
-              ? `${overdueCount} deliverable${overdueCount === 1 ? "" : "s"} overdue`
-              : "deliverable overdue"}
-          </span>
-        )}
-        {riskState === "AT_RISK" && (
-          <span className="text-sm text-slate-900">
-            {nearDeadlineCount != null && nearDeadlineCount >= 1
-              ? `${nearDeadlineCount} deliverable${nearDeadlineCount === 1 ? "" : "s"} near deadline`
-              : "deliverable near deadline"}
-          </span>
+    <div className="flex items-center justify-between mt-1.5">
+      <div className="flex items-center gap-2">
+        {riskState && (
+          <>
+            <Tooltip content="Schedule health: worst-case deliverable status (near deadline/overdue)">
+              <span
+                className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                  riskState === "COMPLETED" ? "bg-emerald-200 text-emerald-800"
+                  : riskState === "DELAYED"  ? "bg-red-100 text-red-700"
+                  : riskState === "AT_RISK"  ? "bg-amber-100 text-amber-700"
+                  : riskState === "ON_TRACK" ? "bg-emerald-100 text-emerald-700"
+                  : ""
+                }`}
+              >
+                {statusLabel}
+              </span>
+            </Tooltip>
+            {riskState === "DELAYED" && (
+              <span className="text-sm text-slate-900">
+                {overdueCount != null && overdueCount >= 1
+                  ? `${overdueCount} deliverable${overdueCount === 1 ? "" : "s"} overdue`
+                  : "deliverable overdue"}
+              </span>
+            )}
+            {riskState === "AT_RISK" && (
+              <span className="text-sm text-slate-900">
+                {nearDeadlineCount != null && nearDeadlineCount >= 1
+                  ? `${nearDeadlineCount} deliverable${nearDeadlineCount === 1 ? "" : "s"} near deadline`
+                  : "deliverable near deadline"}
+              </span>
+            )}
+          </>
         )}
       </div>
-    )}
+
+      {/* Expand / Collapse toggle */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setExpanded((v) => !v);
+        }}
+        className="pointer-events-auto p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+        aria-label={expanded ? "Collapse details" : "Expand details"}
+      >
+        <ChevronDown
+          size={16}
+          className={`transition-transform duration-200 ${expanded ? "" : "-rotate-90"}`}
+        />
+      </button>
+    </div>
+
+    {/* ===== COLLAPSIBLE DETAILS ===== */}
+    <div
+      className={`grid transition-[grid-template-rows] duration-200 ease-in-out ${expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+    >
+      <div className="overflow-hidden">
     <div className="mb-6" />
 
     {/* ===== PROGRESS ===== */}
@@ -320,12 +359,10 @@ export default function ProjectOverviewCard({
         <p className="text-xs font-semibold text-slate-500 mb-1">Actual Cost</p>
         <p
           className={`text-sm ${
-            project.actual_cost && project.budgeted_cost && project.budgeted_cost > 0
-              ? project.actual_cost > project.budgeted_cost
-                ? "text-amber-600"
-                : "text-emerald-600"
-              : project.actual_cost
-                ? "text-slate-900"
+            (project.actual_cost ?? 0) > (project.budgeted_cost ?? 0)
+              ? "text-red-600"
+              : (project.budgeted_cost ?? 0) > 0 && (project.actual_cost ?? 0) <= (project.budgeted_cost ?? 0)
+                ? "text-emerald-600"
                 : "text-slate-400"
           }`}
         >
@@ -363,6 +400,8 @@ export default function ProjectOverviewCard({
         </span>
       </div>
     </div>
+      </div>{/* end overflow-hidden */}
+    </div>{/* end collapsible grid */}
   </div>
 );
 

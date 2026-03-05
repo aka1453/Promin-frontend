@@ -8,7 +8,7 @@ import TaskDetailsDrawer from "./TaskDetailsDrawer";
 import { useToast } from "./ToastProvider";
 import { useUserTimezone } from "../context/UserTimezoneContext";
 import { todayForTimezone } from "../utils/date";
-import { Circle, Loader2, CheckCircle2 } from "lucide-react";
+import { ChevronDown, Circle, Loader2, CheckCircle2 } from "lucide-react";
 
 type Props = {
   milestoneId: number;
@@ -34,6 +34,15 @@ export default function TaskFlowBoard({
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTask, setSelectedTask] = useState<any>(null);
+
+  const [legendOpen, setLegendOpen] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return localStorage.getItem("promin:legend-collapsed") !== "true";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("promin:legend-collapsed", String(!legendOpen));
+  }, [legendOpen]);
 
   const loadTasks = async () => {
     setLoading(true);
@@ -91,6 +100,56 @@ export default function TaskFlowBoard({
 
   return (
     <>
+      {/* Legend Bar — collapsible */}
+      <div className="mb-3 px-1">
+        <button
+          type="button"
+          onClick={() => setLegendOpen((v) => !v)}
+          className="flex items-center gap-1.5 group mb-1"
+        >
+          {legendOpen ? (
+            <ChevronDown size={14} className="text-slate-400 group-hover:text-slate-600 transition-colors" />
+          ) : (
+            <ChevronDown size={14} className="text-slate-400 group-hover:text-slate-600 transition-colors -rotate-90" />
+          )}
+          <span className="text-[11px] font-semibold text-gray-600">Legend</span>
+        </button>
+        {legendOpen && (
+          <div className="flex items-center gap-x-5 gap-y-1 flex-wrap text-[11px] text-gray-500 ml-5">
+            <div className="flex items-center gap-1.5">
+              <div className="w-4 h-3 rounded-sm border-2 border-red-500" />
+              <span>Delayed</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-4 h-3 rounded-sm border-2 border-amber-500" />
+              <span>Behind</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-4 h-3 rounded-sm border border-slate-300" />
+              <span>On Track</span>
+            </div>
+            <div className="w-px h-3 bg-slate-200" />
+            <div className="flex items-center gap-1.5">
+              <div className="w-4 h-1.5 rounded-full bg-blue-500" />
+              <span>Planned</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-4 h-1.5 rounded-full bg-emerald-500" />
+              <span>Actual</span>
+            </div>
+            <div className="w-px h-3 bg-slate-200" />
+            <div className="flex items-center gap-1.5">
+              <span className="font-semibold text-emerald-600">$</span>
+              <span>Under budget</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="font-semibold text-amber-600">$</span>
+              <span>Over budget</span>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 min-h-[400px]">
         {/* Not Started Column */}
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">

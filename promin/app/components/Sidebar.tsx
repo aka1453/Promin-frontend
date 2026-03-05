@@ -217,7 +217,8 @@ export default function Sidebar() {
     <aside className="fixed left-0 top-0 z-40 flex h-screen w-64 flex-col bg-white border-r border-gray-200">
       {/* BRAND */}
       <div className="px-6 py-6 border-b border-gray-200">
-        <h1 className="text-2xl font-semibold text-gray-900">ProMin</h1>
+        {/* ORIGINAL: <h1 className="text-2xl font-semibold text-gray-900">ProMin</h1> */}
+        <h1 className="text-2xl font-semibold text-gray-900">Idea.com</h1>
       </div>
 
       {/* REORDER ERROR TOAST */}

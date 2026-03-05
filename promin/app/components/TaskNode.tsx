@@ -150,7 +150,7 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
       type="target"
       position={Position.Left}
       id="left"
-      className="w-3 h-3 !bg-gray-500 border-2 border-white"
+      className="w-4 h-4 !bg-indigo-400 border-2 border-white hover:!bg-indigo-600 transition-colors"
       style={{ left: -6 }}
     />
   );
@@ -160,7 +160,7 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
       type="source"
       position={Position.Right}
       id="right"
-      className="w-3 h-3 !bg-gray-500 border-2 border-white"
+      className="w-4 h-4 !bg-indigo-400 border-2 border-white hover:!bg-indigo-600 transition-colors"
       style={{ right: -6 }}
     />
   );
@@ -416,8 +416,11 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
           <div className="flex justify-between">
             <span className="font-bold text-slate-900">Actual</span>
             <span className={`font-medium ${
-              (task as any).actual_cost && (task as any).budgeted_cost && (task as any).actual_cost > (task as any).budgeted_cost
-                ? "text-amber-600" : "text-emerald-600"
+              ((task as any).actual_cost ?? 0) > ((task as any).budgeted_cost ?? 0)
+                ? "text-red-600"
+                : ((task as any).budgeted_cost ?? 0) > 0 && ((task as any).actual_cost ?? 0) <= ((task as any).budgeted_cost ?? 0)
+                  ? "text-emerald-600"
+                  : "text-slate-600"
             }`}>{fmtCost((task as any).actual_cost)}</span>
           </div>
         </div>
@@ -431,7 +434,7 @@ function TaskNode({ data }: NodeProps<TaskNodeData>) {
             }}
             className="w-full px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 transition-colors"
           >
-            View Deliverables ({deliverablesDone}/{deliverablesTotal})
+            View Deliverables & Files ({deliverablesDone}/{deliverablesTotal})
           </button>
         </div>
 

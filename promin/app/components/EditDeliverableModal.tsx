@@ -22,7 +22,6 @@ export default function EditDeliverableModal({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const [taskId, setTaskId] = useState<number>(0);
   const [existingDeliverables, setExistingDeliverables] = useState<any[]>([]);
   const [title, setTitle] = useState("");
   const [weight, setWeight] = useState("0");
@@ -30,6 +29,8 @@ export default function EditDeliverableModal({
   const [budgetedCost, setBudgetedCost] = useState("0");
   const [actualCost, setActualCost] = useState("0");
   const [dependsOnDeliverableId, setDependsOnDeliverableId] = useState<string>("");
+  const [assignedUserId, setAssignedUserId] = useState<string>("");
+  const [projectMembers, setProjectMembers] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -48,12 +49,30 @@ export default function EditDeliverableModal({
       }
 
       setTitle(data.title || "");
-      setWeight(String((data.weight ?? 0) * 100));
+      setWeight(String((data.user_weight ?? data.weight ?? 0) * 100));
       setDurationDays(String(data.duration_days ?? 1));
       setBudgetedCost(String(data.budgeted_cost ?? 0));
       setActualCost(String(data.actual_cost ?? 0));
       setDependsOnDeliverableId(data.depends_on_deliverable_id ? String(data.depends_on_deliverable_id) : "");
-      setTaskId(data.task_id);
+      setAssignedUserId(data.assigned_user_id ?? "");
+
+      // Load project members (editors and owners only) for assignment dropdown
+      if (projectId) {
+        const { data: members } = await supabase
+          .from("project_members")
+          .select("user_id, role, profiles(full_name, email)")
+          .eq("project_id", projectId)
+          .in("role", ["owner", "editor"]);
+
+        if (members) {
+          setProjectMembers(
+            members.map((m: any) => ({
+              id: m.user_id,
+              name: m.profiles?.full_name || m.profiles?.email || m.user_id,
+            }))
+          );
+        }
+      }
 
       // Load all deliverables in the same task
       const { data: deliverables, error: delError } = await supabase
@@ -87,21 +106,20 @@ export default function EditDeliverableModal({
 
     setSaving(true);
 
-    const { error } = await supabase
-      .from("deliverables")
-      .update({
-        title: title.trim(),
-        weight: Number(weight) / 100, // Convert percentage to decimal
-        budgeted_cost: Number(budgetedCost) || 0,
-        actual_cost: Number(actualCost) || 0,
-        duration_days: Number(durationDays),
-        depends_on_deliverable_id: dependsOnDeliverableId ? Number(dependsOnDeliverableId) : null,
-      })
-      .eq("id", deliverableId);
+    const { error } = await supabase.rpc("update_deliverable", {
+      p_id: deliverableId,
+      p_title: title.trim(),
+      p_user_weight: Number(weight) / 100,
+      p_budgeted_cost: Number(budgetedCost) || 0,
+      p_actual_cost: Number(actualCost) || 0,
+      p_duration_days: Number(durationDays),
+      p_depends_on_deliverable_id: dependsOnDeliverableId ? Number(dependsOnDeliverableId) : null,
+      p_assigned_user_id: assignedUserId || null,
+    });
 
     if (error) {
-      console.error("Update deliverable error:", error);
-      pushToast("Failed to update deliverable", "error");
+      console.error("Update deliverable error:", JSON.stringify(error, null, 2));
+      pushToast(`Failed to update: ${error.message || error.code || "unknown"}`, "error");
       setSaving(false);
       return;
     }
@@ -225,6 +243,23 @@ export default function EditDeliverableModal({
                 placeholder="0.00"
               />
             </div>
+          </div>
+
+          {/* Assigned User */}
+          <div>
+            <label className="block text-sm font-medium mb-1">Assigned To</label>
+            <select
+              value={assignedUserId}
+              onChange={(e) => setAssignedUserId(e.target.value)}
+              className="w-full border rounded px-3 py-2 text-sm"
+            >
+              <option value="">Unassigned</option>
+              {projectMembers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Depends On */}

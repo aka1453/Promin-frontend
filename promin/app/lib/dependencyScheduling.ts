@@ -258,7 +258,7 @@ export async function updateDeliverableDates(
       .from("deliverables")
       .update({
         planned_start: dates.start.toISOString().split("T")[0],
-        planned_end: dates.end.toISOString().split("T")[0],
+        // planned_end is auto-calculated by DB trigger from planned_start + duration_days
       })
       .eq("id", deliverableId);
 
