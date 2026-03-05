@@ -105,15 +105,34 @@ function MyWorkContent({ projectId }: { projectId: number }) {
       });
   }, [projectId]);
 
-  // Fetch deliverables for this project (two-step: get task IDs, then deliverables)
+  // Fetch deliverables for this project (three-step: milestones → tasks → deliverables)
   const loadDeliverables = useCallback(async () => {
     setLoading(true);
     try {
-      // Step 1: Get all tasks in this project via milestones
+      // Step 1: Get milestones for this project
+      const { data: milestoneData, error: msError } = await supabase
+        .from("milestones")
+        .select("id, title")
+        .eq("project_id", projectId);
+
+      if (msError || !milestoneData || milestoneData.length === 0) {
+        if (msError) console.error("Failed to load milestones:", msError);
+        setDeliverables([]);
+        setLoading(false);
+        return;
+      }
+
+      const milestoneIds = milestoneData.map((m: any) => m.id);
+      const milestoneMap = new Map<number, { id: number; title: string }>();
+      for (const m of milestoneData as any[]) {
+        milestoneMap.set(m.id, { id: m.id, title: m.title });
+      }
+
+      // Step 2: Get tasks for those milestones
       const { data: taskData, error: taskError } = await supabase
         .from("tasks")
-        .select("id, title, actual_start, milestones!inner(id, title, project_id)")
-        .eq("milestones.project_id", projectId);
+        .select("id, title, actual_start, milestone_id")
+        .in("milestone_id", milestoneIds);
 
       if (taskError || !taskData || taskData.length === 0) {
         if (taskError) console.error("Failed to load tasks:", taskError);
@@ -123,19 +142,18 @@ function MyWorkContent({ projectId }: { projectId: number }) {
       }
 
       const taskIds = taskData.map((t: any) => t.id);
-
-      // Build a lookup map for task metadata
       const taskMap = new Map<number, { id: number; title: string; actual_start: string | null; milestones: { id: number; title: string } }>();
       for (const t of taskData as any[]) {
+        const ms = milestoneMap.get(t.milestone_id);
         taskMap.set(t.id, {
           id: t.id,
           title: t.title,
           actual_start: t.actual_start,
-          milestones: { id: t.milestones.id, title: t.milestones.title },
+          milestones: ms ?? { id: 0, title: "" },
         });
       }
 
-      // Step 2: Fetch deliverables for those tasks
+      // Step 3: Fetch deliverables for those tasks
       let query = supabase
         .from("deliverables")
         .select("id, task_id, title, description, is_done, completed_at, planned_end, planned_start, priority, weight, assigned_user_id")
