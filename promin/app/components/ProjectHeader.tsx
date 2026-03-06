@@ -159,7 +159,7 @@ export default function ProjectHeader({
                   className={navButtonClass("my-work")}
                 >
                   <CheckSquare size={18} />
-                  My Work
+                  Deliverables
                 </button>
 
                 <button

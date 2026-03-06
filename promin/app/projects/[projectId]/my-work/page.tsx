@@ -570,7 +570,7 @@ function MyWorkContent({ projectId }: { projectId: number }) {
           {/* ── header + progress ── */}
           <div className="mb-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold mb-1">My Work</h2>
+              <h2 className="text-xl font-semibold mb-1">Deliverables</h2>
               {!loading && progressCounts.total > 0 && (
                 <div className="text-sm text-gray-500">
                   <span className="font-medium text-gray-700">
