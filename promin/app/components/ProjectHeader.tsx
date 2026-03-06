@@ -152,13 +152,30 @@ export default function ProjectHeader({
               })()}
 
               {/* Navigation buttons — 2 rows x 3 columns */}
+              {/* Navigation buttons — ordered by frequency of use */}
               <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => router.push(`/projects/${projectId}/my-work`)}
+                  className={navButtonClass("my-work")}
+                >
+                  <CheckSquare size={18} />
+                  My Work
+                </button>
+
                 <button
                   onClick={() => router.push(`/projects/${projectId}/gantt`)}
                   className={navButtonClass("gantt")}
                 >
                   <GanttChartSquare size={18} />
                   Gantt
+                </button>
+
+                <button
+                  onClick={() => router.push(`/projects/${projectId}/drafts`)}
+                  className={navButtonClass("drafts")}
+                >
+                  <Sparkles size={18} />
+                  AI planner
                 </button>
 
                 <button
@@ -175,22 +192,6 @@ export default function ProjectHeader({
                 >
                   <FileText size={18} />
                   Documents
-                </button>
-
-                <button
-                  onClick={() => router.push(`/projects/${projectId}/my-work`)}
-                  className={navButtonClass("my-work")}
-                >
-                  <CheckSquare size={18} />
-                  My Work
-                </button>
-
-                <button
-                  onClick={() => router.push(`/projects/${projectId}/drafts`)}
-                  className={navButtonClass("drafts")}
-                >
-                  <Sparkles size={18} />
-                  AI planner
                 </button>
 
                 {onToggleActivity ? (
