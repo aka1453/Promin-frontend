@@ -15,7 +15,11 @@ import {
   Calendar,
   ExternalLink,
   FolderOpen,
+  Clock,
+  User,
 } from "lucide-react";
+import TimeLogForm from "../components/TimeLogForm";
+import TimeLogHistory from "../components/TimeLogHistory";
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -119,6 +123,9 @@ export default function GlobalMyWorkPage() {
   const [confirmUncheck, setConfirmUncheck] = useState<DeliverableRow | null>(
     null
   );
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [loggingTimeId, setLoggingTimeId] = useState<number | null>(null);
+  const [timeLogRefreshKey, setTimeLogRefreshKey] = useState(0);
 
   const today = useMemo(() => todayForTimezone(timezone), [timezone]);
 
@@ -553,66 +560,145 @@ export default function GlobalMyWorkPage() {
                         const taskNotStarted =
                           !d.taskActualStart && !d.is_done;
                         const isToggling = togglingIds.has(d.id);
+                        const isExpanded = expandedId === d.id;
 
                         return (
                           <div
                             key={d.id}
-                            className={`flex items-center gap-3 px-4 py-2.5 border-b border-gray-50 last:border-b-0 transition ${
-                              d.is_done
-                                ? "bg-gray-50 opacity-60"
-                                : "hover:bg-gray-50"
-                            }`}
+                            className="border-b border-gray-50 last:border-b-0"
                           >
-                            {taskNotStarted ? (
-                              <span title="Task hasn't started yet">
-                                <Lock
-                                  size={14}
-                                  className="text-gray-400 flex-shrink-0"
-                                />
-                              </span>
-                            ) : (
-                              <input
-                                type="checkbox"
-                                checked={!!d.is_done}
-                                disabled={isToggling}
-                                onChange={(e) =>
-                                  toggleDeliverable(d, e.target.checked)
-                                }
-                                className="h-4 w-4 rounded border-gray-300 cursor-pointer flex-shrink-0"
-                              />
-                            )}
-
-                            <PriorityDot priority={d.priority} />
-
-                            <span
-                              className={`flex-1 text-sm truncate ${
+                            {/* main row */}
+                            <div
+                              className={`flex items-center gap-3 px-4 py-2.5 transition ${
                                 d.is_done
-                                  ? "line-through text-gray-400"
-                                  : "text-gray-900"
+                                  ? "bg-gray-50 opacity-60"
+                                  : "hover:bg-gray-50"
                               }`}
                             >
-                              {d.title}
-                            </span>
+                              {taskNotStarted ? (
+                                <span title="Task hasn't started yet">
+                                  <Lock
+                                    size={14}
+                                    className="text-gray-400 flex-shrink-0"
+                                  />
+                                </span>
+                              ) : (
+                                <input
+                                  type="checkbox"
+                                  checked={!!d.is_done}
+                                  disabled={isToggling}
+                                  onChange={(e) =>
+                                    toggleDeliverable(d, e.target.checked)
+                                  }
+                                  className="h-4 w-4 rounded border-gray-300 cursor-pointer flex-shrink-0"
+                                />
+                              )}
 
-                            {taskNotStarted && (
-                              <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded flex-shrink-0">
-                                Not started
-                              </span>
-                            )}
+                              <PriorityDot priority={d.priority} />
 
-                            <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:inline">
-                              {d.taskTitle}
-                            </span>
-
-                            {d.planned_end && (
-                              <span
-                                className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${getDueDateStyle(
-                                  d.planned_end,
+                              <button
+                                onClick={() =>
+                                  setExpandedId(isExpanded ? null : d.id)
+                                }
+                                className={`flex-1 text-sm truncate text-left ${
                                   d.is_done
-                                )}`}
+                                    ? "line-through text-gray-400"
+                                    : "text-gray-900 hover:text-blue-600"
+                                }`}
                               >
-                                {formatDate(d.planned_end)}
+                                {d.title}
+                              </button>
+
+                              {taskNotStarted && (
+                                <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded flex-shrink-0">
+                                  Not started
+                                </span>
+                              )}
+
+                              <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:inline">
+                                {d.taskTitle}
                               </span>
+
+                              {d.planned_end && (
+                                <span
+                                  className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${getDueDateStyle(
+                                    d.planned_end,
+                                    d.is_done
+                                  )}`}
+                                >
+                                  {formatDate(d.planned_end)}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* expanded detail panel */}
+                            {isExpanded && (
+                              <div className="px-4 py-3 bg-slate-50 border-t border-gray-100">
+                                <div className="ml-7 space-y-3">
+                                  <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                                    <div className="flex items-center gap-2">
+                                      <Calendar
+                                        size={14}
+                                        className="text-gray-400"
+                                      />
+                                      <span className="text-gray-500">
+                                        {formatDate(d.planned_start)} →{" "}
+                                        {formatDate(d.planned_end)}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <User
+                                        size={14}
+                                        className="text-gray-400"
+                                      />
+                                      <span className="text-gray-500">
+                                        {d.assigned_user ?? "Unassigned"}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-xs text-gray-400">
+                                      {d.milestoneName} → {d.taskTitle}
+                                    </div>
+                                  </div>
+
+                                  {/* Log Time action */}
+                                  {!d.is_done && (
+                                    <div className="flex flex-wrap gap-3 pt-2 border-t border-gray-200">
+                                      <button
+                                        onClick={() => {
+                                          setLoggingTimeId(
+                                            loggingTimeId === d.id
+                                              ? null
+                                              : d.id
+                                          );
+                                        }}
+                                        className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                                      >
+                                        <Clock size={12} />
+                                        Log Time
+                                      </button>
+                                    </div>
+                                  )}
+
+                                  {/* Time logging form */}
+                                  {loggingTimeId === d.id && (
+                                    <TimeLogForm
+                                      deliverableId={d.id}
+                                      onSuccess={() => {
+                                        setLoggingTimeId(null);
+                                        setTimeLogRefreshKey((k) => k + 1);
+                                        loadAll();
+                                      }}
+                                      onCancel={() => setLoggingTimeId(null)}
+                                    />
+                                  )}
+
+                                  {/* Time log history */}
+                                  <TimeLogHistory
+                                    deliverableId={d.id}
+                                    refreshKey={timeLogRefreshKey}
+                                  />
+                                </div>
+                              </div>
                             )}
                           </div>
                         );

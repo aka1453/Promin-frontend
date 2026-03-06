@@ -32,6 +32,10 @@ export default function EditDeliverableModal({
   const [assignedUserId, setAssignedUserId] = useState<string>("");
   const [projectMembers, setProjectMembers] = useState<{ id: string; name: string }[]>([]);
 
+  // Time tracking fields
+  const [costType, setCostType] = useState<"fixed" | "hourly">("fixed");
+  const [estimatedHours, setEstimatedHours] = useState("");
+
   useEffect(() => {
     const load = async () => {
       // Load the deliverable
@@ -55,6 +59,8 @@ export default function EditDeliverableModal({
       setActualCost(String(data.actual_cost ?? 0));
       setDependsOnDeliverableId(data.depends_on_deliverable_id ? String(data.depends_on_deliverable_id) : "");
       setAssignedUserId(data.assigned_user_id ?? "");
+      setCostType(data.cost_type === "hourly" ? "hourly" : "fixed");
+      setEstimatedHours(data.estimated_hours ? String(data.estimated_hours) : "");
 
       // Load project members (editors and owners only) for assignment dropdown
       if (projectId) {
@@ -115,6 +121,8 @@ export default function EditDeliverableModal({
       p_duration_days: Number(durationDays),
       p_depends_on_deliverable_id: dependsOnDeliverableId ? Number(dependsOnDeliverableId) : null,
       p_assigned_user_id: assignedUserId || null,
+      p_cost_type: costType,
+      p_estimated_hours: estimatedHours ? Number(estimatedHours) : null,
     });
 
     if (error) {
@@ -152,6 +160,8 @@ export default function EditDeliverableModal({
   );
   const proposed = sum + Number(weight);
 
+  const isHourly = costType === "hourly";
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
@@ -161,7 +171,7 @@ export default function EditDeliverableModal({
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
           >
-            ×
+            &times;
           </button>
         </div>
 
@@ -192,11 +202,11 @@ export default function EditDeliverableModal({
             />
             <div className="mt-2 bg-blue-50 border border-blue-200 rounded-md p-2">
               <p className="text-xs text-blue-800">
-                <strong>⚖️ Auto-Normalization:</strong> All deliverable weights will be 
+                <strong>&#9878; Auto-Normalization:</strong> All deliverable weights will be
                 automatically adjusted to sum to 100% proportionally.
               </p>
               <p className="text-xs text-blue-700 mt-1">
-                Other deliverables: {sum.toFixed(0)}% | After update: {proposed.toFixed(0)}% → Will normalize to 100%
+                Other deliverables: {sum.toFixed(0)}% | After update: {proposed.toFixed(0)}% &rarr; Will normalize to 100%
               </p>
             </div>
           </div>
@@ -217,33 +227,113 @@ export default function EditDeliverableModal({
             />
           </div>
 
+          {/* Cost Type Toggle */}
+          <div>
+            <label className="block text-sm font-medium mb-1">Cost Type</label>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setCostType("fixed")}
+                className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                  !isHourly
+                    ? "bg-blue-600 text-white"
+                    : "bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                Fixed Cost
+              </button>
+              <button
+                type="button"
+                onClick={() => setCostType("hourly")}
+                className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                  isHourly
+                    ? "bg-blue-600 text-white"
+                    : "bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                Hourly Rate
+              </button>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              {isHourly
+                ? "Costs auto-compute from logged hours \u00D7 team rate"
+                : "Enter budgeted and actual costs manually"}
+            </p>
+          </div>
+
+          {/* Estimated Hours (hourly only) */}
+          {isHourly && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Estimated Hours</label>
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                value={estimatedHours}
+                onChange={(e) => setEstimatedHours(e.target.value)}
+                className="w-full border rounded px-3 py-2 text-sm"
+                placeholder="e.g. 40"
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                Budgeted cost = estimated hours &times; team member&apos;s hourly rate
+              </p>
+            </div>
+          )}
+
           {/* Budgeted Cost + Actual Cost — side by side */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium mb-1">Budgeted Cost ($)</label>
+              <label className="block text-sm font-medium mb-1">
+                Budgeted Cost ($)
+                {isHourly && (
+                  <span className="text-xs font-normal text-slate-400 ml-1">auto</span>
+                )}
+              </label>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 value={budgetedCost}
                 onChange={(e) => setBudgetedCost(e.target.value)}
-                className="w-full border rounded px-3 py-2 text-sm"
+                className={`w-full border rounded px-3 py-2 text-sm ${
+                  isHourly ? "bg-slate-50 text-slate-500 cursor-not-allowed" : ""
+                }`}
                 placeholder="0.00"
+                readOnly={isHourly}
+                tabIndex={isHourly ? -1 : undefined}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Actual Cost ($)</label>
+              <label className="block text-sm font-medium mb-1">
+                Actual Cost ($)
+                {isHourly && (
+                  <span className="text-xs font-normal text-slate-400 ml-1">auto</span>
+                )}
+              </label>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 value={actualCost}
                 onChange={(e) => setActualCost(e.target.value)}
-                className="w-full border rounded px-3 py-2 text-sm"
+                className={`w-full border rounded px-3 py-2 text-sm ${
+                  isHourly ? "bg-slate-50 text-slate-500 cursor-not-allowed" : ""
+                }`}
                 placeholder="0.00"
+                readOnly={isHourly}
+                tabIndex={isHourly ? -1 : undefined}
               />
             </div>
           </div>
+
+          {isHourly && (
+            <div className="bg-amber-50 border border-amber-200 rounded-md p-2">
+              <p className="text-xs text-amber-800">
+                <strong>Hourly cost:</strong> Budgeted and actual costs are auto-computed by the database.
+                Set the team member&apos;s hourly rate in Project Settings &rarr; Team Rates.
+              </p>
+            </div>
+          )}
 
           {/* Assigned User */}
           <div>
@@ -280,9 +370,9 @@ export default function EditDeliverableModal({
               ))}
             </select>
             <p className="text-xs text-gray-500 mt-1">
-              {dependsOnDeliverableId 
-                ? "⏩ Sequential: Starts after selected deliverable completes"
-                : "⚡ Parallel: Can start immediately with the task"
+              {dependsOnDeliverableId
+                ? "\u23E9 Sequential: Starts after selected deliverable completes"
+                : "\u26A1 Parallel: Can start immediately with the task"
               }
             </p>
           </div>
@@ -290,10 +380,10 @@ export default function EditDeliverableModal({
           {/* Info Notice */}
           <div className="bg-purple-50 border border-purple-200 rounded-md p-3">
             <p className="text-xs text-purple-800">
-              <strong>🔗 Duration Calculation:</strong><br />
-              • <strong>Independent:</strong> Task duration = MAX of all parallel deliverables<br />
-              • <strong>Dependent:</strong> Task duration = SUM along sequential chain<br />
-              • Task dates will recalculate when you save
+              <strong>&#128279; Duration Calculation:</strong><br />
+              &bull; <strong>Independent:</strong> Task duration = MAX of all parallel deliverables<br />
+              &bull; <strong>Dependent:</strong> Task duration = SUM along sequential chain<br />
+              &bull; Task dates will recalculate when you save
             </p>
           </div>
         </form>

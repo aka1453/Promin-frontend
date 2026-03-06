@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { canEdit, isOwner } from "../utils/permissions";
+import { updateHourlyRate } from "../lib/timeTracking";
 
 type Props = {
   project: any;
@@ -28,8 +29,9 @@ export default function ProjectSettingsModal({ project,projectRole, onClose }: P
   const [inviting, setInviting] = useState(false);
   // Collaborators list
   const [members, setMembers] = useState<
-    { user_id: string; email: string; role: "owner" | "editor" | "viewer" }[]
+    { user_id: string; email: string; role: "owner" | "editor" | "viewer"; hourly_rate: number | null }[]
     >([]);
+  const [rateInputs, setRateInputs] = useState<Record<string, string>>({});
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
 
@@ -45,25 +47,24 @@ export default function ProjectSettingsModal({ project,projectRole, onClose }: P
 
     const { data, error } = await supabase
   .from("project_members_expanded")
-  .select("user_id, role, email")
+  .select("user_id, role, email, hourly_rate")
   .eq("project_id", project.id);
 
-
-
-console.log("RLS DEBUG — raw data:", data);
-console.log("RLS DEBUG — error:", error);
-console.log("RLS DEBUG — projectId:", project.id);
-console.log("RLS DEBUG — projectRole:", projectRole);
-
 if (!error && data) {
-  setMembers(
-  data.map((m: any) => ({
+  const mapped = data.map((m: any) => ({
     user_id: m.user_id,
     role: m.role,
     email: m.email,
-  }))
-);
+    hourly_rate: m.hourly_rate ?? null,
+  }));
+  setMembers(mapped);
 
+  // Initialize rate inputs
+  const rates: Record<string, string> = {};
+  for (const m of mapped) {
+    rates[m.user_id] = m.hourly_rate != null ? String(m.hourly_rate) : "";
+  }
+  setRateInputs(rates);
 }
 
 
@@ -459,6 +460,70 @@ const { error } = await supabase
           </div>
         </div>
 
+        {/* Team Rates — visible to owners only */}
+        {isOwner(projectRole) && !isArchived && members.length > 0 && (
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-2">
+              Team Rates
+            </label>
+            <p className="text-xs text-slate-400 mb-2">
+              Set hourly rates for team members. Used to auto-compute costs on hourly deliverables.
+            </p>
+            <div className="space-y-2">
+              {members.map((m) => (
+                <div
+                  key={`rate-${m.user_id}`}
+                  className="flex items-center gap-2 border rounded-lg px-3 py-2 text-sm"
+                >
+                  <span className="flex-1 truncate text-slate-700">{m.email}</span>
+                  <span className="text-xs text-slate-400 flex-shrink-0">{m.role}</span>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <span className="text-xs text-slate-500">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={rateInputs[m.user_id] ?? ""}
+                      onChange={(e) =>
+                        setRateInputs((prev) => ({
+                          ...prev,
+                          [m.user_id]: e.target.value,
+                        }))
+                      }
+                      onBlur={async () => {
+                        const val = rateInputs[m.user_id];
+                        const numVal = val ? parseFloat(val) : null;
+                        const currentRate = m.hourly_rate;
+                        // Skip if no change
+                        if (numVal === currentRate) return;
+                        if (numVal === null && currentRate === null) return;
+                        try {
+                          await updateHourlyRate(project.id, m.user_id, numVal);
+                          setMembers((prev) =>
+                            prev.map((pm) =>
+                              pm.user_id === m.user_id
+                                ? { ...pm, hourly_rate: numVal }
+                                : pm
+                            )
+                          );
+                        } catch {
+                          // Revert
+                          setRateInputs((prev) => ({
+                            ...prev,
+                            [m.user_id]: currentRate != null ? String(currentRate) : "",
+                          }));
+                        }
+                      }}
+                      className="w-20 border rounded px-2 py-1 text-xs text-right"
+                    />
+                    <span className="text-xs text-slate-400">/hr</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Divider */}
         <div className="border-t pt-4 text-xs text-slate-400">

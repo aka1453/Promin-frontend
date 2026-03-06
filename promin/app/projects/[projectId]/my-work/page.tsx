@@ -21,7 +21,10 @@ import {
   ChevronRight,
   Calendar,
   User,
+  Clock,
 } from "lucide-react";
+import TimeLogForm from "../../../components/TimeLogForm";
+import TimeLogHistory from "../../../components/TimeLogHistory";
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -155,6 +158,8 @@ function MyWorkContent({ projectId }: { projectId: number }) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [editingAssigneeId, setEditingAssigneeId] = useState<number | null>(null);
   const [editingDateId, setEditingDateId] = useState<number | null>(null);
+  const [loggingTimeId, setLoggingTimeId] = useState<number | null>(null);
+  const [timeLogRefreshKey, setTimeLogRefreshKey] = useState(0);
   const [memberMap, setMemberMap] = useState<Map<string, string>>(new Map());
 
   // ── derived dates ──
@@ -903,7 +908,40 @@ function MyWorkContent({ projectId }: { projectId: number }) {
                                           Change date
                                         </button>
                                       )}
+
+                                      <button
+                                        onClick={() => {
+                                          setLoggingTimeId(loggingTimeId === d.id ? null : d.id);
+                                          setEditingAssigneeId(null);
+                                          setEditingDateId(null);
+                                        }}
+                                        className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                                      >
+                                        <Clock size={12} />
+                                        Log Time
+                                      </button>
                                     </div>
+                                  )}
+
+                                  {/* Time logging form */}
+                                  {loggingTimeId === d.id && (
+                                    <TimeLogForm
+                                      deliverableId={d.id}
+                                      onSuccess={() => {
+                                        setLoggingTimeId(null);
+                                        setTimeLogRefreshKey((k) => k + 1);
+                                        loadDeliverables();
+                                      }}
+                                      onCancel={() => setLoggingTimeId(null)}
+                                    />
+                                  )}
+
+                                  {/* Time log history */}
+                                  {expandedId === d.id && (
+                                    <TimeLogHistory
+                                      deliverableId={d.id}
+                                      refreshKey={timeLogRefreshKey}
+                                    />
                                   )}
                                 </div>
                               </div>
