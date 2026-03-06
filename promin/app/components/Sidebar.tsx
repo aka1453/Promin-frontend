@@ -23,6 +23,7 @@ import { reorderProjects } from "../lib/reorderProjects";
 import { useProjects } from "../context/ProjectsContext";
 import { useUserTimezone } from "../context/UserTimezoneContext";
 import Tooltip from "./Tooltip";
+import { CheckSquare } from "lucide-react";
 
 // Define the shape of a project
 type Project = {
@@ -241,6 +242,19 @@ export default function Sidebar() {
 
       {/* PROJECTS LIST */}
       <nav className="flex-1 overflow-y-auto px-4 py-2">
+        {/* GLOBAL MY WORK LINK */}
+        <Link
+          href="/my-work"
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-base transition mb-3 ${
+            pathname === "/my-work"
+              ? "bg-blue-50 text-blue-800 font-medium"
+              : "text-gray-700 hover:bg-gray-100"
+          }`}
+        >
+          <CheckSquare size={18} />
+          My Work
+        </Link>
+
         <div className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
           Projects
         </div>
