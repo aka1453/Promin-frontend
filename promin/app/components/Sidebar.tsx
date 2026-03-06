@@ -172,6 +172,7 @@ export default function Sidebar() {
   const [showArchived, setShowArchived] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
+  const settingsBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     // If the underlying projects list changes, drop optimistic order
@@ -179,13 +180,16 @@ export default function Sidebar() {
     setOptimisticOrder(null);
   }, [projects]);
 
-  // Close settings popover on outside click
+  // Close settings panel on outside click (ignore panel + gear button)
   useEffect(() => {
     if (!settingsOpen) return;
     const handleClickOutside = (event: MouseEvent) => {
-      if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
-        setSettingsOpen(false);
-      }
+      const target = event.target as Node;
+      if (
+        settingsRef.current?.contains(target) ||
+        settingsBtnRef.current?.contains(target)
+      ) return;
+      setSettingsOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -374,6 +378,87 @@ export default function Sidebar() {
         )}
       </nav>
 
+      {/* SETTINGS PANEL (slides up above bottom bar) */}
+      {settingsOpen && (
+        <div ref={settingsRef} className="border-t border-gray-200 bg-gray-50">
+          {/* User info header */}
+          <div className="px-4 py-3 bg-white">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold text-sm shrink-0">
+                {getUserInitial()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-gray-900 truncate">
+                  {getUserName()}
+                </div>
+                {currentUser?.email && (
+                  <div className="text-xs text-gray-400 truncate">
+                    {currentUser.email}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Menu items */}
+          <div className="py-1">
+            <button
+              onClick={() => {
+                setSettingsOpen(false);
+                // Future: navigate to /settings page
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+            >
+              <UserCog size={15} className="text-gray-400" />
+              Account Settings
+            </button>
+
+            <div className="px-4 py-2 flex items-center gap-3">
+              <Globe size={15} className="text-gray-400 shrink-0" />
+              <select
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                className="flex-1 text-sm border-0 bg-transparent text-gray-700 focus:outline-none focus:ring-0 cursor-pointer py-0 px-0"
+              >
+                {(() => {
+                  try {
+                    return Intl.supportedValuesOf("timeZone");
+                  } catch {
+                    return [
+                      "UTC",
+                      "America/New_York",
+                      "America/Chicago",
+                      "America/Denver",
+                      "America/Los_Angeles",
+                      "Europe/London",
+                      "Europe/Paris",
+                      "Europe/Berlin",
+                      "Asia/Tokyo",
+                      "Asia/Shanghai",
+                      "Asia/Kolkata",
+                      "Australia/Sydney",
+                    ];
+                  }
+                })().map((tz) => (
+                  <option key={tz} value={tz}>
+                    {tz.replace(/_/g, " ")}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+            >
+              <Power size={15} />
+              Log Out
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* BOTTOM BAR: Avatar + Name | Notifications + Settings */}
       <div className="px-4 py-3 border-t border-gray-200">
         <div className="flex items-center">
@@ -397,100 +482,17 @@ export default function Sidebar() {
           {/* Right: Notification bell + Settings gear */}
           <div className="flex items-center gap-0.5 shrink-0">
             <NotificationCenter />
-
-            <div className="relative" ref={settingsRef}>
-              <button
-                onClick={() => setSettingsOpen((v) => !v)}
-                className="p-2 rounded-full hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <SlidersHorizontal size={18} className="text-gray-500" />
-              </button>
-
-              {settingsOpen && (
-                <div className="absolute left-0 bottom-full mb-2 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50">
-                  {/* User info */}
-                  <div className="p-4 border-b border-gray-100">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold text-sm">
-                        {getUserInitial()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold text-gray-900 truncate">
-                          {getUserName()}
-                        </div>
-                        {currentUser?.email && (
-                          <div className="text-xs text-gray-400 truncate">
-                            {currentUser.email}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Menu items */}
-                  <div className="py-1.5">
-                    {/* Account Settings */}
-                    <button
-                      onClick={() => {
-                        setSettingsOpen(false);
-                        // Future: navigate to /settings page
-                      }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <UserCog size={16} className="text-gray-400" />
-                      Account Settings
-                    </button>
-
-                    {/* Timezone */}
-                    <div className="px-4 py-2.5 flex items-center gap-3">
-                      <Globe size={16} className="text-gray-400 shrink-0" />
-                      <select
-                        value={timezone}
-                        onChange={(e) => setTimezone(e.target.value)}
-                        className="flex-1 text-sm border-0 bg-transparent text-gray-700 focus:outline-none focus:ring-0 cursor-pointer py-0 px-0"
-                      >
-                        {(() => {
-                          try {
-                            return Intl.supportedValuesOf("timeZone");
-                          } catch {
-                            return [
-                              "UTC",
-                              "America/New_York",
-                              "America/Chicago",
-                              "America/Denver",
-                              "America/Los_Angeles",
-                              "Europe/London",
-                              "Europe/Paris",
-                              "Europe/Berlin",
-                              "Asia/Tokyo",
-                              "Asia/Shanghai",
-                              "Asia/Kolkata",
-                              "Australia/Sydney",
-                            ];
-                          }
-                        })().map((tz) => (
-                          <option key={tz} value={tz}>
-                            {tz.replace(/_/g, " ")}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Log Out */}
-                  <div className="border-t border-gray-100 py-1.5">
-                    <button
-                      type="button"
-                      onClick={handleLogout}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                    >
-                      <Power size={16} />
-                      Log Out
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+            <button
+              ref={settingsBtnRef}
+              onClick={() => setSettingsOpen((v) => !v)}
+              className={`p-2 rounded-full transition-colors focus:outline-none ${
+                settingsOpen
+                  ? "bg-gray-200 text-gray-700"
+                  : "hover:bg-gray-100 text-gray-500"
+              }`}
+            >
+              <SlidersHorizontal size={18} />
+            </button>
           </div>
         </div>
       </div>

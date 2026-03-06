@@ -264,7 +264,7 @@ export default function NotificationCenter() {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 bottom-full mb-2 w-56 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-[500px]">
+        <div className="absolute left-0 bottom-full mb-2 w-56 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-[500px]">
           <div className="flex items-center justify-between p-4 border-b border-gray-200">
             <h3 className="font-semibold text-gray-900">Notifications</h3>
             {unreadCount > 0 && (
