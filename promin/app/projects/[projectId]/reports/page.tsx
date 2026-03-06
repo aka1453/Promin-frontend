@@ -15,10 +15,13 @@ import {
   TrendingUp,
   CheckCircle2,
   DollarSign,
+  Bookmark,
 } from "lucide-react";
 import ProjectHeader from "../../../components/ProjectHeader";
 import { ChatProvider } from "../../../context/ChatContext";
 import ChatDrawer from "../../../components/chat/ChatDrawer";
+import CreateBaselineDialog from "../../../components/CreateBaselineDialog";
+import { useProjectRole } from "../../../context/ProjectRoleContext";
 import type { Milestone } from "../../../types/milestone";
 import type { Task } from "../../../types/task";
 
@@ -1736,6 +1739,7 @@ function ExportTab({
 function ReportsPageContent({ projectId }: { projectId: number }) {
   const router = useRouter();
   const { timezone, userToday } = useUserTimezone();
+  const { canEdit } = useProjectRole();
 
   const [project, setProject] = useState<Project | null>(null);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
@@ -1743,6 +1747,7 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [showActivitySidebar, setShowActivitySidebar] = useState(false);
+  const [baselineDialogOpen, setBaselineDialogOpen] = useState(false);
   const [canonicalProgress, setCanonicalProgress] = useState<{
     planned: number | null;
     actual: number | null;
@@ -1876,17 +1881,30 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
                 ))}
               </div>
 
-              {/* Contextual export button */}
-              {activeTab === "milestones" && (
-                <button className="border border-blue-500 text-blue-600 text-sm px-3 py-1 rounded-md hover:bg-blue-50 transition">
-                  Export PDF
-                </button>
-              )}
-              {activeTab === "tasks" && (
-                <button className="border border-blue-500 text-blue-600 text-sm px-3 py-1 rounded-md hover:bg-blue-50 transition">
-                  Export Excel
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {/* Contextual export button */}
+                {activeTab === "milestones" && (
+                  <button className="border border-blue-500 text-blue-600 text-sm px-3 py-1 rounded-md hover:bg-blue-50 transition">
+                    Export PDF
+                  </button>
+                )}
+                {activeTab === "tasks" && (
+                  <button className="border border-blue-500 text-blue-600 text-sm px-3 py-1 rounded-md hover:bg-blue-50 transition">
+                    Export Excel
+                  </button>
+                )}
+
+                {/* Create Baseline — visible to editors/owners on non-archived projects */}
+                {canEdit && project?.status !== "archived" && (
+                  <button
+                    onClick={() => setBaselineDialogOpen(true)}
+                    className="flex items-center gap-1.5 border border-slate-300 text-slate-700 text-sm px-3 py-1 rounded-md hover:bg-slate-50 transition"
+                  >
+                    <Bookmark size={14} />
+                    Create Baseline
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* KPI STRIP */}
@@ -1931,6 +1949,18 @@ function ReportsPageContent({ projectId }: { projectId: number }) {
           )}
         </div>
       </div>
+
+      {/* Create Baseline dialog */}
+      {baselineDialogOpen && (
+        <CreateBaselineDialog
+          projectId={projectId}
+          onClose={() => setBaselineDialogOpen(false)}
+          onSuccess={() => {
+            setBaselineDialogOpen(false);
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }

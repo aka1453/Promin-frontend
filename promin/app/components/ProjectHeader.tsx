@@ -8,7 +8,6 @@ import {
   Clock,
   BarChart2,
   GanttChartSquare,
-  Bookmark,
   FileText,
   Sparkles,
   BotMessageSquare,
@@ -16,7 +15,6 @@ import {
 } from "lucide-react";
 import { useChat } from "../context/ChatContext";
 import Tooltip from "./Tooltip";
-import CreateBaselineDialog from "./CreateBaselineDialog";
 import ProjectSettingsModal from "./ProjectSettingsModal";
 
 type ProjectData = {
@@ -72,7 +70,6 @@ export default function ProjectHeader({
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
-  const [baselineDialogOpen, setBaselineDialogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const isArchived = project.status === "archived";
@@ -196,18 +193,6 @@ export default function ProjectHeader({
                   AI planner
                 </button>
 
-                {!isArchived && canEdit ? (
-                  <button
-                    onClick={() => setBaselineDialogOpen(true)}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-                  >
-                    <Bookmark size={18} />
-                    Baseline
-                  </button>
-                ) : (
-                  <div />
-                )}
-
                 {onToggleActivity ? (
                   <button
                     onClick={onToggleActivity}
@@ -247,17 +232,6 @@ export default function ProjectHeader({
           </div>
         </div>
       </div>
-
-      {baselineDialogOpen && (
-        <CreateBaselineDialog
-          projectId={projectId}
-          onClose={() => setBaselineDialogOpen(false)}
-          onSuccess={() => {
-            setBaselineDialogOpen(false);
-            onProjectUpdated?.();
-          }}
-        />
-      )}
 
       {settingsOpen && (
         <ProjectSettingsModal
