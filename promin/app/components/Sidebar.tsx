@@ -23,7 +23,7 @@ import { reorderProjects } from "../lib/reorderProjects";
 import { useProjects } from "../context/ProjectsContext";
 import { useUserTimezone } from "../context/UserTimezoneContext";
 import Tooltip from "./Tooltip";
-import { CheckSquare, Settings, LogOut, User } from "lucide-react";
+import { CheckSquare, SlidersHorizontal, Power, UserCog, Globe } from "lucide-react";
 
 // Define the shape of a project
 type Project = {
@@ -377,14 +377,21 @@ export default function Sidebar() {
       {/* BOTTOM BAR: Avatar + Name | Notifications + Settings */}
       <div className="px-4 py-3 border-t border-gray-200">
         <div className="flex items-center">
-          {/* Left: Avatar + Name */}
+          {/* Left: Avatar + Name + Email */}
           <div className="flex items-center gap-2.5 flex-1 min-w-0">
             <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-sm shrink-0">
               {getUserInitial()}
             </div>
-            <span className="text-sm font-medium text-gray-900 truncate">
-              {getUserName()}
-            </span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-gray-900 truncate leading-tight">
+                {getUserName()}
+              </div>
+              {currentUser?.email && (
+                <div className="text-[11px] text-gray-400 truncate leading-tight">
+                  {currentUser.email}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Right: Notification bell + Settings gear */}
@@ -396,15 +403,15 @@ export default function Sidebar() {
                 onClick={() => setSettingsOpen((v) => !v)}
                 className="p-2 rounded-full hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <Settings size={20} className="text-gray-600" />
+                <SlidersHorizontal size={18} className="text-gray-500" />
               </button>
 
               {settingsOpen && (
-                <div className="absolute right-0 bottom-full mb-2 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50">
+                <div className="absolute left-0 bottom-full mb-2 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50">
                   {/* User info */}
                   <div className="p-4 border-b border-gray-100">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold text-sm">
                         {getUserInitial()}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -412,7 +419,7 @@ export default function Sidebar() {
                           {getUserName()}
                         </div>
                         {currentUser?.email && (
-                          <div className="text-xs text-gray-500 truncate">
+                          <div className="text-xs text-gray-400 truncate">
                             {currentUser.email}
                           </div>
                         )}
@@ -420,63 +427,64 @@ export default function Sidebar() {
                     </div>
                   </div>
 
-                  {/* Account Settings */}
-                  <div className="p-2">
+                  {/* Menu items */}
+                  <div className="py-1.5">
+                    {/* Account Settings */}
                     <button
                       onClick={() => {
                         setSettingsOpen(false);
                         // Future: navigate to /settings page
                       }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                     >
-                      <User size={16} className="text-gray-500" />
+                      <UserCog size={16} className="text-gray-400" />
                       Account Settings
                     </button>
-                  </div>
 
-                  {/* Timezone */}
-                  <div className="px-4 pb-3">
-                    <label className="text-xs text-gray-500 block mb-1">Timezone</label>
-                    <select
-                      value={timezone}
-                      onChange={(e) => setTimezone(e.target.value)}
-                      className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      {(() => {
-                        try {
-                          return Intl.supportedValuesOf("timeZone");
-                        } catch {
-                          return [
-                            "UTC",
-                            "America/New_York",
-                            "America/Chicago",
-                            "America/Denver",
-                            "America/Los_Angeles",
-                            "Europe/London",
-                            "Europe/Paris",
-                            "Europe/Berlin",
-                            "Asia/Tokyo",
-                            "Asia/Shanghai",
-                            "Asia/Kolkata",
-                            "Australia/Sydney",
-                          ];
-                        }
-                      })().map((tz) => (
-                        <option key={tz} value={tz}>
-                          {tz.replace(/_/g, " ")}
-                        </option>
-                      ))}
-                    </select>
+                    {/* Timezone */}
+                    <div className="px-4 py-2.5 flex items-center gap-3">
+                      <Globe size={16} className="text-gray-400 shrink-0" />
+                      <select
+                        value={timezone}
+                        onChange={(e) => setTimezone(e.target.value)}
+                        className="flex-1 text-sm border-0 bg-transparent text-gray-700 focus:outline-none focus:ring-0 cursor-pointer py-0 px-0"
+                      >
+                        {(() => {
+                          try {
+                            return Intl.supportedValuesOf("timeZone");
+                          } catch {
+                            return [
+                              "UTC",
+                              "America/New_York",
+                              "America/Chicago",
+                              "America/Denver",
+                              "America/Los_Angeles",
+                              "Europe/London",
+                              "Europe/Paris",
+                              "Europe/Berlin",
+                              "Asia/Tokyo",
+                              "Asia/Shanghai",
+                              "Asia/Kolkata",
+                              "Australia/Sydney",
+                            ];
+                          }
+                        })().map((tz) => (
+                          <option key={tz} value={tz}>
+                            {tz.replace(/_/g, " ")}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
 
                   {/* Log Out */}
-                  <div className="p-2 border-t border-gray-100">
+                  <div className="border-t border-gray-100 py-1.5">
                     <button
                       type="button"
                       onClick={handleLogout}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 rounded-md hover:bg-red-50 transition-colors"
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
                     >
-                      <LogOut size={16} />
+                      <Power size={16} />
                       Log Out
                     </button>
                   </div>
