@@ -23,7 +23,7 @@ import { reorderProjects } from "../lib/reorderProjects";
 import { useProjects } from "../context/ProjectsContext";
 import { useUserTimezone } from "../context/UserTimezoneContext";
 import Tooltip from "./Tooltip";
-import { CheckSquare } from "lucide-react";
+import { CheckSquare, Settings, LogOut, User } from "lucide-react";
 
 // Define the shape of a project
 type Project = {
@@ -170,12 +170,26 @@ export default function Sidebar() {
   );
 
   const [showArchived, setShowArchived] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // If the underlying projects list changes, drop optimistic order
     // so we don't render stale IDs.
     setOptimisticOrder(null);
   }, [projects]);
+
+  // Close settings popover on outside click
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
+        setSettingsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [settingsOpen]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -246,13 +260,13 @@ export default function Sidebar() {
         {/* GLOBAL MY WORK LINK */}
         <Link
           href="/my-work"
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-base transition mb-3 ${
+          className={`flex items-center gap-2.5 px-4 py-2.5 rounded-lg text-base font-medium transition mb-3 ${
             pathname === "/my-work"
-              ? "bg-blue-50 text-blue-800 font-medium"
-              : "text-gray-700 hover:bg-gray-100"
+              ? "bg-blue-50 text-blue-700 border-l-[3px] border-blue-600"
+              : "text-gray-700 hover:bg-gray-50 border-l-[3px] border-transparent"
           }`}
         >
-          <CheckSquare size={18} />
+          <CheckSquare size={20} />
           My Work
         </Link>
 
@@ -360,74 +374,117 @@ export default function Sidebar() {
         )}
       </nav>
 
-      {/* BOTTOM SECTION WITH NOTIFICATIONS & USER */}
-      <div className="px-4 py-4 border-t border-gray-200">
-        {/* NEW: Notifications Row */}
-        <div className="flex items-center justify-between mb-4">
-          <span className="text-sm font-medium text-gray-700">Notifications</span>
-          <NotificationCenter />
-        </div>
-
-        {/* USER INFO */}
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">
-            {getUserInitial()}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-gray-900 truncate">
-              {getUserName()}
+      {/* BOTTOM BAR: Avatar + Name | Notifications + Settings */}
+      <div className="px-4 py-3 border-t border-gray-200">
+        <div className="flex items-center">
+          {/* Left: Avatar + Name */}
+          <div className="flex items-center gap-2.5 flex-1 min-w-0">
+            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-sm shrink-0">
+              {getUserInitial()}
             </div>
-            {currentUser?.email && (
-              <div className="text-xs text-gray-500 truncate">
-                {currentUser.email}
-              </div>
-            )}
+            <span className="text-sm font-medium text-gray-900 truncate">
+              {getUserName()}
+            </span>
+          </div>
+
+          {/* Right: Notification bell + Settings gear */}
+          <div className="flex items-center gap-0.5 shrink-0">
+            <NotificationCenter />
+
+            <div className="relative" ref={settingsRef}>
+              <button
+                onClick={() => setSettingsOpen((v) => !v)}
+                className="p-2 rounded-full hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <Settings size={20} className="text-gray-600" />
+              </button>
+
+              {settingsOpen && (
+                <div className="absolute right-0 bottom-full mb-2 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50">
+                  {/* User info */}
+                  <div className="p-4 border-b border-gray-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">
+                        {getUserInitial()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-gray-900 truncate">
+                          {getUserName()}
+                        </div>
+                        {currentUser?.email && (
+                          <div className="text-xs text-gray-500 truncate">
+                            {currentUser.email}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Account Settings */}
+                  <div className="p-2">
+                    <button
+                      onClick={() => {
+                        setSettingsOpen(false);
+                        // Future: navigate to /settings page
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
+                    >
+                      <User size={16} className="text-gray-500" />
+                      Account Settings
+                    </button>
+                  </div>
+
+                  {/* Timezone */}
+                  <div className="px-4 pb-3">
+                    <label className="text-xs text-gray-500 block mb-1">Timezone</label>
+                    <select
+                      value={timezone}
+                      onChange={(e) => setTimezone(e.target.value)}
+                      className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {(() => {
+                        try {
+                          return Intl.supportedValuesOf("timeZone");
+                        } catch {
+                          return [
+                            "UTC",
+                            "America/New_York",
+                            "America/Chicago",
+                            "America/Denver",
+                            "America/Los_Angeles",
+                            "Europe/London",
+                            "Europe/Paris",
+                            "Europe/Berlin",
+                            "Asia/Tokyo",
+                            "Asia/Shanghai",
+                            "Asia/Kolkata",
+                            "Australia/Sydney",
+                          ];
+                        }
+                      })().map((tz) => (
+                        <option key={tz} value={tz}>
+                          {tz.replace(/_/g, " ")}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Log Out */}
+                  <div className="p-2 border-t border-gray-100">
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 rounded-md hover:bg-red-50 transition-colors"
+                    >
+                      <LogOut size={16} />
+                      Log Out
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-
-        {/* TIMEZONE SELECTOR */}
-        <div className="mb-3">
-          <label className="text-xs text-gray-500 block mb-1">Timezone</label>
-          <select
-            value={timezone}
-            onChange={(e) => setTimezone(e.target.value)}
-            className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            {(() => {
-              try {
-                return Intl.supportedValuesOf("timeZone");
-              } catch {
-                return [
-                  "UTC",
-                  "America/New_York",
-                  "America/Chicago",
-                  "America/Denver",
-                  "America/Los_Angeles",
-                  "Europe/London",
-                  "Europe/Paris",
-                  "Europe/Berlin",
-                  "Asia/Tokyo",
-                  "Asia/Shanghai",
-                  "Asia/Kolkata",
-                  "Australia/Sydney",
-                ];
-              }
-            })().map((tz) => (
-              <option key={tz} value={tz}>
-                {tz.replace(/_/g, " ")}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* LOG OUT BUTTON */}
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="w-full px-4 py-3 rounded-lg text-gray-700 font-medium text-base hover:bg-gray-100 transition"
-        >
-          Log Out
-        </button>
       </div>
     </aside>
   );
