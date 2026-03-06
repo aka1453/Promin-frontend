@@ -264,9 +264,9 @@ export default function NotificationCenter() {
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 bottom-full mb-2 w-56 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-[500px]">
-          <div className="flex items-center justify-between p-4 border-b border-gray-200">
-            <h3 className="font-semibold text-gray-900">Notifications</h3>
+        <div className="absolute left-0 bottom-full mb-2 w-80 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-[500px]">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+            <h3 className="font-semibold text-gray-900 text-sm">Notifications</h3>
             {unreadCount > 0 && (
               <button
                 onClick={markAllAsRead}
@@ -293,19 +293,19 @@ export default function NotificationCenter() {
                   <button
                     key={notification.id}
                     onClick={() => handleNotificationClick(notification)}
-                    className={`w-full p-4 text-left hover:bg-gray-50 focus:bg-gray-50 focus:outline-none transition-colors ${
-                      !notification.read ? "bg-blue-50" : ""
+                    className={`w-full px-4 py-3 text-left hover:bg-gray-50 focus:bg-gray-50 focus:outline-none transition-colors ${
+                      !notification.read ? "bg-blue-50/50" : ""
                     }`}
                   >
-                    <div className="flex gap-3">
-                      <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-lg">
+                    <div className="flex gap-2.5">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-base">
                         {getNotificationIcon(notification.type)}
                       </div>
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2">
                           <p
-                            className={`text-sm ${
+                            className={`text-[13px] leading-snug ${
                               !notification.read
                                 ? "font-semibold text-gray-900"
                                 : "text-gray-700"
@@ -319,12 +319,12 @@ export default function NotificationCenter() {
                         </div>
 
                         {notification.body && (
-                          <p className="text-xs text-gray-600 mt-1 line-clamp-2">
+                          <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">
                             {notification.body}
                           </p>
                         )}
 
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-[11px] text-gray-400 mt-0.5">
                           {formatDistanceToNow(
                             new Date(notification.created_at),
                             { addSuffix: true }
