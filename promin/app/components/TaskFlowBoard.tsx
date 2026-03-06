@@ -20,7 +20,7 @@ import {
   DragOverlay,
   DragStartEvent,
 } from "@dnd-kit/core";
-import { startTask, revertTask } from "../lib/lifecycle";
+import { startTask } from "../lib/lifecycle";
 
 type Props = {
   milestoneId: number;
@@ -211,47 +211,33 @@ export default function TaskFlowBoard({
 
     if (!task || fromColumn === toColumn) return;
 
-    // LOCK: Cannot drop into completed column
-    if (toColumn === COL_COMPLETED) {
-      pushToast("Tasks complete when all deliverables are done", "warning");
+    // Only allow: Not Started → In Progress
+    if (fromColumn !== COL_PENDING || toColumn !== COL_IN_PROGRESS) {
+      if (toColumn === COL_COMPLETED) {
+        pushToast("Tasks complete when all deliverables are done", "warning");
+      }
       return;
     }
 
-    // Determine the action
-    const isPendingToInProgress = fromColumn === COL_PENDING && toColumn === COL_IN_PROGRESS;
-    const isInProgressToPending = fromColumn === COL_IN_PROGRESS && toColumn === COL_PENDING;
-
-    if (!isPendingToInProgress && !isInProgressToPending) return;
-
     // Optimistic update
     const prevTasks = [...tasks];
-    const newStatus = isPendingToInProgress ? "in_progress" : "pending";
     setTasks((prev) =>
       prev.map((t) =>
         t.id === task.id
-          ? {
-              ...t,
-              status: newStatus,
-              actual_start: isPendingToInProgress ? asOfDate : null,
-            }
+          ? { ...t, status: "in_progress", actual_start: asOfDate }
           : t
       )
     );
 
     try {
-      if (isPendingToInProgress) {
-        await startTask(task.id, asOfDate);
-      } else {
-        await revertTask(task.id);
-      }
-      // Realtime subscriptions will auto-refresh, but also trigger callbacks
+      await startTask(task.id, asOfDate);
       await loadTasks();
       onMilestoneChanged?.();
       onMilestoneUpdated?.();
     } catch (err: any) {
       // Revert optimistic update
       setTasks(prevTasks);
-      pushToast(err.message || "Failed to update task status", "error");
+      pushToast(err.message || "Failed to start task", "error");
     }
   };
 
@@ -289,7 +275,7 @@ export default function TaskFlowBoard({
       />
     );
 
-    if (!dndEnabled || columnId === COL_COMPLETED) {
+    if (!dndEnabled || columnId !== COL_PENDING) {
       return <div key={task.id}>{card}</div>;
     }
 
@@ -357,8 +343,8 @@ export default function TaskFlowBoard({
               <>
                 <div className="w-px h-3 bg-slate-200" />
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px]">↔</span>
-                  <span>Drag cards between columns</span>
+                  <span className="text-[10px]">→</span>
+                  <span>Drag to start a task</span>
                 </div>
               </>
             )}
@@ -374,9 +360,10 @@ export default function TaskFlowBoard({
         onDragCancel={handleDragCancel}
       >
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 min-h-[400px]">
-          {/* Not Started Column */}
+          {/* Not Started Column — not a drop target */}
           <DroppableColumn
             id={COL_PENDING}
+            disabled
             isOver={overColumnId === COL_PENDING}
           >
             <div className="flex items-center gap-2 mb-4">

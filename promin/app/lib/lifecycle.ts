@@ -38,17 +38,6 @@ export async function completeMilestone(milestoneId: number, actualEnd: string) 
   }
 }
 
-export async function revertTask(taskId: number) {
-  const { error } = await supabase.rpc("revert_task_to_pending", {
-    p_task_id: taskId,
-  });
-
-  if (error) {
-    console.error("Failed to revert task:", error);
-    throw new Error(error.message || "Failed to revert task");
-  }
-}
-
 export async function completeProject(projectId: number, actualEnd: string) {
   const { error } = await supabase.rpc("complete_project", {
     p_project_id: projectId,
