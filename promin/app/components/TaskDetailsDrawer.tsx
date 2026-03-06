@@ -207,7 +207,7 @@ export default function TaskDetailsDrawer({
               <span className="font-semibold text-gray-900">Planned Start:</span>
               <span className="ml-2 font-medium">
                 {localTask.planned_start
-                  ? new Date(localTask.planned_start).toLocaleDateString()
+                  ? new Date(localTask.planned_start).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
                   : "—"}
               </span>
             </div>
@@ -215,7 +215,7 @@ export default function TaskDetailsDrawer({
               <span className="font-semibold text-gray-900">Planned End:</span>
               <span className="ml-2 font-medium">
                 {localTask.planned_end
-                  ? new Date(localTask.planned_end).toLocaleDateString()
+                  ? new Date(localTask.planned_end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
                   : "—"}
               </span>
             </div>
@@ -225,7 +225,7 @@ export default function TaskDetailsDrawer({
               <span className="font-semibold text-gray-900">Actual Start:</span>
               <span className="ml-2 font-medium">
                 {localTask.actual_start
-                  ? new Date(localTask.actual_start).toLocaleDateString()
+                  ? new Date(localTask.actual_start).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
                   : "—"}
               </span>
             </div>
@@ -233,7 +233,7 @@ export default function TaskDetailsDrawer({
               <span className="font-semibold text-gray-900">Actual End:</span>
               <span className="ml-2 font-medium">
                 {localTask.actual_end
-                  ? new Date(localTask.actual_end).toLocaleDateString()
+                  ? new Date(localTask.actual_end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
                   : "—"}
               </span>
             </div>
@@ -250,7 +250,7 @@ export default function TaskDetailsDrawer({
             <div>
               <span className="font-semibold text-gray-900">Duration:</span>
               <span className="ml-2 font-medium">
-                {localTask.duration_days || 0} days
+                {localTask.duration_days || 0} {(localTask.duration_days || 0) === 1 ? 'day' : 'days'}
               </span>
             </div>
           </div>

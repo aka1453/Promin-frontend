@@ -149,12 +149,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Normalize bare "UTC" to the IANA canonical form "Etc/UTC"
+  let tz: string = (typeof timezone === "string" ? timezone.trim() : "");
+  if (tz.toUpperCase() === "UTC") tz = "Etc/UTC";
+
   if (
-    !timezone ||
-    typeof timezone !== "string" ||
-    timezone.trim().length === 0 ||
-    !timezone.includes("/") ||
-    /\s/.test(timezone)
+    !tz ||
+    tz.length === 0 ||
+    !tz.includes("/") ||
+    /\s/.test(tz)
   ) {
     return NextResponse.json(
       {
@@ -165,7 +168,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const asof = todayForTimezone(timezone as string);
+  const asof = todayForTimezone(tz);
 
   try {
     // --- Verify conversation belongs to user (RLS enforced) ---

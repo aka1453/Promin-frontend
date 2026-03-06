@@ -116,6 +116,7 @@ export default function GlobalMyWorkPage() {
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [showCompleted, setShowCompleted] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [assignedOnly, setAssignedOnly] = useState(false);
   const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set());
   const [collapsedProjects, setCollapsedProjects] = useState<Set<number>>(
     new Set()
@@ -221,14 +222,13 @@ export default function GlobalMyWorkPage() {
         }
       }
 
-      // Step 3: deliverables assigned to current user
+      // Step 3: deliverables from all projects the user is a member of
       const { data, error } = await supabase
         .from("deliverables")
         .select(
           "id, task_id, title, description, is_done, completed_at, planned_end, planned_start, priority, weight, assigned_user_id, assigned_user"
         )
         .in("task_id", tIds)
-        .eq("assigned_user_id", currentUserId)
         .order("planned_end", { ascending: true, nullsFirst: false });
 
       if (error) {
@@ -275,6 +275,7 @@ export default function GlobalMyWorkPage() {
   // ── filtered ──
   const filtered = useMemo(() => {
     let result = deliverables;
+    if (assignedOnly) result = result.filter((d) => d.assigned_user_id === currentUserId);
     if (!showCompleted) result = result.filter((d) => !d.is_done);
 
     switch (activeFilter) {
@@ -296,7 +297,7 @@ export default function GlobalMyWorkPage() {
         break;
     }
     return result;
-  }, [deliverables, showCompleted, activeFilter, today, endOfWeek]);
+  }, [deliverables, showCompleted, assignedOnly, currentUserId, activeFilter, today, endOfWeek]);
 
   // ── group by project ──
   const projectGroups = useMemo(() => {
@@ -318,7 +319,9 @@ export default function GlobalMyWorkPage() {
 
   // ── badge counts ──
   const counts = useMemo(() => {
-    const pending = deliverables.filter((d) => !d.is_done);
+    let base = deliverables;
+    if (assignedOnly) base = base.filter((d) => d.assigned_user_id === currentUserId);
+    const pending = base.filter((d) => !d.is_done);
     return {
       all: pending.length,
       overdue: pending.filter((d) => d.planned_end && d.planned_end < today)
@@ -331,7 +334,7 @@ export default function GlobalMyWorkPage() {
           d.planned_end <= endOfWeek
       ).length,
     };
-  }, [deliverables, today, endOfWeek]);
+  }, [deliverables, assignedOnly, currentUserId, today, endOfWeek]);
 
   // ── toggle ──
   async function toggleDeliverable(d: DeliverableRow, checked: boolean) {
@@ -435,7 +438,7 @@ export default function GlobalMyWorkPage() {
             )}
           </div>
           <p className="text-slate-600 text-sm mt-1">
-            Your assigned deliverables across all projects.
+            Your deliverables across all projects.
           </p>
         </div>
 
@@ -468,15 +471,26 @@ export default function GlobalMyWorkPage() {
             ))}
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showCompleted}
-              onChange={(e) => setShowCompleted(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300"
-            />
-            Show completed
-          </label>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={assignedOnly}
+                onChange={(e) => setAssignedOnly(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              Assigned to me
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showCompleted}
+                onChange={(e) => setShowCompleted(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              Show completed
+            </label>
+          </div>
         </div>
 
         {/* content */}
@@ -489,7 +503,7 @@ export default function GlobalMyWorkPage() {
             <CheckSquare size={36} className="text-slate-300 mb-3" />
             <p className="text-sm text-slate-500 mb-1">
               {deliverables.length === 0
-                ? "No deliverables assigned to you."
+                ? "No deliverables found in your projects."
                 : `No ${
                     activeFilter === "overdue"
                       ? "overdue"

@@ -17,7 +17,34 @@ type Notification = {
   action_url: string | null;
   read: boolean;
   created_at: string;
+  /** IDs of duplicate notifications grouped into this one */
+  _duplicateIds?: string[];
 };
+
+/** Key used to identify duplicate notifications (same content within 5-min window) */
+function notificationDedupKey(n: Notification): string {
+  const t = new Date(n.created_at).getTime();
+  const bucket = Math.floor(t / (5 * 60 * 1000));
+  return `${n.type}|${n.title}|${n.body ?? ""}|${bucket}`;
+}
+
+/** Collapse duplicate notifications, keeping the newest and tracking grouped IDs */
+function deduplicateNotifications(raw: Notification[]): Notification[] {
+  const map = new Map<string, Notification>();
+  for (const n of raw) {
+    const key = notificationDedupKey(n);
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, { ...n, _duplicateIds: [n.id] });
+    } else {
+      existing._duplicateIds = existing._duplicateIds ?? [existing.id];
+      existing._duplicateIds.push(n.id);
+      // Keep unread status if any duplicate is unread
+      if (!n.read) existing.read = false;
+    }
+  }
+  return Array.from(map.values());
+}
 
 export default function NotificationCenter() {
   const router = useRouter();
@@ -56,7 +83,12 @@ export default function NotificationCenter() {
         },
         (payload) => {
           const newNotification = payload.new as Notification;
-          setNotifications((prev) => [newNotification, ...prev]);
+          setNotifications((prev) => {
+            const key = notificationDedupKey(newNotification);
+            const isDupe = prev.some((n) => notificationDedupKey(n) === key);
+            if (isDupe) return prev;
+            return [newNotification, ...prev];
+          });
           setUnreadCount((prev) => prev + 1);
         }
       )
@@ -118,8 +150,9 @@ export default function NotificationCenter() {
 
       if (error) throw error;
 
-      setNotifications(data || []);
-      setUnreadCount((data || []).filter((n) => !n.read).length);
+      const deduped = deduplicateNotifications(data || []);
+      setNotifications(deduped);
+      setUnreadCount(deduped.filter((n) => !n.read).length);
     } catch (err) {
       console.error("Failed to load notifications:", err);
     } finally {
@@ -127,17 +160,18 @@ export default function NotificationCenter() {
     }
   };
 
-  const markAsRead = async (notificationId: string) => {
+  const markAsRead = async (notification: Notification) => {
+    const idsToMark = notification._duplicateIds ?? [notification.id];
     try {
       const { error } = await supabase
         .from("notifications")
         .update({ read: true })
-        .eq("id", notificationId);
+        .in("id", idsToMark);
 
       if (error) throw error;
 
       setNotifications((prev) =>
-        prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n))
+        prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n))
       );
       setUnreadCount((prev) => Math.max(0, prev - 1));
     } catch (err) {
@@ -175,7 +209,7 @@ export default function NotificationCenter() {
 
   const handleNotificationClick = (notification: Notification) => {
     if (!notification.read) {
-      markAsRead(notification.id);
+      markAsRead(notification);
     }
     
     // Navigate based on entity type
@@ -304,13 +338,6 @@ export default function NotificationCenter() {
             )}
           </div>
 
-          {notifications.length > 0 && (
-            <div className="p-3 border-t border-gray-200 text-center">
-              <button className="text-sm text-blue-600 hover:underline font-medium">
-                View all notifications
-              </button>
-            </div>
-          )}
         </div>
       )}
     </div>

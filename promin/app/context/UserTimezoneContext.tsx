@@ -17,8 +17,16 @@ type UserTimezoneContextValue = {
   userToday: Date;
 };
 
+function getBrowserTimezone(): string {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz && tz.includes("/")) return tz;
+  } catch {}
+  return "Etc/UTC";
+}
+
 const UserTimezoneContext = createContext<UserTimezoneContextValue>({
-  timezone: "UTC",
+  timezone: getBrowserTimezone(),
   setTimezone: async () => {},
   userToday: new Date(),
 });
@@ -28,7 +36,7 @@ export function UserTimezoneProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const [timezone, setTimezoneState] = useState("UTC");
+  const [timezone, setTimezoneState] = useState(getBrowserTimezone);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,7 +64,7 @@ export function UserTimezoneProvider({
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) load();
-      else setTimezoneState("UTC");
+      else setTimezoneState(getBrowserTimezone());
     });
 
     return () => {

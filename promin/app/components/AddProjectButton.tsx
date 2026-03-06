@@ -49,12 +49,6 @@ const [projectManagerId, setProjectManagerId] = useState<string | null>(null);
   const newPosition =
     minPosData?.position != null ? minPosData.position - 1 : 0;
 
-
-  if (!user) {
-    alert("You must be logged in to create a project");
-    return;
-  }
-
   // Project owner is the project manager by default
 
 const { error } = await supabase.from("projects").insert({

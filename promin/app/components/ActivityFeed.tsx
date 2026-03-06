@@ -264,7 +264,9 @@ export default function ActivityFeed({
 
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-900">
-                      <span className="font-medium">{activity.user_name}</span>{" "}
+                      <span className={`font-medium ${activity.user_name === "Unknown User" ? "italic text-gray-400" : ""}`}>
+                        {activity.user_name === "Unknown User" ? "Former member" : activity.user_name}
+                      </span>{" "}
                       <span className="text-gray-600">
                         {getActivityText(activity)}
                       </span>

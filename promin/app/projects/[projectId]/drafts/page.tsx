@@ -83,6 +83,7 @@ function DraftsPageContent({ projectId }: { projectId: number }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [draftAiEnabled, setDraftAiEnabled] = useState(true);
 
   const isArchived = !!project?.archived_at;
 
@@ -106,12 +107,22 @@ function DraftsPageContent({ projectId }: { projectId: number }) {
     }
   }, [projectId]);
 
+  const fetchAiFeatures = useCallback(async () => {
+    try {
+      const res = await fetch("/api/ai/features");
+      const json = await res.json();
+      setDraftAiEnabled(!!json.draft);
+    } catch {
+      setDraftAiEnabled(false);
+    }
+  }, []);
+
   const loadAll = useCallback(async () => {
     setLoading(true);
     setError(null);
-    await Promise.all([fetchProject(), fetchDrafts()]);
+    await Promise.all([fetchProject(), fetchDrafts(), fetchAiFeatures()]);
     setLoading(false);
-  }, [fetchProject, fetchDrafts]);
+  }, [fetchProject, fetchDrafts, fetchAiFeatures]);
 
   useEffect(() => {
     loadAll();
@@ -160,7 +171,7 @@ function DraftsPageContent({ projectId }: { projectId: number }) {
       >
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-bold text-slate-800">Draft Plans</h2>
-          {canEdit && !isArchived && (
+          {canEdit && !isArchived && draftAiEnabled && (
             <button
               onClick={() => setShowModal(true)}
               className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition-colors"
@@ -175,6 +186,11 @@ function DraftsPageContent({ projectId }: { projectId: number }) {
             This project is archived. Draft generation is disabled.
           </div>
         )}
+        {!draftAiEnabled && !isArchived && (
+          <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            AI draft generation is not enabled for this instance.
+          </div>
+        )}
 
         {error && (
           <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
@@ -186,7 +202,7 @@ function DraftsPageContent({ projectId }: { projectId: number }) {
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
             <Sparkles size={48} className="mx-auto text-slate-300 mb-4" />
             <p className="text-slate-500 text-lg">No drafts generated yet.</p>
-            {canEdit && !isArchived && (
+            {canEdit && !isArchived && draftAiEnabled && (
               <p className="text-slate-400 text-sm mt-2">
                 Upload documents first, then generate an AI draft plan.
               </p>
