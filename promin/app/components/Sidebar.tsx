@@ -236,9 +236,10 @@ export default function Sidebar() {
 
   return (
     <aside className="fixed left-0 top-0 z-40 flex h-screen w-64 flex-col bg-white border-r border-gray-200">
-      {/* BRAND */}
-      <div className="px-6 py-6 border-b border-gray-200">
+      {/* BRAND + NOTIFICATIONS */}
+      <div className="px-6 py-6 border-b border-gray-200 flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-gray-900">ProMin</h1>
+        <NotificationCenter />
       </div>
 
       {/* REORDER ERROR TOAST */}
@@ -480,8 +481,7 @@ export default function Sidebar() {
           </div>
 
           {/* Right: Notification bell + Settings gear */}
-          <div className="flex items-center gap-0.5 shrink-0">
-            <NotificationCenter />
+          <div className="flex items-center shrink-0">
             <button
               ref={settingsBtnRef}
               onClick={() => setSettingsOpen((v) => !v)}
