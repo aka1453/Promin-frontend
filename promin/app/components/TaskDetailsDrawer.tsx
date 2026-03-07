@@ -314,6 +314,7 @@ export default function TaskDetailsDrawer({
                       deliverable={deliverable}
                       existingDeliverables={deliverables}
                       taskActualStart={localTask.actual_start}
+                      taskId={localTask.id}
                       onChanged={handleDeliverableChanged}
                       projectId={projectId}
                     />

@@ -31,8 +31,10 @@
 | Phase 6 (Forecasting) | 🧊 Frozen |
 | Phase 7.1–7.2C (Conversational) | 🧊 Frozen |
 | Phase 8 (partial — Progress/S-curves/Gantt) | ✅ |
+| Untracked completions (Mar 1–6) | ✅ Logged below |
 | **Track K (Stabilization & Polish)** | **🟠 Active** |
-| Phase 5.3E (Full Draft Editing UX) | ⬜ Deferred |
+| **Track L (Ease of Use & Automation)** | **⬜ Next** |
+| Phase 5.3E (Full Draft Editing UX) | ⬜ Deferred (post-Track L) |
 | Phase 9 (Billing/SSO/Enterprise) | ⬜ Post-publish only |
 
 ---
@@ -247,19 +249,197 @@ All above verified: `tsc --noEmit` passes; Turbopack compilation succeeds (`next
 
 ---
 
-# Track I — Advanced Planning (Future)
+# Untracked Completions (Mar 1–6, 2026)
 
-## Phase 8 — Advanced Planning
-- ⬜ Cost & EVM primitives
-- ⬜ Resource planning
+> Features built and deployed but not previously logged in this roadmap.
 
-> Begins only after publish-ready.
+- ✅ **Auto-complete task on all deliverables done** — When last deliverable marked `is_done`, task auto-completes with `actual_end = CURRENT_DATE`. Trigger: `auto_complete_task_on_deliverable_done`. (2026-03-05)
+- ✅ **Auto-complete milestone on all tasks done** — When last task completes, milestone auto-completes with `actual_end = MAX(task.actual_end)`. Trigger: `auto_complete_milestone_on_task_done`. (2026-03-02)
+- ✅ **Time tracking** — Full `time_entries` table, `log_time_entry` RPC, auto-update of parent actual_cost via triggers. UI: `TimeLogForm`, `TimeLogHistory`. (2026-03-06)
+- ✅ **Task auto-numbering** — `task_number` column auto-incremented within project scope. (2026-03-02)
+- ✅ **Chat persistence to DB** — `chat_conversations` + `chat_messages` tables with RLS. Conversations stored per-project. (2026-03-02)
+- ✅ **Deliverable user weight + auto-calculate planned_end** — User-set weights on deliverables; `planned_end` auto-derived from `planned_start + duration`. (2026-03-05)
+- ✅ **Dependency blocking rules** — Block reopening a predecessor deliverable when dependents are already marked done. (2026-03-05)
+- ✅ **EWMA velocity forecasting refinements** — Exclude idle phases; confidence/velocity consistency improvements. (2026-03-02)
+- ✅ **Insights canon ordering** — Urgency-first ordering + BOTTLENECK > ACCELERATION > RISK_DRIVER > LEVERAGE canonical sort. (2026-03-01, 2026-03-04)
+- ✅ **Cost tracking primitives** — `budgeted_cost` and `actual_cost` on deliverables/tasks/milestones/projects with automatic bottom-up rollup via triggers. (Phase 8 partial — now complete)
 
 ---
 
-# Track J — Productization & Enterprise (Post-Publish Only)
+# Track L — Ease of Use & Automation (Strategic Plan)
 
-## Phase 9
+> **Goal:** Make ProMin the PM tool that does the project management for you.
+> **Principle:** Less user input, more accurate automation. Ease of use over feature count.
+> **Context:** Competitive analysis vs Celoxis (2026-03-07). ProMin's advantage is the database-authoritative architecture (150+ triggers = zero inconsistency). Do NOT replicate Celoxis's enterprise bloat. Focus on what makes ProMin feel magical.
+> **Execution:** Work through R1 → R15 in order. Each is self-contained. Mark ✅ when done.
+
+---
+
+## R1 — Smart Start Nudge ⬜
+- When a user completes a deliverable or logs time on an unstarted task, show a prompt: "When did you start working on this?"
+- Pre-fill with today's date, but allow backdating (editable date picker)
+- On confirm → call existing `start_task` RPC with the chosen date
+- If task is already started → no prompt, proceed normally
+- **Why:** Tasks must be manually "started" today and users forget. The nudge catches the moment naturally without assuming an inaccurate date
+- **Scope:** Small — frontend prompt + calls existing `start_task` RPC, no trigger changes
+- **Depends on:** nothing
+
+## R2 — Bulk Operations on Deliverable Lists ⬜
+- Multi-select checkboxes on My Work and deliverable lists
+- Bulk actions: "Mark all done" / "Reassign to" / "Shift dates by N days"
+- Batch RPC: `batch_complete_deliverables(ids[])` — single transaction, triggers cascade
+- **Why:** 30 deliverables = 30 clicks today → 1 click after this
+- **Scope:** Small — mostly frontend + one batch RPC
+- **Depends on:** nothing
+
+## R3 — Quick-Add Command Bar (Cmd+K) ⬜
+- Floating command palette for rapid entity creation
+- Smart defaults: dates from parent task, equal weight, medium priority
+- Type "Add deliverable: Inspection Report" → created instantly
+- **Why:** Current flow is 6-7 interactions per deliverable. Quick-add reduces to 2
+- **Scope:** Small — frontend only, calls existing creation logic
+- **Depends on:** nothing
+
+## R4 — Proactive Smart Notifications ⬜
+- Deadline awareness: "Deliverable X due tomorrow", "Deliverable Y overdue by 3 days"
+- Idle detection: "Task Z has been idle for 5 days"
+- Risk escalation: "Milestone W is now AT_RISK"
+- Scheduled DB function (daily) queries upcoming deadlines + idle items → inserts into existing `notifications` table
+- Email delivery via Supabase Edge Function (optional, user preference)
+- **Why:** The single highest-friction point. Without this, users must manually check My Work daily
+- **Scope:** Medium — DB function (small) + email infra (medium), `NotificationCenter.tsx` display already works
+- **Key file:** `promin/app/components/NotificationCenter.tsx`
+- **Depends on:** nothing
+
+## R5 — Project Templates + Clone ⬜
+- Save any project as a template (flag or separate table)
+- One-click clone: deep-copy full hierarchy (milestones → tasks → deliverables)
+- Date-shift relative to new project start date
+- Clone RPC: `clone_project(source_id, new_name, new_start_date)`
+- **Why:** #1 time-saver for repeat projects. Combined with AI Draft, gives two fast-start paths
+- **Scope:** Medium — main complexity is date-shifting + trigger management during bulk insert
+- **Depends on:** nothing
+
+## R6 — Dependency-Aware Auto-Scheduling (Move to DB) ⬜
+- Postgres trigger: when predecessor's `planned_end` changes → cascade to all successors via `task_dependencies`
+- Port `dependencyScheduling.ts` logic to PL/pgSQL
+- Remove client-side scheduling calls (frontend becomes pure intent + render)
+- **Why:** Dependency cascade is client-side today and must be manually triggered. DB trigger makes it truly automatic
+- **Scope:** Medium — existing TypeScript logic needs porting to PL/pgSQL
+- **Key file:** `promin/app/lib/dependencyScheduling.ts` (source to port)
+- **Depends on:** nothing
+
+## R7 — Workload Dashboard (Resource Visibility) ⬜
+- Manager view: per-team-member assigned deliverables across projects
+- Metrics: pending count, overdue count, upcoming deadline pressure, total hours logged
+- RPC: `get_team_workload(project_id)` aggregating by `assigned_user_id`
+- Simple card grid UI (similar to project overview)
+- **Why:** Without this, PM assigns work blindly for teams >3 people
+- **Scope:** Small-Medium — data already exists, mostly query + UI
+- **Absorbs:** old Phase 8 "Resource planning"
+- **Depends on:** nothing
+
+## R8 — Guided Onboarding Flow ⬜
+- 5-step interactive tutorial: create project → milestone → task → deliverable → mark done (see cascade!) → try AI chat
+- Triggered on first login, completion stored in localStorage/profiles
+- **Why:** Celoxis's #1 weakness is steep learning curve. ProMin must be instantly learnable
+- **Scope:** Small — no backend changes
+- **Depends on:** R1 (auto-start makes the onboarding demo smoother)
+
+## R9 — EVA Metrics (Earned Value Analysis) ⬜
+- RPC: `get_project_eva(project_id, asof)` computing BCWP, BCWS, ACWP, CPI, SPI, EAC, ETC
+- Uses existing baselines + canonical progress model + cost tracking
+- Display as card on project page or in reports tab
+- **Why:** For construction/engineering PMs, EVA is often contractually required. All raw data already exists
+- **Scope:** Small — pure DB function + minimal frontend
+- **Absorbs:** old Phase 8 "Cost & EVM primitives"
+- **Depends on:** nothing
+
+## R10 — Recurring Deliverables ⬜
+- Add `recurrence_rule` field to deliverables (weekly / biweekly / monthly or RRULE string)
+- Scheduled function: auto-spawn next instance when current one completes or date threshold crossed
+- New instance inherits title, description, assignment, weight
+- **Why:** Operational projects (inspections, reports, maintenance) require manual re-creation every cycle without this
+- **Scope:** Medium — schema change + generation logic + edge function
+- **Depends on:** nothing
+
+## R11 — Automated Weekly Status Digest ⬜
+- Scheduled summary: progress, risks, upcoming deadlines, velocity trends
+- Data sources: `get_project_forecast` + `get_project_insights` + `get_project_progress_hierarchy`
+- In-app summary view + optional email delivery (Edge Function on CRON)
+- Optional AI-narrated summary from deterministic data
+- **Why:** Stakeholders don't log in. Eliminates manual screenshot-and-email overhead
+- **Scope:** Medium — data sources exist, email infra is the cost
+- **Depends on:** R4 (shares email infrastructure)
+
+## R12 — NLP Action Commands in Chat ⬜
+- Extend AI chat from read-only advisor to action-capable assistant
+- Action intents: "Start task X", "Assign deliverables in M2 to Sarah", "Shift milestone by 2 weeks"
+- AI returns structured action payload → frontend shows confirmation card → user confirms → existing lifecycle RPCs execute
+- Safety model: AI proposes, human confirms, DB enforces invariants
+- **Why:** ProMin's chat already has deep context. Making it actionable = conversational project management
+- **Scope:** Large — intent classification, action schema, confirmation UI, security review
+- **Key files:** `promin/app/api/chat/route.ts`, `promin/app/lib/chatSystemPrompt.ts`
+- **Depends on:** nothing (but benefits from R6 for schedule commands)
+
+## R13 — "Document-to-Done" (Extend AI Draft) ⬜
+- Extend AI Draft to suggest assignments (based on team member history/roles)
+- Post-accept hook: run critical path scheduling on newly created tasks
+- Combines existing AI Draft system with R5 (Templates) as dual fast-start paths
+- **Why:** Upload contract → AI generates plan → one-click accept → project fully scaffolded → zero-touch takes over
+- **Scope:** Medium
+- **Key file:** `promin/app/lib/draftGenerate.ts`
+- **Depends on:** R5 (templates), R6 (auto-scheduling)
+
+## R14 — "Predictive Risk Intervention" ⬜
+- New insight category `INTERVENTION` in `get_project_insights`
+- For at-risk tasks: simulate reassigning deliverables to less-loaded team members
+- Show: "Reassigning 2 items from Person A (overloaded) to Person B (available) would recover 5 days"
+- **Why:** Fix problems before they happen. Suggest specific resource moves
+- **Scope:** Large
+- **Depends on:** R7 (workload data)
+
+## R15 — "Conversational Project Management" (What-If + NLP) ⬜
+- Combines R12 (NLP Commands) + What-If scenario mode
+- "What happens if Foundation slips 3 days?" → scenario simulation → visual diff
+- "Shift milestone 2 by a week" → confirmation → cascade
+- Safety: AI proposes, human confirms, DB enforces invariants
+- **Why:** Talk to your project. It takes action with your confirmation
+- **Scope:** Large
+- **Depends on:** R12 (NLP commands), R6 (auto-scheduling)
+
+---
+
+### Milestone Checkpoints
+
+After **R1–R3**: ProMin feels faster and less tedious for daily work.
+
+After **R4–R7**: ProMin actively manages the project for you — notifies, schedules, shows workload. The "zero-touch" foundation is in place.
+
+After **R8–R11**: ProMin is learnable in 5 minutes, handles recurring work, sends status digests, and computes EVA. Feature parity with Celoxis on the things that matter.
+
+After **R12–R15**: ProMin is magical — you talk to it, it acts. It predicts problems and suggests fixes. No competitor does this.
+
+> **Tagline: "You do the work. ProMin does the project management."**
+
+---
+
+# Track M — Deferred Features
+
+## Phase 5.3E — Full Draft Editing UX (Deferred)
+- ⬜ Side-by-side editable drafts, inline editing
+
+## Deferred Enhancements
+- ⬜ Portfolio dashboard: aggregated cross-project metrics (total hours, combined cost, team utilization, risk traffic lights)
+- ⬜ One-click PDF status report generation
+- ⬜ "What-If" scenario mode (standalone, outside chat)
+- ⬜ Custom fields on entities
+
+---
+
+# Track N — Productization & Enterprise (Post-Publish Only)
+
+## Phase 15
 - ⬜ Billing & licensing
 - ⬜ Multi-tenant hardening
 - ⬜ SSO / compliance

@@ -7,6 +7,7 @@ import EditDeliverableModal from "./EditDeliverableModal";
 import DeliverableFileSection from "./DeliverableFileSection";
 import { useToast } from "./ToastProvider";
 import Tooltip from "./Tooltip";
+import StartTaskPrompt from "./StartTaskPrompt";
 
 type Props = {
   deliverable: any;
@@ -15,6 +16,7 @@ type Props = {
   canDelete?: boolean;
   onChanged?: () => void;
   taskActualStart?: string | null;
+  taskId?: number;
   projectId: number | null;
 };
 
@@ -25,6 +27,7 @@ export default function DeliverableCard({
   canDelete = true,
   onChanged,
   taskActualStart,
+  taskId,
   projectId,
 }: Props) {
   const { pushToast } = useToast();
@@ -38,6 +41,7 @@ export default function DeliverableCard({
 
   const readOnly = !canEdit;
   const [confirmUncheck, setConfirmUncheck] = useState(false);
+  const [showStartPrompt, setShowStartPrompt] = useState(false);
   const [editingActualCost, setEditingActualCost] = useState(false);
   const [actualCostInput, setActualCostInput] = useState("");
 
@@ -103,6 +107,12 @@ export default function DeliverableCard({
     // If unchecking (reverting completion), require confirmation
     if (!checked && localDeliverable.is_done) {
       setConfirmUncheck(true);
+      return;
+    }
+
+    // If checking done on an unstarted task, nudge for start date
+    if (checked && !taskActualStart && taskId) {
+      setShowStartPrompt(true);
       return;
     }
 
@@ -291,25 +301,13 @@ export default function DeliverableCard({
       >
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-start gap-2 flex-1">
-            {!taskActualStart && !localDeliverable.is_done ? (
-              <Tooltip content="Start the task before completing deliverables">
-                <input
-                  type="checkbox"
-                  checked={false}
-                  disabled
-                  readOnly
-                  className="mt-1 h-4 w-4 rounded border-slate-300"
-                />
-              </Tooltip>
-            ) : (
-              <input
-                type="checkbox"
-                checked={!!localDeliverable.is_done}
-                disabled={readOnly || updating}
-                onChange={(e) => toggleDone(e.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-slate-300"
-              />
-            )}
+            <input
+              type="checkbox"
+              checked={!!localDeliverable.is_done}
+              disabled={readOnly || updating}
+              onChange={(e) => toggleDone(e.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-slate-300"
+            />
 
             <div className="flex-1">
               <p className="font-semibold leading-tight text-base">
@@ -559,6 +557,17 @@ export default function DeliverableCard({
             </div>
           </div>
         </div>
+      )}
+
+      {showStartPrompt && taskId && (
+        <StartTaskPrompt
+          taskId={taskId}
+          onStarted={async () => {
+            setShowStartPrompt(false);
+            await performToggle(true);
+          }}
+          onCancel={() => setShowStartPrompt(false)}
+        />
       )}
     </>
   );
