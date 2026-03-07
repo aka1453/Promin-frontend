@@ -366,15 +366,31 @@ export default function DeliverableCard({
                   <button
                     onClick={() => { if (canEdit && projectId) setEditingAssignee(true); }}
                     disabled={!canEdit}
-                    className={`flex items-center gap-1 text-xs ${
-                      assignedUserName ? "text-gray-700" : "text-gray-400"
-                    } ${canEdit ? "hover:bg-gray-100 rounded px-1 py-0.5 -ml-1 cursor-pointer transition" : ""}`}
+                    className={`group flex items-center gap-1.5 text-xs rounded-md px-1.5 py-1 -ml-1.5
+                      transition-all duration-150 ease-out
+                      ${assignedUserName
+                        ? "text-gray-700 " + (canEdit ? "hover:bg-blue-50 hover:text-blue-700" : "")
+                        : "text-gray-400 " + (canEdit ? "hover:bg-gray-100 hover:text-gray-600" : "")
+                      } ${canEdit ? "cursor-pointer" : ""}`}
                     title={canEdit ? "Click to reassign" : undefined}
                   >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                    <span className={assignedUserName ? "font-medium" : "italic"}>{assignedUserName ?? "Unassigned"}</span>
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0
+                      transition-colors duration-150
+                      ${assignedUserName
+                        ? "bg-blue-100 text-blue-600 " + (canEdit ? "group-hover:bg-blue-200" : "")
+                        : "bg-gray-100 text-gray-400 " + (canEdit ? "group-hover:bg-gray-200" : "")
+                      }`}>
+                      {assignedUserName ? (
+                        <span className="font-semibold text-[10px]">{assignedUserName.charAt(0).toUpperCase()}</span>
+                      ) : (
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                      )}
+                    </span>
+                    <span className={assignedUserName ? "font-medium" : "italic"}>
+                      {assignedUserName ?? "Unassigned"}
+                    </span>
                   </button>
                 )}
               </div>

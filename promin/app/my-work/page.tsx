@@ -742,7 +742,35 @@ export default function GlobalMyWorkPage() {
 
                               {/* inline assignee badge → click to reassign */}
                               <div className="relative flex-shrink-0">
-                                {editingAssigneeId === d.id ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingAssigneeId(editingAssigneeId === d.id ? null : d.id);
+                                  }}
+                                  className={`group inline-flex items-center gap-1.5 text-xs rounded-full py-0.5 pl-0.5 pr-2
+                                    transition-all duration-150 ease-out
+                                    ${d.assigned_user
+                                      ? "text-gray-600 hover:bg-blue-50 hover:text-blue-700"
+                                      : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                                    }`}
+                                  title={d.assigned_user ?? "Click to assign"}
+                                >
+                                  {d.assigned_user ? (
+                                    <span className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-[10px]
+                                      group-hover:bg-blue-200 transition-colors duration-150">
+                                      {d.assigned_user.charAt(0).toUpperCase()}
+                                    </span>
+                                  ) : (
+                                    <span className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-gray-400
+                                      group-hover:bg-gray-200 transition-colors duration-150">
+                                      <User size={12} />
+                                    </span>
+                                  )}
+                                  <span className="hidden sm:inline truncate max-w-[80px]">
+                                    {d.assigned_user ?? "Assign"}
+                                  </span>
+                                </button>
+                                {editingAssigneeId === d.id && (
                                   <div className="absolute right-0 top-full mt-1 w-56 z-50">
                                     <UserPicker
                                       projectId={d.projectId}
@@ -751,25 +779,7 @@ export default function GlobalMyWorkPage() {
                                       defaultOpen
                                     />
                                   </div>
-                                ) : null}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingAssigneeId(editingAssigneeId === d.id ? null : d.id);
-                                  }}
-                                  className="inline-flex items-center text-xs text-gray-600 hover:bg-gray-100 rounded-full p-0.5 transition"
-                                  title={d.assigned_user ?? "Unassigned — click to assign"}
-                                >
-                                  {d.assigned_user ? (
-                                    <span className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-[10px]">
-                                      {d.assigned_user.charAt(0).toUpperCase()}
-                                    </span>
-                                  ) : (
-                                    <span className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-gray-400">
-                                      <User size={12} />
-                                    </span>
-                                  )}
-                                </button>
+                                )}
                               </div>
 
                               <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:inline">
