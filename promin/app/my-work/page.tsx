@@ -241,12 +241,36 @@ export default function GlobalMyWorkPage() {
         return;
       }
 
+      // Step 4: resolve assigned user names from profiles
+      const assignedIds = [
+        ...new Set(
+          (data ?? [])
+            .map((d: any) => d.assigned_user_id)
+            .filter(Boolean) as string[]
+        ),
+      ];
+      const profileMap = new Map<string, string>();
+      if (assignedIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("id, full_name, email")
+          .in("id", assignedIds);
+        for (const p of profiles ?? []) {
+          profileMap.set(p.id, p.full_name || p.email || "Unknown");
+        }
+      }
+
       const merged: DeliverableRow[] = [];
       for (const d of data ?? []) {
         const task = tMap.get(d.task_id);
         if (!task) continue;
+        const resolvedUser =
+          d.assigned_user ||
+          (d.assigned_user_id ? profileMap.get(d.assigned_user_id) : null) ||
+          null;
         merged.push({
           ...d,
+          assigned_user: resolvedUser,
           projectId: task.milestone.project_id,
           projectName:
             projectMap.get(task.milestone.project_id) ?? "Untitled",
