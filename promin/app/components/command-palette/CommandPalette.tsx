@@ -281,6 +281,11 @@ function InlineCreateForm({
   const [creating, setCreating] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
 
+  // Shared optional fields
+  const [duration, setDuration] = useState(1);
+  const [weight, setWeight] = useState(1);
+  const [executionMode, setExecutionMode] = useState<"parallel" | "sequential">("parallel");
+
   // For deliverables: task selection
   const [tasks, setTasks] = useState<any[] | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
@@ -332,10 +337,10 @@ function InlineCreateForm({
 
     try {
       if (commandId === "create-milestone") {
-        await createMilestone(context.projectId!, trimmed);
+        await createMilestone(context.projectId!, trimmed, weight);
         onSuccess("Milestone created");
       } else if (commandId === "create-task") {
-        await createTask(context.milestoneId!, trimmed, timezone);
+        await createTask(context.milestoneId!, trimmed, timezone, duration);
         onSuccess("Task created");
       } else if (commandId === "create-deliverable") {
         if (!selectedTaskId) {
@@ -343,7 +348,7 @@ function InlineCreateForm({
           setCreating(false);
           return;
         }
-        await createDeliverable(selectedTaskId, trimmed);
+        await createDeliverable(selectedTaskId, trimmed, duration, weight, executionMode);
         onSuccess("Deliverable created");
       }
     } catch (err: any) {
@@ -372,13 +377,6 @@ function InlineCreateForm({
         : context.milestoneName
           ? `in ${context.milestoneName}`
           : "";
-
-  const defaults =
-    commandId === "create-milestone"
-      ? "weight = equal (auto-normalized)"
-      : commandId === "create-task"
-        ? "start = today, duration = 1 day, weight = equal"
-        : "weight = equal, duration = 1 day, parallel";
 
   return (
     <div onKeyDown={handleKeyDown}>
@@ -459,10 +457,103 @@ function InlineCreateForm({
           />
         </div>
 
-        {/* Smart defaults note */}
-        <p className="text-[11px] text-gray-400 dark:text-gray-500">
-          Defaults: {defaults}
-        </p>
+        {/* Duration & Weight row — for tasks and deliverables */}
+        {(commandId === "create-task" || commandId === "create-deliverable") && (
+          <div className="flex items-end gap-3">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+                Duration
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={duration}
+                  onChange={(e) => setDuration(Math.max(1, Number(e.target.value) || 1))}
+                  className="w-full border border-[var(--card-border)] rounded-lg px-3 py-2 text-sm bg-[var(--card-bg)] text-[var(--foreground)] outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-12"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 dark:text-gray-500 pointer-events-none">
+                  {duration === 1 ? "day" : "days"}
+                </span>
+              </div>
+            </div>
+
+            {commandId === "create-deliverable" && (
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+                  Weight
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={weight}
+                  onChange={(e) => setWeight(Math.max(0, Number(e.target.value) || 0))}
+                  className="w-full border border-[var(--card-border)] rounded-lg px-3 py-2 text-sm bg-[var(--card-bg)] text-[var(--foreground)] outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Milestone weight */}
+        {commandId === "create-milestone" && (
+          <div className="w-1/2">
+            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+              Weight
+            </label>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={weight}
+              onChange={(e) => setWeight(Math.max(0, Number(e.target.value) || 0))}
+              className="w-full border border-[var(--card-border)] rounded-lg px-3 py-2 text-sm bg-[var(--card-bg)] text-[var(--foreground)] outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
+              Auto-normalized by the system
+            </p>
+          </div>
+        )}
+
+        {/* Parallel / Sequential toggle — deliverables only */}
+        {commandId === "create-deliverable" && (
+          <div>
+            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+              Execution
+            </label>
+            <div className="flex rounded-lg border border-[var(--card-border)] overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setExecutionMode("parallel")}
+                className={`flex-1 py-2 text-xs font-medium transition-colors ${
+                  executionMode === "parallel"
+                    ? "bg-blue-600 text-white"
+                    : "bg-[var(--card-bg)] text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+                }`}
+              >
+                ⚡ Parallel
+              </button>
+              <button
+                type="button"
+                onClick={() => setExecutionMode("sequential")}
+                className={`flex-1 py-2 text-xs font-medium transition-colors border-l border-[var(--card-border)] ${
+                  executionMode === "sequential"
+                    ? "bg-blue-600 text-white"
+                    : "bg-[var(--card-bg)] text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+                }`}
+              >
+                ⏩ Sequential
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
+              {executionMode === "parallel"
+                ? "Starts immediately with the task"
+                : "Starts after the last deliverable completes"}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Footer */}
@@ -499,18 +590,18 @@ function Hint({ keys, label }: { keys: string; label: string }) {
    Creation Functions
    ═══════════════════════════════════════════════════════════ */
 
-async function createMilestone(projectId: number, name: string) {
+async function createMilestone(projectId: number, name: string, weight: number) {
   const { error } = await supabase.from("milestones").insert({
     project_id: projectId,
     name,
-    user_weight: 1,
+    user_weight: weight,
     budgeted_cost: 0,
     actual_cost: 0,
   });
   if (error) throw new Error(error.message);
 }
 
-async function createTask(milestoneId: number, title: string, timezone: string) {
+async function createTask(milestoneId: number, title: string, timezone: string, duration: number) {
   // Get next position
   const { data: maxData } = await supabase
     .from("tasks")
@@ -524,14 +615,14 @@ async function createTask(milestoneId: number, title: string, timezone: string) 
   const today = todayForTimezone(timezone);
   const startDate = new Date(today);
   const endDate = new Date(startDate);
-  endDate.setDate(endDate.getDate() + 1);
+  endDate.setDate(endDate.getDate() + duration);
 
   const { error } = await supabase.from("tasks").insert({
     milestone_id: milestoneId,
     title,
     planned_start: today,
     planned_end: endDate.toISOString().split("T")[0],
-    duration_days: 1,
+    duration_days: duration,
     position: nextPosition,
     weight: 0,
     offset_days: 0,
@@ -539,13 +630,36 @@ async function createTask(milestoneId: number, title: string, timezone: string) 
   if (error) throw new Error(error.message);
 }
 
-async function createDeliverable(taskId: number, title: string) {
+async function createDeliverable(
+  taskId: number,
+  title: string,
+  duration: number,
+  weight: number,
+  executionMode: "parallel" | "sequential",
+) {
+  let dependsOn: number | null = null;
+
+  // Sequential: chain to the last deliverable in this task
+  if (executionMode === "sequential") {
+    const { data: existing } = await supabase
+      .from("deliverables")
+      .select("id")
+      .eq("task_id", taskId)
+      .order("id", { ascending: false })
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      dependsOn = existing[0].id;
+    }
+    // If no existing deliverables, stays parallel (null) — nothing to chain to
+  }
+
   const { error } = await supabase.from("deliverables").insert({
     task_id: taskId,
     title,
-    user_weight: 1,
-    duration_days: 1,
-    depends_on_deliverable_id: null,
+    user_weight: weight,
+    duration_days: duration,
+    depends_on_deliverable_id: dependsOn,
   });
   if (error) throw new Error(error.message);
 
