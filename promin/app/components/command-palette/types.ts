@@ -13,6 +13,8 @@ export type CommandDefinition = {
     projectId?: boolean;
     milestoneId?: boolean;
   };
+  /** If true, only show this command when user types a search query */
+  searchOnly?: boolean;
 };
 
 export type CommandContext = {

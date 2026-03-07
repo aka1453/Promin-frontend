@@ -13,6 +13,7 @@ type Props = {
   onMilestoneChanged?: () => void;
   onMilestoneUpdated?: () => void;
   taskProgressMap?: Record<string, { planned: number; actual: number; risk_state: string }>;
+  openTaskId?: number | null;
 };
 
 type ViewMode = "kanban" | "diagram";
@@ -24,6 +25,7 @@ export default function TaskViewWrapper({
   onMilestoneChanged,
   onMilestoneUpdated,
   taskProgressMap,
+  openTaskId,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -118,6 +120,7 @@ export default function TaskViewWrapper({
           onMilestoneChanged={onMilestoneChanged}
           onMilestoneUpdated={onMilestoneUpdated}
           taskProgressMap={taskProgressMap}
+          openTaskId={openTaskId}
         />
       )}
 

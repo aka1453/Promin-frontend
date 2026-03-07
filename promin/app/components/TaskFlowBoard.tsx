@@ -29,6 +29,7 @@ type Props = {
   onMilestoneChanged?: () => void;
   onMilestoneUpdated?: () => void;
   taskProgressMap?: Record<string, { planned: number; actual: number; risk_state: string }>;
+  openTaskId?: number | null;
 };
 
 // Column IDs
@@ -119,6 +120,7 @@ export default function TaskFlowBoard({
   onMilestoneChanged,
   onMilestoneUpdated,
   taskProgressMap,
+  openTaskId,
 }: Props) {
   const { pushToast } = useToast();
   const { timezone } = useUserTimezone();
@@ -159,6 +161,15 @@ export default function TaskFlowBoard({
   useEffect(() => {
     loadTasks();
   }, [milestoneId]);
+
+  // Auto-open drawer when openTaskId is provided (deep-link from command palette)
+  useEffect(() => {
+    if (!openTaskId || loading || tasks.length === 0) return;
+    const task = tasks.find((t) => t.id === openTaskId);
+    if (task && !selectedTask) {
+      setSelectedTask(task);
+    }
+  }, [openTaskId, loading, tasks]);
 
   const handleTaskCreated = async () => {
     await loadTasks();

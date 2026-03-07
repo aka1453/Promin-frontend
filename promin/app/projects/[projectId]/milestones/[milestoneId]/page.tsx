@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, use, useCallback, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "../../../../lib/supabaseClient";
 import { useUserTimezone } from "../../../../context/UserTimezoneContext";
 import { todayForTimezone } from "../../../../utils/date";
@@ -20,9 +21,14 @@ export default function MilestonePage({
   params: Promise<{ projectId: string; milestoneId: string }>;
 }) {
   const resolvedParams = use(params);
+  const searchParams = useSearchParams();
   const { timezone } = useUserTimezone();
   const projectId = parseInt(resolvedParams.projectId);
   const milestoneId = parseInt(resolvedParams.milestoneId);
+
+  // Deep-link: auto-open task drawer from command palette
+  const openTaskIdRaw = searchParams?.get("openTaskId");
+  const openTaskId = openTaskIdRaw ? parseInt(openTaskIdRaw) : null;
 
   const [milestone, setMilestone] = useState<any>(null);
   const [project, setProject] = useState<any>(null);
@@ -432,6 +438,7 @@ export default function MilestonePage({
             onMilestoneChanged={loadData}
             onMilestoneUpdated={handleMilestoneUpdated}
             taskProgressMap={taskProgressMap}
+            openTaskId={openTaskId}
           />
         </div>
       </div>

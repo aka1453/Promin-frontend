@@ -9,6 +9,8 @@ import {
   ArrowRight,
   LayoutDashboard,
   ClipboardList,
+  CheckSquare,
+  FileText,
 } from "lucide-react";
 import { useProjects } from "@/context/ProjectsContext";
 import { supabase } from "@/lib/supabaseClient";
@@ -49,7 +51,8 @@ function fuzzyFilter(
   query: string,
   items: CommandDefinition[],
 ): CommandDefinition[] {
-  if (!query.trim()) return items;
+  // No query: show all non-searchOnly commands
+  if (!query.trim()) return items.filter((i) => !i.searchOnly);
 
   return items
     .map((item) => {
@@ -63,6 +66,20 @@ function fuzzyFilter(
     .map((r) => r.item);
 }
 
+/* ── Types for fetched entities ──────────────────────────── */
+
+type FetchedTask = {
+  id: number;
+  title: string;
+  milestone_id: number;
+};
+
+type FetchedDeliverable = {
+  id: number;
+  title: string;
+  task_id: number;
+};
+
 /* ── Hook ────────────────────────────────────────────────── */
 
 export function useCommandRegistry(isOpen: boolean) {
@@ -70,6 +87,8 @@ export function useCommandRegistry(isOpen: boolean) {
   const { projects } = useProjects();
 
   const [milestones, setMilestones] = useState<{ id: number; name: string }[]>([]);
+  const [tasks, setTasks] = useState<FetchedTask[]>([]);
+  const [deliverables, setDeliverables] = useState<FetchedDeliverable[]>([]);
 
   // Extract context from URL
   const { projectId, milestoneId } = useMemo(() => {
@@ -93,6 +112,20 @@ export function useCommandRegistry(isOpen: boolean) {
     return m?.name ?? null;
   }, [milestoneId, milestones]);
 
+  // Build a milestone lookup for task context hints
+  const milestoneMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const ms of milestones) map.set(ms.id, ms.name);
+    return map;
+  }, [milestones]);
+
+  // Build a task lookup for deliverable context hints
+  const taskMap = useMemo(() => {
+    const map = new Map<number, FetchedTask>();
+    for (const t of tasks) map.set(t.id, t);
+    return map;
+  }, [tasks]);
+
   // Lazy-fetch milestones when palette opens inside a project
   useEffect(() => {
     if (!isOpen || !projectId) {
@@ -113,6 +146,62 @@ export function useCommandRegistry(isOpen: boolean) {
 
     return () => { cancelled = true; };
   }, [isOpen, projectId]);
+
+  // Lazy-fetch tasks when palette opens inside a project
+  useEffect(() => {
+    if (!isOpen || !projectId) {
+      setTasks([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    // Fetch all tasks in this project via milestones
+    (async () => {
+      // Get milestone IDs for this project
+      const { data: msData } = await supabase
+        .from("milestones")
+        .select("id")
+        .eq("project_id", projectId);
+
+      if (cancelled || !msData || msData.length === 0) return;
+
+      const msIds = msData.map((m: any) => m.id);
+
+      const { data: taskData } = await supabase
+        .from("tasks")
+        .select("id, title, milestone_id")
+        .in("milestone_id", msIds)
+        .order("id", { ascending: true });
+
+      if (!cancelled && taskData) setTasks(taskData);
+    })();
+
+    return () => { cancelled = true; };
+  }, [isOpen, projectId]);
+
+  // Lazy-fetch deliverables when palette opens inside a project
+  useEffect(() => {
+    if (!isOpen || !projectId || tasks.length === 0) {
+      if (!isOpen || !projectId) setDeliverables([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const taskIds = tasks.map((t) => t.id);
+
+    supabase
+      .from("deliverables")
+      .select("id, title, task_id")
+      .in("task_id", taskIds)
+      .order("id", { ascending: true })
+      .then(({ data }) => {
+        if (!cancelled && data) setDeliverables(data);
+      });
+
+    return () => { cancelled = true; };
+  }, [isOpen, projectId, tasks]);
 
   const context: CommandContext = useMemo(
     () => ({ projectId, milestoneId, projectName, milestoneName }),
@@ -206,8 +295,37 @@ export function useCommandRegistry(isOpen: boolean) {
       });
     }
 
+    // Per-task navigation (if inside a project) — searchOnly: hidden until user types
+    for (const task of tasks) {
+      const msName = milestoneMap.get(task.milestone_id);
+      cmds.push({
+        id: `nav-task-${task.milestone_id}-${task.id}`,
+        label: task.title || "Untitled Task",
+        category: "navigate",
+        icon: CheckSquare,
+        keywords: ["go", "task", (task.title || "").toLowerCase()],
+        contextHint: msName ? `in ${msName}` : undefined,
+        searchOnly: true,
+      });
+    }
+
+    // Per-deliverable navigation (if inside a project) — searchOnly: hidden until user types
+    for (const del of deliverables) {
+      const parentTask = taskMap.get(del.task_id);
+      const taskLabel = parentTask?.title;
+      cmds.push({
+        id: `nav-deliverable-${parentTask?.milestone_id}-${del.task_id}-${del.id}`,
+        label: del.title || "Untitled Deliverable",
+        category: "navigate",
+        icon: FileText,
+        keywords: ["go", "deliverable", "item", (del.title || "").toLowerCase()],
+        contextHint: taskLabel ? `in ${taskLabel}` : undefined,
+        searchOnly: true,
+      });
+    }
+
     return cmds;
-  }, [projectId, milestoneId, projectName, milestoneName, projects, milestones]);
+  }, [projectId, milestoneId, projectName, milestoneName, projects, milestones, tasks, deliverables, milestoneMap, taskMap]);
 
   const search = useCallback(
     (query: string) => fuzzyFilter(query, commands),

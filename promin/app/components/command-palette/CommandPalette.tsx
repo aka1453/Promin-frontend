@@ -123,6 +123,25 @@ export default function CommandPalette() {
         close();
         return;
       }
+      // Task navigation: nav-task-{milestoneId}-{taskId}
+      if (cmd.id.startsWith("nav-task-")) {
+        const parts = cmd.id.replace("nav-task-", "").split("-");
+        const msId = parts[0];
+        const taskId = parts[1];
+        router.push(`/projects/${context.projectId}/milestones/${msId}?openTaskId=${taskId}`);
+        close();
+        return;
+      }
+      // Deliverable navigation: nav-deliverable-{milestoneId}-{taskId}-{deliverableId}
+      // Opens the task drawer (deliverables live inside it)
+      if (cmd.id.startsWith("nav-deliverable-")) {
+        const parts = cmd.id.replace("nav-deliverable-", "").split("-");
+        const msId = parts[0];
+        const taskId = parts[1];
+        router.push(`/projects/${context.projectId}/milestones/${msId}?openTaskId=${taskId}`);
+        close();
+        return;
+      }
 
       // Create commands → switch to inline form
       if (cmd.id.startsWith("create-")) {
