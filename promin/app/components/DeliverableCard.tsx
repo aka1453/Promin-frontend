@@ -8,6 +8,7 @@ import DeliverableFileSection from "./DeliverableFileSection";
 import { useToast } from "./ToastProvider";
 import Tooltip from "./Tooltip";
 import StartTaskPrompt from "./StartTaskPrompt";
+import UserPicker from "./UserPicker";
 
 type Props = {
   deliverable: any;
@@ -44,6 +45,7 @@ export default function DeliverableCard({
   const [showStartPrompt, setShowStartPrompt] = useState(false);
   const [editingActualCost, setEditingActualCost] = useState(false);
   const [actualCostInput, setActualCostInput] = useState("");
+  const [editingAssignee, setEditingAssignee] = useState(false);
 
   // Load assigned user name and dependency info
   useEffect(() => {
@@ -99,6 +101,35 @@ export default function DeliverableCard({
       onChanged?.();
     }
     setEditingActualCost(false);
+  }
+
+  async function updateAssignee(userId: string | null) {
+    if (!projectId) return;
+
+    let userName: string | null = null;
+    if (userId) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name, email")
+        .eq("id", userId)
+        .single();
+      userName = profile?.full_name || profile?.email || null;
+    }
+
+    const { error } = await supabase
+      .from("deliverables")
+      .update({ assigned_user_id: userId, assigned_user: userName })
+      .eq("id", localDeliverable.id);
+
+    if (error) {
+      pushToast("Failed to update assignee", "error");
+    } else {
+      setLocalDeliverable({ ...localDeliverable, assigned_user_id: userId, assigned_user: userName });
+      setAssignedUserName(userName);
+      pushToast("Assignee updated", "success");
+      onChanged?.();
+    }
+    setEditingAssignee(false);
   }
 
   async function toggleDone(checked: boolean) {
@@ -320,12 +351,32 @@ export default function DeliverableCard({
                 </p>
               )}
 
-              {/* Assignee */}
-              <div className={`mt-1 flex items-center gap-1 text-xs ${assignedUserName ? "text-gray-700" : "text-gray-400"}`}>
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                <span className={assignedUserName ? "font-medium" : "italic"}>{assignedUserName ?? "Unassigned"}</span>
+              {/* Assignee — inline editable */}
+              <div className="mt-1 relative">
+                {editingAssignee && canEdit && projectId ? (
+                  <div className="w-56">
+                    <UserPicker
+                      projectId={projectId}
+                      value={localDeliverable.assigned_user_id}
+                      onChange={(uid) => updateAssignee(uid)}
+                      defaultOpen
+                    />
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { if (canEdit && projectId) setEditingAssignee(true); }}
+                    disabled={!canEdit}
+                    className={`flex items-center gap-1 text-xs ${
+                      assignedUserName ? "text-gray-700" : "text-gray-400"
+                    } ${canEdit ? "hover:bg-gray-100 rounded px-1 py-0.5 -ml-1 cursor-pointer transition" : ""}`}
+                    title={canEdit ? "Click to reassign" : undefined}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    <span className={assignedUserName ? "font-medium" : "italic"}>{assignedUserName ?? "Unassigned"}</span>
+                  </button>
+                )}
               </div>
 
               {/* Dependency Badge */}

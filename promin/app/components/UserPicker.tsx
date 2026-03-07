@@ -15,6 +15,7 @@ type Props = {
   onChange: (userId: string | null) => void;
   placeholder?: string;
   className?: string;
+  defaultOpen?: boolean;
 };
 
 export default function UserPicker({
@@ -23,10 +24,11 @@ export default function UserPicker({
   onChange,
   placeholder = "Select user...",
   className = "",
+  defaultOpen = false,
 }: Props) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   const [searchQuery, setSearchQuery] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
 

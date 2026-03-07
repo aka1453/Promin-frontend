@@ -21,6 +21,7 @@ import TimeLogForm from "../components/TimeLogForm";
 import TimeLogHistory from "../components/TimeLogHistory";
 import StartTaskPrompt from "../components/StartTaskPrompt";
 import BulkActionBar from "../components/BulkActionBar";
+import UserPicker from "../components/UserPicker";
 import { useBulkSelection } from "../hooks/useBulkSelection";
 
 // ─────────────────────────────────────────────
@@ -130,6 +131,7 @@ export default function GlobalMyWorkPage() {
   const [loggingTimeId, setLoggingTimeId] = useState<number | null>(null);
   const [timeLogRefreshKey, setTimeLogRefreshKey] = useState(0);
   const [startNudge, setStartNudge] = useState<DeliverableRow | null>(null);
+  const [editingAssigneeId, setEditingAssigneeId] = useState<number | null>(null);
   const bulk = useBulkSelection();
 
   const today = useMemo(() => todayForTimezone(timezone), [timezone]);
@@ -292,6 +294,10 @@ export default function GlobalMyWorkPage() {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  useEffect(() => {
+    setEditingAssigneeId(null);
+  }, [expandedId]);
 
   // ── progress ──
   const progressCounts = useMemo(() => {
@@ -464,6 +470,31 @@ export default function GlobalMyWorkPage() {
       next.delete(d.id);
       return next;
     });
+  }
+
+  async function updateAssignee(deliverableId: number, projectId: number, userId: string | null) {
+    let userName: string | null = null;
+    if (userId) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name, email")
+        .eq("id", userId)
+        .single();
+      userName = profile?.full_name || profile?.email || null;
+    }
+
+    const { error } = await supabase
+      .from("deliverables")
+      .update({ assigned_user_id: userId, assigned_user: userName })
+      .eq("id", deliverableId);
+
+    if (error) {
+      pushToast("Failed to update assignee", "error");
+    } else {
+      pushToast("Assignee updated", "success");
+      await loadAll();
+    }
+    setEditingAssigneeId(null);
   }
 
   function getDueDateStyle(
@@ -658,7 +689,7 @@ export default function GlobalMyWorkPage() {
 
                   {/* deliverables */}
                   {!isCollapsed && (
-                    <div className="border border-gray-200 rounded-xl bg-white overflow-hidden">
+                    <div className="border border-gray-200 rounded-xl bg-white">
                       {pg.deliverables.map((d) => {
                         const taskNotStarted =
                           !d.taskActualStart && !d.is_done;
@@ -709,7 +740,37 @@ export default function GlobalMyWorkPage() {
                                 </span>
                               )}
 
-                              <AssigneeBadge name={d.assigned_user} />
+                              {/* inline assignee badge → click to reassign */}
+                              <div className="relative flex-shrink-0">
+                                {editingAssigneeId === d.id ? (
+                                  <div className="absolute right-0 top-full mt-1 w-56 z-50">
+                                    <UserPicker
+                                      projectId={d.projectId}
+                                      value={d.assigned_user_id}
+                                      onChange={(uid) => updateAssignee(d.id, d.projectId, uid)}
+                                      defaultOpen
+                                    />
+                                  </div>
+                                ) : null}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingAssigneeId(editingAssigneeId === d.id ? null : d.id);
+                                  }}
+                                  className="inline-flex items-center text-xs text-gray-600 hover:bg-gray-100 rounded-full p-0.5 transition"
+                                  title={d.assigned_user ?? "Unassigned — click to assign"}
+                                >
+                                  {d.assigned_user ? (
+                                    <span className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-[10px]">
+                                      {d.assigned_user.charAt(0).toUpperCase()}
+                                    </span>
+                                  ) : (
+                                    <span className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-gray-400">
+                                      <User size={12} />
+                                    </span>
+                                  )}
+                                </button>
+                              </div>
 
                               <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:inline">
                                 {d.taskTitle}
