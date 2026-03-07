@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Sidebar from "./components/Sidebar";
+import CommandPalette from "./components/command-palette/CommandPalette";
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -19,6 +20,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       >
         {children}
       </main>
+
+      {showSidebar && <CommandPalette />}
     </div>
   );
 }
