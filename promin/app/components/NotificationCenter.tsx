@@ -323,6 +323,12 @@ export default function NotificationCenter() {
 
     setIsOpen(false);
 
+    // Digest notifications use action_url directly (e.g., /my-work)
+    if (notification.action_url) {
+      router.push(notification.action_url);
+      return;
+    }
+
     if (
       !notification.entity_type ||
       !notification.entity_id ||
