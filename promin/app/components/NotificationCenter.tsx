@@ -1,9 +1,32 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabaseClient";
 import { formatDistanceToNow } from "date-fns";
+import {
+  Bell,
+  UserPlus,
+  AtSign,
+  MessageCircle,
+  RefreshCw,
+  CheckCircle2,
+  AlertTriangle,
+  CalendarClock,
+  Clock,
+  Pencil,
+  RotateCcw,
+  FileUp,
+  UserMinus,
+  Shield,
+  Flag,
+  Play,
+  CheckSquare,
+  Archive,
+  ArchiveRestore,
+  Hourglass,
+  AlertOctagon,
+} from "lucide-react";
 
 type Notification = {
   id: string;
@@ -20,6 +43,8 @@ type Notification = {
   /** IDs of duplicate notifications grouped into this one */
   _duplicateIds?: string[];
 };
+
+type NotificationCategory = "danger" | "warning" | "success" | "info";
 
 /** Key used to identify duplicate notifications (same content within 5-min window) */
 function notificationDedupKey(n: Notification): string {
@@ -44,6 +69,102 @@ function deduplicateNotifications(raw: Notification[]): Notification[] {
     }
   }
   return Array.from(map.values());
+}
+
+function getNotificationCategory(type: string): NotificationCategory {
+  switch (type) {
+    case "overdue":
+    case "risk_escalation":
+      return "danger";
+    case "due_today":
+    case "deadline_approaching":
+    case "idle_task":
+      return "warning";
+    case "completion":
+    case "task_completed":
+    case "milestone_completed":
+      return "success";
+    default:
+      return "info";
+  }
+}
+
+const categoryStyles: Record<
+  NotificationCategory,
+  { border: string; iconBg: string; iconColor: string }
+> = {
+  danger: {
+    border: "border-l-red-500",
+    iconBg: "bg-red-50",
+    iconColor: "text-red-500",
+  },
+  warning: {
+    border: "border-l-amber-500",
+    iconBg: "bg-amber-50",
+    iconColor: "text-amber-500",
+  },
+  success: {
+    border: "border-l-emerald-500",
+    iconBg: "bg-emerald-50",
+    iconColor: "text-emerald-500",
+  },
+  info: {
+    border: "border-l-blue-500",
+    iconBg: "bg-blue-50",
+    iconColor: "text-blue-500",
+  },
+};
+
+function getNotificationIcon(type: string): ReactNode {
+  const category = getNotificationCategory(type);
+  const { iconColor } = categoryStyles[category];
+  const cls = `w-4 h-4 ${iconColor}`;
+
+  switch (type) {
+    case "assignment":
+    case "member_added":
+      return <UserPlus className={cls} />;
+    case "mention":
+      return <AtSign className={cls} />;
+    case "comment":
+      return <MessageCircle className={cls} />;
+    case "status_change":
+      return <RefreshCw className={cls} />;
+    case "completion":
+      return <CheckCircle2 className={cls} />;
+    case "overdue":
+      return <AlertTriangle className={cls} />;
+    case "due_today":
+      return <CalendarClock className={cls} />;
+    case "deadline_approaching":
+      return <Clock className={cls} />;
+    case "deliverable_edited":
+      return <Pencil className={cls} />;
+    case "deliverable_reopened":
+      return <RotateCcw className={cls} />;
+    case "file_uploaded":
+      return <FileUp className={cls} />;
+    case "member_removed":
+      return <UserMinus className={cls} />;
+    case "role_changed":
+      return <Shield className={cls} />;
+    case "milestone_completed":
+      return <Flag className={cls} />;
+    case "task_started":
+      return <Play className={cls} />;
+    case "task_completed":
+      return <CheckSquare className={cls} />;
+    case "project_archived":
+      return <Archive className={cls} />;
+    case "project_restored":
+      return <ArchiveRestore className={cls} />;
+    case "idle_task":
+      return <Hourglass className={cls} />;
+    case "risk_escalation":
+      return <AlertOctagon className={cls} />;
+    default:
+      return <Bell className={cls} />;
+  }
 }
 
 export default function NotificationCenter() {
@@ -107,7 +228,7 @@ export default function NotificationCenter() {
               n.id === updatedNotification.id ? updatedNotification : n
             )
           );
-          
+
           setNotifications((prev) => {
             const unread = prev.filter((n) => !n.read).length;
             setUnreadCount(unread);
@@ -195,45 +316,75 @@ export default function NotificationCenter() {
     }
   };
 
-  const getNotificationIcon = (type: string) => {
-    const iconMap: Record<string, string> = {
-      assignment: "👤",
-      mention: "💬",
-      comment: "💬",
-      status_change: "📊",
-      completion: "✅",
-      overdue: "⚠️",
-    };
-    return iconMap[type] || "🔔";
-  };
-
-  const handleNotificationClick = (notification: Notification) => {
+  const handleNotificationClick = async (notification: Notification) => {
     if (!notification.read) {
       markAsRead(notification);
     }
-    
-    // Navigate based on entity type
-    if (notification.entity_type && notification.entity_id && notification.project_id) {
-      let url = '';
-      
-      if (notification.entity_type === 'deliverable') {
-        // Deliverables are in tasks, need to find the task and milestone
-        // For now, just go to project page
-        url = `/projects/${notification.project_id}`;
-      } else if (notification.entity_type === 'task') {
-        // Tasks are in milestones, need to find the milestone
-        // For now, just go to project page
-        url = `/projects/${notification.project_id}`;
-      } else if (notification.entity_type === 'milestone') {
-        url = `/projects/${notification.project_id}/milestones/${notification.entity_id}`;
-      } else {
-        url = `/projects/${notification.project_id}`;
-      }
-      
-      router.push(url);
-    }
-    
+
     setIsOpen(false);
+
+    if (
+      !notification.entity_type ||
+      !notification.entity_id ||
+      !notification.project_id
+    ) {
+      return;
+    }
+
+    const pid = notification.project_id;
+
+    if (notification.entity_type === "task") {
+      // Deep-link: resolve milestone_id for the task
+      const { data } = await supabase
+        .from("tasks")
+        .select("milestone_id")
+        .eq("id", notification.entity_id)
+        .single();
+
+      if (data?.milestone_id) {
+        router.push(
+          `/projects/${pid}/milestones/${data.milestone_id}?openTaskId=${notification.entity_id}`
+        );
+      } else {
+        router.push(`/projects/${pid}`);
+      }
+      return;
+    }
+
+    if (notification.entity_type === "deliverable") {
+      // Deep-link: resolve task_id and milestone_id for the deliverable
+      const { data } = await supabase
+        .from("subtasks")
+        .select("task_id")
+        .eq("id", notification.entity_id)
+        .single();
+
+      if (data?.task_id) {
+        const { data: taskData } = await supabase
+          .from("tasks")
+          .select("milestone_id")
+          .eq("id", data.task_id)
+          .single();
+
+        if (taskData?.milestone_id) {
+          router.push(
+            `/projects/${pid}/milestones/${taskData.milestone_id}?openTaskId=${data.task_id}`
+          );
+          return;
+        }
+      }
+      router.push(`/projects/${pid}`);
+      return;
+    }
+
+    if (notification.entity_type === "milestone") {
+      router.push(
+        `/projects/${pid}/milestones/${notification.entity_id}`
+      );
+      return;
+    }
+
+    router.push(`/projects/${pid}`);
   };
 
   return (
@@ -242,19 +393,7 @@ export default function NotificationCenter() {
         onClick={() => setIsOpen(!isOpen)}
         className="relative p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
       >
-        <svg
-          className="w-6 h-6 text-gray-600"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-          />
-        </svg>
+        <Bell className="w-5 h-5 text-gray-600" />
 
         {unreadCount > 0 && (
           <span className="absolute top-0 right-0 inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-red-600 rounded-full">
@@ -266,7 +405,9 @@ export default function NotificationCenter() {
       {isOpen && (
         <div className="absolute left-0 top-full mt-2 w-80 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-[500px]">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-            <h3 className="font-semibold text-gray-900 text-sm">Notifications</h3>
+            <h3 className="font-semibold text-gray-900 text-sm">
+              Notifications
+            </h3>
             {unreadCount > 0 && (
               <button
                 onClick={markAllAsRead}
@@ -284,60 +425,66 @@ export default function NotificationCenter() {
               </div>
             ) : notifications.length === 0 ? (
               <div className="p-8 text-center text-sm text-gray-500">
-                <div className="mb-2 text-4xl">🔔</div>
+                <Bell className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                 <div>No notifications yet</div>
               </div>
             ) : (
               <div className="divide-y divide-gray-100">
-                {notifications.map((notification) => (
-                  <button
-                    key={notification.id}
-                    onClick={() => handleNotificationClick(notification)}
-                    className={`w-full px-4 py-3 text-left hover:bg-gray-50 focus:bg-gray-50 focus:outline-none transition-colors ${
-                      !notification.read ? "bg-blue-50/50" : ""
-                    }`}
-                  >
-                    <div className="flex gap-2.5">
-                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-base">
-                        {getNotificationIcon(notification.type)}
-                      </div>
+                {notifications.map((notification) => {
+                  const category = getNotificationCategory(notification.type);
+                  const styles = categoryStyles[category];
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <p
-                            className={`text-[13px] leading-snug ${
-                              !notification.read
-                                ? "font-semibold text-gray-900"
-                                : "text-gray-700"
-                            }`}
-                          >
-                            {notification.title}
-                          </p>
-                          {!notification.read && (
-                            <span className="flex-shrink-0 w-2 h-2 bg-blue-600 rounded-full mt-1"></span>
-                          )}
+                  return (
+                    <button
+                      key={notification.id}
+                      onClick={() => handleNotificationClick(notification)}
+                      className={`w-full px-4 py-3 text-left hover:bg-gray-50 focus:bg-gray-50 focus:outline-none transition-colors border-l-2 ${
+                        styles.border
+                      } ${!notification.read ? "bg-blue-50/50" : ""}`}
+                    >
+                      <div className="flex gap-2.5">
+                        <div
+                          className={`flex-shrink-0 w-8 h-8 rounded-full ${styles.iconBg} flex items-center justify-center`}
+                        >
+                          {getNotificationIcon(notification.type)}
                         </div>
 
-                        {notification.body && (
-                          <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">
-                            {notification.body}
-                          </p>
-                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <p
+                              className={`text-[13px] leading-snug ${
+                                !notification.read
+                                  ? "font-semibold text-gray-900"
+                                  : "text-gray-700"
+                              }`}
+                            >
+                              {notification.title}
+                            </p>
+                            {!notification.read && (
+                              <span className="flex-shrink-0 w-2 h-2 bg-blue-600 rounded-full mt-1"></span>
+                            )}
+                          </div>
 
-                        <p className="text-[11px] text-gray-400 mt-0.5">
-                          {formatDistanceToNow(
-                            new Date(notification.created_at),
-                            { addSuffix: true }
+                          {notification.body && (
+                            <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">
+                              {notification.body}
+                            </p>
                           )}
-                        </p>
+
+                          <p className="text-[11px] text-gray-400 mt-0.5">
+                            {formatDistanceToNow(
+                              new Date(notification.created_at),
+                              { addSuffix: true }
+                            )}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
-
         </div>
       )}
     </div>

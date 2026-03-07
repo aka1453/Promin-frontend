@@ -305,12 +305,13 @@ All above verified: `tsc --noEmit` passes; Turbopack compilation succeeds (`next
 - **Scope:** Small — frontend only, calls existing creation logic
 - **Depends on:** nothing
 
-## R4 — Proactive Smart Notifications ⬜
+## R4 — Proactive Smart Notifications ✅
 - Deadline awareness: "Deliverable X due tomorrow", "Deliverable Y overdue by 3 days"
-- Idle detection: "Task Z has been idle for 5 days"
-- Risk escalation: "Milestone W is now AT_RISK"
-- Scheduled DB function (daily) queries upcoming deadlines + idle items → inserts into existing `notifications` table
-- Email delivery via Supabase Edge Function (optional, user preference)
+- Idle detection: `notify_idle_tasks()` — 5-day threshold, 7-day dedup, notifies project owner
+- Risk escalation: `notify_risk_escalation()` — tasks + milestones with RISK health, 7-day dedup
+- `run_daily_notifications()` updated to call all 5 sub-functions, scheduled via pg_cron at 08:00 UTC
+- NotificationCenter upgraded: Lucide icons (21 types), category-colored borders, deep-link navigation for tasks/deliverables via `?openTaskId=`
+- Email delivery deferred (optional, user preference — no infrastructure changes needed when ready)
 - **Why:** The single highest-friction point. Without this, users must manually check My Work daily
 - **Scope:** Medium — DB function (small) + email infra (medium), `NotificationCenter.tsx` display already works
 - **Key file:** `promin/app/components/NotificationCenter.tsx`
