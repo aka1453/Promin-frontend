@@ -20,6 +20,8 @@ import {
 import TimeLogForm from "../components/TimeLogForm";
 import TimeLogHistory from "../components/TimeLogHistory";
 import StartTaskPrompt from "../components/StartTaskPrompt";
+import BulkActionBar from "../components/BulkActionBar";
+import { useBulkSelection } from "../hooks/useBulkSelection";
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -128,6 +130,7 @@ export default function GlobalMyWorkPage() {
   const [loggingTimeId, setLoggingTimeId] = useState<number | null>(null);
   const [timeLogRefreshKey, setTimeLogRefreshKey] = useState(0);
   const [startNudge, setStartNudge] = useState<DeliverableRow | null>(null);
+  const bulk = useBulkSelection();
 
   const today = useMemo(() => todayForTimezone(timezone), [timezone]);
 
@@ -337,6 +340,36 @@ export default function GlobalMyWorkPage() {
     };
   }, [deliverables, assignedOnly, currentUserId, today, endOfWeek]);
 
+  // ── clear selection on filter change ──
+  useEffect(() => {
+    bulk.deselectAll();
+  }, [activeFilter, showCompleted, assignedOnly]);
+
+  // ── batch complete ──
+  async function handleBatchComplete() {
+    const ids = Array.from(bulk.selectedIds);
+    if (ids.length === 0) return;
+
+    const { data, error } = await supabase.rpc("batch_complete_deliverables", {
+      p_deliverable_ids: ids,
+    });
+
+    if (error) {
+      pushToast("Batch complete failed", "error");
+    } else {
+      const result = data as any;
+      const count = result.completed_count ?? 0;
+      const skipped = result.skipped ?? [];
+      pushToast(`Completed ${count} deliverable${count !== 1 ? "s" : ""}`, "success");
+      if (skipped.length > 0) {
+        pushToast(`${skipped.length} skipped`, "info");
+      }
+    }
+
+    bulk.deselectAll();
+    await loadAll();
+  }
+
   // ── toggle ──
   async function toggleDeliverable(d: DeliverableRow, checked: boolean) {
     if (!checked && d.is_done) {
@@ -529,49 +562,75 @@ export default function GlobalMyWorkPage() {
                 (d) => !d.is_done
               ).length;
 
+              const incompleteIds = pg.deliverables
+                .filter((d) => !d.is_done)
+                .map((d) => d.id);
+              const allSelected =
+                incompleteIds.length > 0 &&
+                incompleteIds.every((id) => bulk.isSelected(id));
+
               return (
                 <div key={pg.projectId}>
                   {/* project header */}
-                  <button
-                    onClick={() =>
-                      setCollapsedProjects((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(pg.projectId))
-                          next.delete(pg.projectId);
-                        else next.add(pg.projectId);
-                        return next;
-                      })
-                    }
-                    className="w-full flex items-center justify-between mb-2"
-                  >
-                    <div className="flex items-center gap-2">
-                      {isCollapsed ? (
-                        <ChevronRight
-                          size={16}
-                          className="text-gray-400"
-                        />
-                      ) : (
-                        <ChevronDown
-                          size={16}
-                          className="text-gray-400"
-                        />
-                      )}
-                      <FolderOpen size={16} className="text-blue-500" />
-                      <span className="font-semibold text-gray-900">
-                        {pg.projectName}
-                      </span>
-                      <span className="text-xs text-gray-400">
-                        {pendingCount} pending
-                      </span>
-                    </div>
-                    <Link
-                      href={`/projects/${pg.projectId}/my-work`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                  <div className="flex items-center gap-2 mb-2">
+                    {incompleteIds.length > 0 && (
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={() => {
+                          if (allSelected) {
+                            incompleteIds.forEach((id) => {
+                              if (bulk.isSelected(id)) bulk.toggle(id);
+                            });
+                          } else {
+                            bulk.selectAll(incompleteIds);
+                          }
+                        }}
+                        className="h-3.5 w-3.5 rounded border-blue-300 accent-blue-600 cursor-pointer flex-shrink-0"
+                        title="Select all in this project"
+                      />
+                    )}
+                    <button
+                      onClick={() =>
+                        setCollapsedProjects((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(pg.projectId))
+                            next.delete(pg.projectId);
+                          else next.add(pg.projectId);
+                          return next;
+                        })
+                      }
+                      className="flex-1 flex items-center justify-between"
                     >
-                      Open <ExternalLink size={12} />
-                    </Link>
-                  </button>
+                      <div className="flex items-center gap-2">
+                        {isCollapsed ? (
+                          <ChevronRight
+                            size={16}
+                            className="text-gray-400"
+                          />
+                        ) : (
+                          <ChevronDown
+                            size={16}
+                            className="text-gray-400"
+                          />
+                        )}
+                        <FolderOpen size={16} className="text-blue-500" />
+                        <span className="font-semibold text-gray-900">
+                          {pg.projectName}
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          {pendingCount} pending
+                        </span>
+                      </div>
+                      <Link
+                        href={`/projects/${pg.projectId}/my-work`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                      >
+                        Open <ExternalLink size={12} />
+                      </Link>
+                    </button>
+                  </div>
 
                   {/* deliverables */}
                   {!isCollapsed && (
@@ -595,6 +654,16 @@ export default function GlobalMyWorkPage() {
                                   : "hover:bg-gray-50"
                               }`}
                             >
+                              {!d.is_done && (
+                                <input
+                                  type="checkbox"
+                                  checked={bulk.isSelected(d.id)}
+                                  onChange={() => bulk.toggle(d.id)}
+                                  className="h-3.5 w-3.5 rounded border-blue-300 accent-blue-600 cursor-pointer flex-shrink-0"
+                                  title="Select for bulk action"
+                                />
+                              )}
+
                               <input
                                 type="checkbox"
                                 checked={!!d.is_done}
@@ -722,6 +791,14 @@ export default function GlobalMyWorkPage() {
           </div>
         )}
       </div>
+
+      {bulk.hasSelection && (
+        <BulkActionBar
+          count={bulk.count}
+          onBatchComplete={handleBatchComplete}
+          onClear={bulk.deselectAll}
+        />
+      )}
 
       {/* undo modal */}
       {confirmUncheck && (

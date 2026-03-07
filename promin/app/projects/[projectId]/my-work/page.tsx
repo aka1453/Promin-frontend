@@ -25,6 +25,8 @@ import {
 import TimeLogForm from "../../../components/TimeLogForm";
 import TimeLogHistory from "../../../components/TimeLogHistory";
 import StartTaskPrompt from "../../../components/StartTaskPrompt";
+import BulkActionBar from "../../../components/BulkActionBar";
+import { useBulkSelection } from "../../../hooks/useBulkSelection";
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -162,6 +164,7 @@ function MyWorkContent({ projectId }: { projectId: number }) {
   const [timeLogRefreshKey, setTimeLogRefreshKey] = useState(0);
   const [memberMap, setMemberMap] = useState<Map<string, string>>(new Map());
   const [startNudge, setStartNudge] = useState<DeliverableRow | null>(null);
+  const bulk = useBulkSelection();
 
   // ── derived dates ──
   const today = useMemo(() => todayForTimezone(timezone), [timezone]);
@@ -424,6 +427,36 @@ function MyWorkContent({ projectId }: { projectId: number }) {
     };
   }, [deliverables, assignedOnly, currentUserId, today, endOfWeek]);
 
+  // ── clear selection on filter change ──
+  useEffect(() => {
+    bulk.deselectAll();
+  }, [activeFilter, showCompleted, assignedOnly, sortMode]);
+
+  // ── batch complete ──
+  async function handleBatchComplete() {
+    const ids = Array.from(bulk.selectedIds);
+    if (ids.length === 0) return;
+
+    const { data, error } = await supabase.rpc("batch_complete_deliverables", {
+      p_deliverable_ids: ids,
+    });
+
+    if (error) {
+      pushToast("Batch complete failed", "error");
+    } else {
+      const result = data as any;
+      const count = result.completed_count ?? 0;
+      const skipped = result.skipped ?? [];
+      pushToast(`Completed ${count} deliverable${count !== 1 ? "s" : ""}`, "success");
+      if (skipped.length > 0) {
+        pushToast(`${skipped.length} skipped`, "info");
+      }
+    }
+
+    bulk.deselectAll();
+    await loadDeliverables();
+  }
+
   // ── toggle completion ──
   async function toggleDeliverable(d: DeliverableRow, checked: boolean) {
     if (!checked && d.is_done) {
@@ -681,42 +714,69 @@ function MyWorkContent({ projectId }: { projectId: number }) {
             </div>
           ) : (
             <div className="space-y-4">
-              {taskGroups.map((group) => (
+              {taskGroups.map((group) => {
+                const incompleteIds = group.deliverables
+                  .filter((d) => !d.is_done)
+                  .map((d) => d.id);
+                const allSelected =
+                  incompleteIds.length > 0 &&
+                  incompleteIds.every((id) => bulk.isSelected(id));
+
+                return (
                 <div
                   key={group.taskId}
                   className="border border-gray-200 rounded-xl bg-white overflow-hidden"
                 >
                   {/* task group header */}
-                  <button
-                    onClick={() => toggleTaskCollapse(group.taskId)}
-                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition"
-                  >
-                    <div className="flex items-center gap-2 min-w-0 text-left">
-                      {collapsedTasks.has(group.taskId) ? (
-                        <ChevronRight
-                          size={16}
-                          className="text-gray-400 flex-shrink-0"
-                        />
-                      ) : (
-                        <ChevronDown
-                          size={16}
-                          className="text-gray-400 flex-shrink-0"
-                        />
-                      )}
-                      <span className="font-medium text-gray-900 truncate">
-                        {group.taskTitle}
+                  <div className="flex items-center gap-2 px-4 py-3 hover:bg-gray-50 transition">
+                    {incompleteIds.length > 0 && (
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={() => {
+                          if (allSelected) {
+                            incompleteIds.forEach((id) => {
+                              if (bulk.isSelected(id)) bulk.toggle(id);
+                            });
+                          } else {
+                            bulk.selectAll(incompleteIds);
+                          }
+                        }}
+                        className="h-3.5 w-3.5 rounded border-blue-300 accent-blue-600 cursor-pointer flex-shrink-0"
+                        title="Select all in this task"
+                      />
+                    )}
+                    <button
+                      onClick={() => toggleTaskCollapse(group.taskId)}
+                      className="flex-1 flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2 min-w-0 text-left">
+                        {collapsedTasks.has(group.taskId) ? (
+                          <ChevronRight
+                            size={16}
+                            className="text-gray-400 flex-shrink-0"
+                          />
+                        ) : (
+                          <ChevronDown
+                            size={16}
+                            className="text-gray-400 flex-shrink-0"
+                          />
+                        )}
+                        <span className="font-medium text-gray-900 truncate">
+                          {group.taskTitle}
+                        </span>
+                        <span className="text-xs text-gray-400 flex-shrink-0">
+                          {
+                            group.deliverables.filter((d) => !d.is_done).length
+                          }{" "}
+                          pending
+                        </span>
+                      </div>
+                      <span className="text-xs text-gray-500 flex-shrink-0 ml-3">
+                        {group.milestoneName}
                       </span>
-                      <span className="text-xs text-gray-400 flex-shrink-0">
-                        {
-                          group.deliverables.filter((d) => !d.is_done).length
-                        }{" "}
-                        pending
-                      </span>
-                    </div>
-                    <span className="text-xs text-gray-500 flex-shrink-0 ml-3">
-                      {group.milestoneName}
-                    </span>
-                  </button>
+                    </button>
+                  </div>
 
                   {/* deliverable rows */}
                   {!collapsedTasks.has(group.taskId) && (
@@ -741,6 +801,16 @@ function MyWorkContent({ projectId }: { projectId: number }) {
                                   : "hover:bg-gray-50"
                               }`}
                             >
+                              {!d.is_done && (
+                                <input
+                                  type="checkbox"
+                                  checked={bulk.isSelected(d.id)}
+                                  onChange={() => bulk.toggle(d.id)}
+                                  className="h-3.5 w-3.5 rounded border-blue-300 accent-blue-600 cursor-pointer flex-shrink-0"
+                                  title="Select for bulk action"
+                                />
+                              )}
+
                               <input
                                 type="checkbox"
                                 checked={!!d.is_done}
@@ -948,11 +1018,20 @@ function MyWorkContent({ projectId }: { projectId: number }) {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       </div>
+
+      {bulk.hasSelection && (
+        <BulkActionBar
+          count={bulk.count}
+          onBatchComplete={handleBatchComplete}
+          onClear={bulk.deselectAll}
+        />
+      )}
 
       {/* undo confirmation modal */}
       {confirmUncheck && (
