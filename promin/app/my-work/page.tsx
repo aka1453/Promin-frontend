@@ -9,7 +9,6 @@ import { todayForTimezone } from "../utils/date";
 import { useToast } from "../components/ToastProvider";
 import {
   CheckSquare,
-  Lock,
   ChevronDown,
   ChevronRight,
   Calendar,
@@ -20,6 +19,7 @@ import {
 } from "lucide-react";
 import TimeLogForm from "../components/TimeLogForm";
 import TimeLogHistory from "../components/TimeLogHistory";
+import StartTaskPrompt from "../components/StartTaskPrompt";
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -127,6 +127,7 @@ export default function GlobalMyWorkPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [loggingTimeId, setLoggingTimeId] = useState<number | null>(null);
   const [timeLogRefreshKey, setTimeLogRefreshKey] = useState(0);
+  const [startNudge, setStartNudge] = useState<DeliverableRow | null>(null);
 
   const today = useMemo(() => todayForTimezone(timezone), [timezone]);
 
@@ -340,6 +341,11 @@ export default function GlobalMyWorkPage() {
   async function toggleDeliverable(d: DeliverableRow, checked: boolean) {
     if (!checked && d.is_done) {
       setConfirmUncheck(d);
+      return;
+    }
+    // Nudge for start date if task not started
+    if (checked && !d.taskActualStart) {
+      setStartNudge(d);
       return;
     }
     await performToggle(d, checked);
@@ -589,24 +595,15 @@ export default function GlobalMyWorkPage() {
                                   : "hover:bg-gray-50"
                               }`}
                             >
-                              {taskNotStarted ? (
-                                <span title="Task hasn't started yet">
-                                  <Lock
-                                    size={14}
-                                    className="text-gray-400 flex-shrink-0"
-                                  />
-                                </span>
-                              ) : (
-                                <input
-                                  type="checkbox"
-                                  checked={!!d.is_done}
-                                  disabled={isToggling}
-                                  onChange={(e) =>
-                                    toggleDeliverable(d, e.target.checked)
-                                  }
-                                  className="h-4 w-4 rounded border-gray-300 cursor-pointer flex-shrink-0"
-                                />
-                              )}
+                              <input
+                                type="checkbox"
+                                checked={!!d.is_done}
+                                disabled={isToggling}
+                                onChange={(e) =>
+                                  toggleDeliverable(d, e.target.checked)
+                                }
+                                className="h-4 w-4 rounded border-gray-300 cursor-pointer flex-shrink-0"
+                              />
 
                               <PriorityDot priority={d.priority} />
 
@@ -757,6 +754,18 @@ export default function GlobalMyWorkPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {startNudge && (
+        <StartTaskPrompt
+          taskId={startNudge.task_id}
+          onStarted={async () => {
+            const d = startNudge;
+            setStartNudge(null);
+            await performToggle(d, true);
+          }}
+          onCancel={() => setStartNudge(null)}
+        />
       )}
     </div>
   );
