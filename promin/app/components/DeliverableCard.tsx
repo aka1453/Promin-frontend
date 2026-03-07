@@ -321,14 +321,12 @@ export default function DeliverableCard({
               )}
 
               {/* Assignee */}
-              {assignedUserName && (
-                <div className="mt-1 flex items-center gap-1 text-xs text-gray-700">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                  <span className="font-medium">{assignedUserName}</span>
-                </div>
-              )}
+              <div className={`mt-1 flex items-center gap-1 text-xs ${assignedUserName ? "text-gray-700" : "text-gray-400"}`}>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <span className={assignedUserName ? "font-medium" : "italic"}>{assignedUserName ?? "Unassigned"}</span>
+              </div>
 
               {/* Dependency Badge */}
               <div className="mt-2">

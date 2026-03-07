@@ -685,6 +685,8 @@ export default function GlobalMyWorkPage() {
                                 </span>
                               )}
 
+                              <AssigneeBadge name={d.assigned_user} />
+
                               <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:inline">
                                 {d.taskTitle}
                               </span>

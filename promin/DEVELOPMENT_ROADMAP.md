@@ -263,6 +263,7 @@ All above verified: `tsc --noEmit` passes; Turbopack compilation succeeds (`next
 - ✅ **EWMA velocity forecasting refinements** — Exclude idle phases; confidence/velocity consistency improvements. (2026-03-02)
 - ✅ **Insights canon ordering** — Urgency-first ordering + BOTTLENECK > ACCELERATION > RISK_DRIVER > LEVERAGE canonical sort. (2026-03-01, 2026-03-04)
 - ✅ **Cost tracking primitives** — `budgeted_cost` and `actual_cost` on deliverables/tasks/milestones/projects with automatic bottom-up rollup via triggers. (Phase 8 partial — now complete)
+- ✅ **My Work view** — Global cross-project "My Work" page showing all pending deliverables grouped by project. Filter tabs (All Pending, Overdue, Due Today, This Week), bulk selection, expandable detail panels with time logging, priority dots, due date badges. Per-project My Work view with assignee editing via UserPicker. (2026-03-07)
 
 ---
 
