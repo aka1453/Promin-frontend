@@ -285,10 +285,11 @@ All above verified: `tsc --noEmit` passes; Turbopack compilation succeeds (`next
 - **Scope:** Small — frontend prompt + calls existing `start_task` RPC, no trigger changes
 - **Depends on:** nothing
 
-## R2 — Bulk Operations on Deliverable Lists ⬜
+## R2 — Bulk Operations on Deliverable Lists ✅
 - Multi-select checkboxes on My Work and deliverable lists
 - Bulk actions: "Mark all done" / "Reassign to" / "Shift dates by N days"
 - Batch RPC: `batch_complete_deliverables(ids[])` — single transaction, triggers cascade
+- Inline assignee picker on badge click (Global MyWork + DeliverableCard) with animated UserPicker dropdown
 - **Why:** 30 deliverables = 30 clicks today → 1 click after this
 - **Scope:** Small — mostly frontend + one batch RPC
 - **Depends on:** nothing
