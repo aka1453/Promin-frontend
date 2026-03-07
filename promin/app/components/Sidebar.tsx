@@ -23,7 +23,7 @@ import { reorderProjects } from "../lib/reorderProjects";
 import { useProjects } from "../context/ProjectsContext";
 import { useUserTimezone } from "../context/UserTimezoneContext";
 import Tooltip from "./Tooltip";
-import { CheckSquare, SlidersHorizontal, Power, UserCog, Globe } from "lucide-react";
+import { CheckSquare, SlidersHorizontal, Power, UserCog, Globe, Search } from "lucide-react";
 
 // Define the shape of a project
 type Project = {
@@ -240,6 +240,33 @@ export default function Sidebar() {
       <div className="px-6 py-6 border-b border-gray-200 flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-gray-900">ProMin</h1>
         <NotificationCenter />
+      </div>
+
+      {/* COMMAND BAR TRIGGER */}
+      <div className="px-4 pt-4 pb-0">
+        <button
+          onClick={() => {
+            const isMac = /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent);
+            document.dispatchEvent(
+              new KeyboardEvent("keydown", {
+                key: "k",
+                code: "KeyK",
+                metaKey: isMac,
+                ctrlKey: !isMac,
+                bubbles: true,
+              }),
+            );
+          }}
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100 hover:border-gray-300 transition-colors cursor-pointer group"
+        >
+          <Search size={14} className="text-gray-400 shrink-0" />
+          <span className="flex-1 text-left text-sm text-gray-400 group-hover:text-gray-500 truncate">
+            Search or jump to...
+          </span>
+          <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-white border border-gray-200 rounded text-gray-400 shadow-sm">
+            {typeof navigator !== "undefined" && /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent) ? "⌘K" : "Ctrl+K"}
+          </kbd>
+        </button>
       </div>
 
       {/* REORDER ERROR TOAST */}

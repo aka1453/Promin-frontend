@@ -294,10 +294,13 @@ All above verified: `tsc --noEmit` passes; Turbopack compilation succeeds (`next
 - **Scope:** Small — mostly frontend + one batch RPC
 - **Depends on:** nothing
 
-## R3 — Quick-Add Command Bar (Cmd+K) ⬜
-- Floating command palette for rapid entity creation
-- Smart defaults: dates from parent task, equal weight, medium priority
-- Type "Add deliverable: Inspection Report" → created instantly
+## R3 — Quick-Add Command Bar (Cmd+K) ✅
+- Floating command palette (Ctrl+K / ⌘K) with fuzzy search, keyboard navigation, premium animations
+- Inline create forms for milestones (name + weight), tasks (title + duration), deliverables (task selector + title + duration + weight + parallel/sequential with dependency picker)
+- Navigation to all entities: projects, milestones, tasks, deliverables (tasks/deliverables via `?openTaskId=` deep-link)
+- Entity type badges (PROJECT/MILESTONE/TASK/DELIVERABLE) for disambiguation in search results
+- Context-aware commands: shows relevant create/navigate actions based on current page
+- Sidebar discoverability hint: clickable "Search or jump to..." bar with ⌘K/Ctrl+K badge
 - **Why:** Current flow is 6-7 interactions per deliverable. Quick-add reduces to 2
 - **Scope:** Small — frontend only, calls existing creation logic
 - **Depends on:** nothing
