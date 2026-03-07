@@ -654,23 +654,13 @@ export default function GlobalMyWorkPage() {
                                   : "hover:bg-gray-50"
                               }`}
                             >
-                              {!d.is_done && (
-                                <input
-                                  type="checkbox"
-                                  checked={bulk.isSelected(d.id)}
-                                  onChange={() => bulk.toggle(d.id)}
-                                  className="h-3.5 w-3.5 rounded border-blue-300 accent-blue-600 cursor-pointer flex-shrink-0"
-                                  title="Select for bulk action"
-                                />
-                              )}
-
                               <input
                                 type="checkbox"
-                                checked={!!d.is_done}
-                                disabled={isToggling}
-                                onChange={(e) =>
-                                  toggleDeliverable(d, e.target.checked)
-                                }
+                                checked={d.is_done ? true : bulk.isSelected(d.id)}
+                                disabled={isToggling || d.is_done}
+                                onChange={() => {
+                                  if (!d.is_done) bulk.toggle(d.id);
+                                }}
                                 className="h-4 w-4 rounded border-gray-300 cursor-pointer flex-shrink-0"
                               />
 
