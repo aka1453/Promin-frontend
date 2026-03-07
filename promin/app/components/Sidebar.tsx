@@ -23,7 +23,7 @@ import { reorderProjects } from "../lib/reorderProjects";
 import { useProjects } from "../context/ProjectsContext";
 import { useUserTimezone } from "../context/UserTimezoneContext";
 import Tooltip from "./Tooltip";
-import { CheckSquare, SlidersHorizontal, Power, UserCog, Globe, Search } from "lucide-react";
+import { CheckSquare, SlidersHorizontal, Power, UserCog, Globe, Search, LayoutTemplate } from "lucide-react";
 
 // Define the shape of a project
 type Project = {
@@ -151,6 +151,21 @@ export default function Sidebar() {
     });
   }, []);
 
+  // Fetch template projects (separate from main project list)
+  useEffect(() => {
+    async function loadTemplates() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const { data } = await supabase
+        .from("projects")
+        .select("id, name, description")
+        .eq("is_template", true)
+        .order("name", { ascending: true });
+      if (data) setTemplates(data);
+    }
+    loadTemplates();
+  }, [projects]); // re-fetch when projects context changes (e.g. after save-as-template)
+
   const activeProjects = projects.filter(
     (p: any) => p.deleted_at == null && p.status !== "archived"
   );
@@ -170,6 +185,8 @@ export default function Sidebar() {
   );
 
   const [showArchived, setShowArchived] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templates, setTemplates] = useState<any[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
@@ -383,6 +400,33 @@ export default function Sidebar() {
                     className="block rounded px-3 py-2 text-sm hover:bg-gray-100"
                   >
                     {p.name || "Untitled Project"}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TEMPLATES */}
+        {templates.length > 0 && (
+          <div className="mt-4">
+            <button
+              onClick={() => setShowTemplates(v => !v)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 hover:text-gray-700"
+            >
+              <LayoutTemplate size={12} />
+              Templates {showTemplates ? "▾" : "▸"}
+            </button>
+
+            {showTemplates && (
+              <div className="flex flex-col gap-1 opacity-70">
+                {templates.map((p: any) => (
+                  <Link
+                    key={p.id}
+                    href={`/projects/${p.id}`}
+                    className="block rounded px-3 py-2 text-sm hover:bg-gray-100"
+                  >
+                    {p.name || "Untitled Template"}
                   </Link>
                 ))}
               </div>

@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { supabase } from "./lib/supabaseClient";
 import ProjectOverviewCard from "./components/ProjectOverviewCard";
 import ProjectSettingsModal from "./components/ProjectSettingsModal";
+import CloneProjectModal from "./components/CloneProjectModal";
 import { motion } from "framer-motion";
 import { FolderOpen } from "lucide-react";
 import { useProjects } from "./context/ProjectsContext";
+import { useToast } from "./components/ToastProvider";
 import { useUserTimezone } from "./context/UserTimezoneContext";
 import { todayForTimezone } from "./utils/date";
 import type { EntityProgress, BatchProgressRow } from "./types/progress";
@@ -52,7 +54,7 @@ function sortProjectsDeterministically(projects: Project[]) {
 
 export default function HomePage() {
   const router = useRouter();
-  const { projects } = useProjects();
+  const { projects, reloadProjects } = useProjects();
   const { timezone } = useUserTimezone();
   const [sortMode, setSortMode] = useState<SortMode>(() => {
     if (typeof window === "undefined") return "position";
@@ -61,6 +63,8 @@ export default function HomePage() {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [cloneModalOpen, setCloneModalOpen] = useState(false);
+  const [cloneProject, setCloneProject] = useState<any>(null);
   const [projectRole, setProjectRole] =
     useState<"owner" | "editor" | "viewer" | null>(null);
 
@@ -252,6 +256,10 @@ export default function HomePage() {
   setSelectedProjectId(project.id);
   setSettingsOpen(true);
 }}
+                      onClone={() => {
+  setCloneProject(project);
+  setCloneModalOpen(true);
+}}
                     />
                   </motion.div>
                 );
@@ -279,6 +287,17 @@ export default function HomePage() {
     );
   })()
 )}
+
+      {cloneModalOpen && cloneProject && (
+        <CloneProjectModal
+          project={cloneProject}
+          onClose={() => {
+            setCloneModalOpen(false);
+            setCloneProject(null);
+          }}
+          onCloned={() => reloadProjects()}
+        />
+      )}
 
     </>
   );

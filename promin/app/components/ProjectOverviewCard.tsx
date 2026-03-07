@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart2, ChevronDown, Settings } from "lucide-react";
+import { BarChart2, ChevronDown, Copy, Settings } from "lucide-react";
 import ProgressBar from "./ProgressBar";
 import DeltaBadge from "./DeltaBadge";
 import { formatPercent } from "../utils/format";
@@ -12,6 +12,7 @@ type Props = {
   project: any;
   onClick?: () => void;
   onOpenSettings?: () => void;
+  onClone?: () => void;
   hideSettings?: boolean;
   /** Canonical planned progress (0-100 scale) from batch RPC. */
   canonicalPlanned: number | null;
@@ -79,6 +80,7 @@ export default function ProjectOverviewCard({
   project,
   onClick,
   onOpenSettings,
+  onClone,
   hideSettings,
   canonicalPlanned,
   canonicalActual,
@@ -224,6 +226,21 @@ export default function ProjectOverviewCard({
               >
                 <BarChart2 size={15} className="text-blue-600" />
                 Reports
+              </button>
+
+              {/* Clone */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowMenu(false);
+                  onClone?.();
+                }}
+                className="flex items-center gap-2 w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition"
+              >
+                <Copy size={15} className="text-slate-500" />
+                Clone
               </button>
 
               {/* Settings */}

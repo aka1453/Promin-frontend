@@ -58,6 +58,7 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await supabase
         .from("projects")
         .select("*, project_manager:profiles!project_manager_id(id, full_name, email)")
+        .eq("is_template", false)
         .order("position", { ascending: true });
 
       if (!mountedRef.current) return;

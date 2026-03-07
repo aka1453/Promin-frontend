@@ -317,11 +317,20 @@ All above verified: `tsc --noEmit` passes; Turbopack compilation succeeds (`next
 - **Key file:** `promin/app/components/NotificationCenter.tsx`
 - **Depends on:** nothing
 
-## R5 — Project Templates + Clone ⬜
-- Save any project as a template (flag or separate table)
-- One-click clone: deep-copy full hierarchy (milestones → tasks → deliverables)
-- Date-shift relative to new project start date
-- Clone RPC: `clone_project(source_id, new_name, new_start_date)`
+## R5 — Project Templates + Clone ✅
+- `is_template` boolean + `source_project_id` FK on `projects` table
+- `save_as_template(project_id)` / `unmark_template(project_id)` RPCs (owner-only, SECURITY INVOKER)
+- `clone_project(source_id, new_name, new_start_date)` RPC (SECURITY DEFINER, membership-checked): deep-copies milestones → tasks → deliverables → task dependencies → deliverable dependencies with full ID remapping and date-shifting
+- Follows `accept_plan_draft()` pattern for ID remapping via jsonb maps
+- All lifecycle fields reset (status=pending, progress=0, actual_*=NULL, no assignments)
+- Triggers fire naturally: weight normalization, task numbering, rollups, CPM dirty flag
+- Frontend: Clone button in project card ⋮ menu, CloneProjectModal with name + start date
+- Save as Template / Unmark as Template in ProjectSettingsModal (owner-only)
+- "From Template" tab in AddProjectButton with template selector → name + start date
+- Templates section in sidebar (collapsible, separate fetch)
+- Templates filtered from main project list via `is_template=false` in ProjectsContext
+- **Key migration:** `supabase/migrations/20260309100000_r5_project_templates_clone.sql`
+- **Key files:** `CloneProjectModal.tsx`, `ProjectOverviewCard.tsx`, `ProjectSettingsModal.tsx`, `AddProjectButton.tsx`, `Sidebar.tsx`, `ProjectsContext.tsx`
 - **Why:** #1 time-saver for repeat projects. Combined with AI Draft, gives two fast-start paths
 - **Scope:** Medium — main complexity is date-shifting + trigger management during bulk insert
 - **Depends on:** nothing

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { canEdit, isOwner } from "../utils/permissions";
 import { updateHourlyRate } from "../lib/timeTracking";
+import { LayoutTemplate } from "lucide-react";
 
 type Props = {
   project: any;
@@ -283,6 +284,44 @@ const { error } = await supabase
     location.reload();
   }
 
+  async function saveAsTemplate() {
+    const confirmed = confirm(
+      `Save "${project.name}" as a template?\n\nTemplate projects appear in the Templates section and can be cloned to create new projects.`
+    );
+    if (!confirmed) return;
+
+    const { data, error } = await supabase.rpc("save_as_template", {
+      p_project_id: project.id,
+    });
+
+    if (error || !data?.ok) {
+      alert(data?.error || "Failed to save as template");
+      return;
+    }
+
+    onClose();
+    location.reload();
+  }
+
+  async function unmarkTemplate() {
+    const confirmed = confirm(
+      `Convert "${project.name}" back to a regular project?`
+    );
+    if (!confirmed) return;
+
+    const { data, error } = await supabase.rpc("unmark_template", {
+      p_project_id: project.id,
+    });
+
+    if (error || !data?.ok) {
+      alert(data?.error || "Failed to unmark template");
+      return;
+    }
+
+    onClose();
+    location.reload();
+  }
+
   return (
     <div
       className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center"
@@ -530,9 +569,29 @@ const { error } = await supabase
           Advanced actions are restricted to the project owner
         </div>
 
-        {/* Danger Zone (only delete active for now) */}
+        {/* Advanced Actions */}
         <div className="space-y-2">
-          {isOwner(projectRole) && !isArchived && (
+          {/* Template toggle */}
+          {isOwnerUser && !isArchived && !project.is_template && (
+            <button
+              onClick={saveAsTemplate}
+              className="w-full flex items-center gap-2 border border-indigo-200 text-indigo-700 rounded-lg py-2 text-left px-3 hover:bg-indigo-50 transition"
+            >
+              <LayoutTemplate size={15} />
+              Save as Template
+            </button>
+          )}
+          {isOwnerUser && !isArchived && project.is_template && (
+            <button
+              onClick={unmarkTemplate}
+              className="w-full flex items-center gap-2 border border-slate-200 text-slate-600 rounded-lg py-2 text-left px-3 hover:bg-slate-50 transition"
+            >
+              <LayoutTemplate size={15} />
+              Unmark as Template
+            </button>
+          )}
+
+          {isOwnerUser && !isArchived && (
   <button
     onClick={archiveProject}
     className="w-full border border-amber-200 text-amber-700 rounded-lg py-2 text-left px-3 hover:bg-amber-50"
