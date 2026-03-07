@@ -20,8 +20,9 @@ import {
 import TimeLogForm from "../components/TimeLogForm";
 import TimeLogHistory from "../components/TimeLogHistory";
 import StartTaskPrompt from "../components/StartTaskPrompt";
-import BulkActionBar from "../components/BulkActionBar";
+import BulkActionBar, { type BulkAction } from "../components/BulkActionBar";
 import UserPicker from "../components/UserPicker";
+import DateShiftInput from "../components/DateShiftInput";
 import { useBulkSelection } from "../hooks/useBulkSelection";
 
 // ─────────────────────────────────────────────
@@ -399,6 +400,67 @@ export default function GlobalMyWorkPage() {
     bulk.deselectAll();
     await loadAll();
   }
+
+  async function handleBatchReassign(userId: string | null) {
+    const ids = Array.from(bulk.selectedIds);
+    if (ids.length === 0) return;
+
+    const { data, error } = await supabase.rpc("batch_reassign_deliverables", {
+      p_deliverable_ids: ids,
+      p_assigned_user_id: userId,
+    });
+
+    if (error) {
+      pushToast("Bulk reassign failed", "error");
+    } else {
+      const result = data as any;
+      const count = result.reassigned_count ?? 0;
+      const skipped = result.skipped ?? [];
+      pushToast(`Reassigned ${count} deliverable${count !== 1 ? "s" : ""}`, "success");
+      if (skipped.length > 0) pushToast(`${skipped.length} skipped`, "info");
+    }
+
+    bulk.deselectAll();
+    await loadAll();
+  }
+
+  async function handleBatchShiftDates(days: number) {
+    const ids = Array.from(bulk.selectedIds);
+    if (ids.length === 0 || days === 0) return;
+
+    const { data, error } = await supabase.rpc("batch_shift_deliverable_dates", {
+      p_deliverable_ids: ids,
+      p_days: days,
+    });
+
+    if (error) {
+      pushToast("Bulk date shift failed", "error");
+    } else {
+      const result = data as any;
+      const count = result.shifted_count ?? 0;
+      const cascaded = result.cascaded_count ?? 0;
+      const skipped = result.skipped ?? [];
+      let msg = `Shifted ${count} deliverable${count !== 1 ? "s" : ""} by ${days > 0 ? "+" : ""}${days}d`;
+      if (cascaded > 0) msg += ` (${cascaded} dependent${cascaded !== 1 ? "s" : ""} cascaded)`;
+      pushToast(msg, "success");
+      if (skipped.length > 0) pushToast(`${skipped.length} skipped`, "info");
+    }
+
+    bulk.deselectAll();
+    await loadAll();
+  }
+
+  // ── multi-project constraint for reassign ──
+  const selectedProjectIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const d of filtered) {
+      if (bulk.isSelected(d.id)) ids.add(d.projectId);
+    }
+    return ids;
+  }, [filtered, bulk]);
+
+  const canReassign = selectedProjectIds.size === 1;
+  const reassignProjectId = canReassign ? [...selectedProjectIds][0] : null;
 
   // ── toggle ──
   async function toggleDeliverable(d: DeliverableRow, checked: boolean) {
@@ -882,7 +944,48 @@ export default function GlobalMyWorkPage() {
       {bulk.hasSelection && (
         <BulkActionBar
           count={bulk.count}
-          onBatchComplete={handleBatchComplete}
+          actions={[
+            {
+              key: "complete",
+              label: "Mark all done",
+              loadingLabel: "Completing...",
+              variant: "green",
+              onClick: handleBatchComplete,
+            },
+            {
+              key: "reassign",
+              label: canReassign ? "Reassign" : "Reassign (1 project)",
+              loadingLabel: "Reassigning...",
+              variant: "blue",
+              disabled: !canReassign,
+              onClick: () => {
+                if (!canReassign) pushToast("Select deliverables from a single project to reassign", "info");
+              },
+              renderInline: canReassign && reassignProjectId ? () => (
+                <div className="w-64">
+                  <UserPicker
+                    projectId={reassignProjectId!}
+                    value={null}
+                    onChange={(uid) => handleBatchReassign(uid)}
+                    defaultOpen
+                  />
+                </div>
+              ) : undefined,
+            },
+            {
+              key: "shift-dates",
+              label: "Shift dates",
+              loadingLabel: "Shifting...",
+              variant: "amber",
+              onClick: () => {},
+              renderInline: () => (
+                <DateShiftInput
+                  onConfirm={handleBatchShiftDates}
+                  onCancel={() => {}}
+                />
+              ),
+            },
+          ]}
           onClear={bulk.deselectAll}
         />
       )}
