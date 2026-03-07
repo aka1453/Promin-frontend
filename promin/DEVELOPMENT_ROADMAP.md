@@ -275,7 +275,7 @@ All above verified: `tsc --noEmit` passes; Turbopack compilation succeeds (`next
 
 ---
 
-## R1 — Smart Start Nudge ⬜
+## R1 — Smart Start Nudge ✅
 - When a user completes a deliverable or logs time on an unstarted task, show a prompt: "When did you start working on this?"
 - Pre-fill with today's date, but allow backdating (editable date picker)
 - On confirm → call existing `start_task` RPC with the chosen date
