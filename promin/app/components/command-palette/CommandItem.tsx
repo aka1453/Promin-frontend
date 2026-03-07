@@ -51,6 +51,20 @@ export default function CommandItem({ command, isSelected, onSelect }: Props) {
         {command.label}
       </span>
 
+      {command.entityType && (
+        <span
+          className={`
+            text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded
+            ${isSelected
+              ? "bg-blue-100 text-blue-500 dark:bg-blue-900 dark:text-blue-400"
+              : "bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500"
+            }
+          `}
+        >
+          {command.entityType}
+        </span>
+      )}
+
       {command.contextHint && (
         <span className="text-xs text-gray-400 dark:text-gray-500 truncate max-w-[180px]">
           {command.contextHint}

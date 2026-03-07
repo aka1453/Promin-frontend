@@ -280,6 +280,7 @@ export function useCommandRegistry(isOpen: boolean) {
         category: "navigate",
         icon: ArrowRight,
         keywords: ["go", "project", (project.name || "").toLowerCase()],
+        entityType: "project",
       });
     }
 
@@ -292,6 +293,7 @@ export function useCommandRegistry(isOpen: boolean) {
         icon: ArrowRight,
         keywords: ["go", "milestone", (ms.name || "").toLowerCase()],
         contextHint: projectName ? `in ${projectName}` : undefined,
+        entityType: "milestone",
       });
     }
 
@@ -306,6 +308,7 @@ export function useCommandRegistry(isOpen: boolean) {
         keywords: ["go", "task", (task.title || "").toLowerCase()],
         contextHint: msName ? `in ${msName}` : undefined,
         searchOnly: true,
+        entityType: "task",
       });
     }
 
@@ -321,6 +324,7 @@ export function useCommandRegistry(isOpen: boolean) {
         keywords: ["go", "deliverable", "item", (del.title || "").toLowerCase()],
         contextHint: taskLabel ? `in ${taskLabel}` : undefined,
         searchOnly: true,
+        entityType: "deliverable",
       });
     }
 

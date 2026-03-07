@@ -15,6 +15,8 @@ export type CommandDefinition = {
   };
   /** If true, only show this command when user types a search query */
   searchOnly?: boolean;
+  /** Entity type badge shown next to the label for disambiguation */
+  entityType?: "project" | "milestone" | "task" | "deliverable";
 };
 
 export type CommandContext = {
