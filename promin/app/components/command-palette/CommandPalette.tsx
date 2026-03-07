@@ -285,11 +285,16 @@ function InlineCreateForm({
   const [duration, setDuration] = useState(1);
   const [weight, setWeight] = useState(1);
   const [executionMode, setExecutionMode] = useState<"parallel" | "sequential">("parallel");
+  const [dependsOnId, setDependsOnId] = useState<number | null>(null);
 
   // For deliverables: task selection
   const [tasks, setTasks] = useState<any[] | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [loadingTasks, setLoadingTasks] = useState(false);
+
+  // Existing deliverables for the selected task (for sequential chaining)
+  const [existingDeliverables, setExistingDeliverables] = useState<any[]>([]);
+  const [loadingDeliverables, setLoadingDeliverables] = useState(false);
 
   // Auto-focus title input
   useEffect(() => {
@@ -309,6 +314,28 @@ function InlineCreateForm({
       setLoadingTasks(false);
     });
   }, [commandId, context.milestoneId]);
+
+  // Fetch existing deliverables when task changes (for sequential dropdown)
+  useEffect(() => {
+    if (commandId !== "create-deliverable" || !selectedTaskId) {
+      setExistingDeliverables([]);
+      return;
+    }
+
+    setLoadingDeliverables(true);
+    supabase
+      .from("deliverables")
+      .select("id, title")
+      .eq("task_id", selectedTaskId)
+      .order("id", { ascending: true })
+      .then(({ data }) => {
+        setExistingDeliverables(data || []);
+        // Reset dependency selection when task changes
+        setDependsOnId(null);
+        setExecutionMode("parallel");
+        setLoadingDeliverables(false);
+      });
+  }, [commandId, selectedTaskId]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -348,7 +375,13 @@ function InlineCreateForm({
           setCreating(false);
           return;
         }
-        await createDeliverable(selectedTaskId, trimmed, duration, weight, executionMode);
+        await createDeliverable(
+          selectedTaskId,
+          trimmed,
+          duration,
+          weight,
+          executionMode === "sequential" ? dependsOnId : null,
+        );
         onSuccess("Deliverable created");
       }
     } catch (err: any) {
@@ -526,7 +559,10 @@ function InlineCreateForm({
             <div className="flex rounded-lg border border-[var(--card-border)] overflow-hidden">
               <button
                 type="button"
-                onClick={() => setExecutionMode("parallel")}
+                onClick={() => {
+                  setExecutionMode("parallel");
+                  setDependsOnId(null);
+                }}
                 className={`flex-1 py-2 text-xs font-medium transition-colors ${
                   executionMode === "parallel"
                     ? "bg-blue-600 text-white"
@@ -547,11 +583,48 @@ function InlineCreateForm({
                 ⏩ Sequential
               </button>
             </div>
-            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
-              {executionMode === "parallel"
-                ? "Starts immediately with the task"
-                : "Starts after the last deliverable completes"}
-            </p>
+
+            {/* Sequential: show deliverable dependency picker */}
+            {executionMode === "sequential" && (
+              <div className="mt-2">
+                {loadingDeliverables ? (
+                  <div className="flex items-center gap-2 text-xs text-gray-400 py-1.5">
+                    <Loader2 size={12} className="animate-spin" />
+                    Loading deliverables...
+                  </div>
+                ) : existingDeliverables.length === 0 ? (
+                  <p className="text-[11px] text-amber-500 dark:text-amber-400 py-1">
+                    No existing deliverables — will start as parallel
+                  </p>
+                ) : (
+                  <>
+                    <label className="block text-[11px] text-gray-400 dark:text-gray-500 mb-1">
+                      Starts after
+                    </label>
+                    <select
+                      value={dependsOnId ?? ""}
+                      onChange={(e) =>
+                        setDependsOnId(e.target.value ? Number(e.target.value) : null)
+                      }
+                      className="w-full border border-[var(--card-border)] rounded-lg px-3 py-2 text-sm bg-[var(--card-bg)] text-[var(--foreground)] outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="">Select a deliverable...</option>
+                      {existingDeliverables.map((d: any) => (
+                        <option key={d.id} value={d.id}>
+                          {d.title}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
+              </div>
+            )}
+
+            {executionMode === "parallel" && (
+              <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
+                Starts immediately with the task
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -635,31 +708,14 @@ async function createDeliverable(
   title: string,
   duration: number,
   weight: number,
-  executionMode: "parallel" | "sequential",
+  dependsOnId: number | null,
 ) {
-  let dependsOn: number | null = null;
-
-  // Sequential: chain to the last deliverable in this task
-  if (executionMode === "sequential") {
-    const { data: existing } = await supabase
-      .from("deliverables")
-      .select("id")
-      .eq("task_id", taskId)
-      .order("id", { ascending: false })
-      .limit(1);
-
-    if (existing && existing.length > 0) {
-      dependsOn = existing[0].id;
-    }
-    // If no existing deliverables, stays parallel (null) — nothing to chain to
-  }
-
   const { error } = await supabase.from("deliverables").insert({
     task_id: taskId,
     title,
     user_weight: weight,
     duration_days: duration,
-    depends_on_deliverable_id: dependsOn,
+    depends_on_deliverable_id: dependsOnId,
   });
   if (error) throw new Error(error.message);
 
